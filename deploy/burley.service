@@ -1,0 +1,32 @@
+[Unit]
+Description=Burley Markdown viewer
+Documentation=https://github.com/your-org/burley
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Create a dedicated unprivileged user, e.g.:
+#   sudo useradd --system --home /var/lib/burley --shell /usr/sbin/nologin burley
+User=burley
+Group=burley
+WorkingDirectory=/var/lib/burley
+
+# Only the notes folder is writable; the rest of the system is read-only.
+ExecStart=/usr/local/bin/burley --root /srv/notes --addr 127.0.0.1:8080
+
+Restart=on-failure
+RestartSec=2
+UMask=0027
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/notes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

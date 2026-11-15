@@ -1,0 +1,434 @@
+/* Burley global styles: theme tokens, shell chrome, CodeMirror widgets. */
+
+:root {
+  --font-body: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* HSL triplets consumed by codemirror-live-markdown's theme via hsl(var(--x)) */
+  --background: 38 32% 98%;
+  --foreground: 30 14% 15%;
+  --muted: 38 18% 94%;
+  --muted-foreground: 30 7% 42%;
+  --primary: 20 82% 40%;
+  --border: 35 16% 88%;
+  --md-heading: 28 20% 13%;
+  --md-link: 196 70% 32%;
+  --md-bold: 30 16% 11%;
+  --md-italic: 30 16% 11%;
+
+  --bg-app: #fbfaf7;
+  --bg-chrome: #f6f3ed;
+  --bg-sidebar: #f7f4ee;
+  --panel: #f1ede5;
+  --text-primary: #2b2621;
+  --text-muted: #7a7066;
+  --border-soft: #e6e0d5;
+  --border-strong: #d5cdbe;
+  --border-color: #e6e0d5;
+  --hover: rgba(90, 70, 45, 0.07);
+  --active: rgba(194, 65, 12, 0.1);
+  --accent: #c2410c;
+  --accent-strong: #9a3412;
+  --selection: rgba(194, 65, 12, 0.14);
+  --selection-strong: rgba(194, 65, 12, 0.2);
+
+  /* Syntax highlighting (code fences) */
+  --syntax-keyword: #9d174d;
+  --syntax-string: #0f766e;
+  --syntax-number: #b45309;
+  --syntax-comment: #8a8074;
+  --syntax-function: #1d4ed8;
+  --syntax-type: #7e22ce;
+  --syntax-property: #b91c1c;
+  --syntax-punctuation: #78716c;
+
+  /* Semantic status colors (light) */
+  --ok-bg: hsl(150 45% 95%);
+  --ok-fg: hsl(150 45% 30%);
+  --ok-border: hsl(150 40% 80%);
+  --warn-bg: hsl(40 90% 95%);
+  --warn-fg: hsl(35 80% 34%);
+  --warn-border: hsl(35 70% 80%);
+  --info-bg: hsl(210 70% 96%);
+  --info-fg: hsl(210 70% 36%);
+  --info-border: hsl(210 60% 82%);
+  --danger-bg: hsl(0 70% 96%);
+  --danger-fg: hsl(0 65% 42%);
+  --danger-border: hsl(0 60% 82%);
+  --toast-bg: hsl(30 15% 16%);
+  --toast-fg: #fff;
+}
+
+:root[data-theme='dark'] {
+    --background: 30 10% 9%;
+    --foreground: 35 18% 88%;
+    --muted: 30 8% 17%;
+    --muted-foreground: 35 8% 62%;
+    --primary: 24 80% 58%;
+    --border: 30 8% 22%;
+    --md-heading: 35 22% 92%;
+    --md-link: 195 65% 62%;
+    --md-bold: 35 22% 92%;
+    --md-italic: 35 22% 92%;
+
+    --bg-app: #17140f;
+    --bg-chrome: #1c1813;
+    --bg-sidebar: #1a1712;
+    --panel: #241f19;
+    --text-primary: #e8e1d7;
+    --text-muted: #a2988b;
+    --border-soft: #2f2921;
+    --border-strong: #453c31;
+    --border-color: #2f2921;
+    --hover: rgba(255, 240, 220, 0.06);
+    --active: rgba(234, 88, 12, 0.16);
+    --accent: #ea580c;
+    --accent-strong: #f97316;
+    --selection: rgba(234, 88, 12, 0.25);
+    --selection-strong: rgba(234, 88, 12, 0.35);
+
+    --syntax-keyword: #f0abfc;
+    --syntax-string: #5eead4;
+    --syntax-number: #fdba74;
+    --syntax-comment: #8c8278;
+    --syntax-function: #93c5fd;
+    --syntax-type: #d8b4fe;
+    --syntax-property: #fca5a5;
+    --syntax-punctuation: #a8a29e;
+
+    /* Semantic status colors (dark) */
+    --ok-bg: hsl(150 28% 14%);
+    --ok-fg: hsl(150 55% 68%);
+    --ok-border: hsl(150 28% 28%);
+    --warn-bg: hsl(30 38% 15%);
+    --warn-fg: hsl(35 85% 70%);
+    --warn-border: hsl(30 32% 30%);
+    --info-bg: hsl(210 35% 15%);
+    --info-fg: hsl(210 70% 74%);
+    --info-border: hsl(210 32% 30%);
+    --danger-bg: hsl(0 32% 16%);
+    --danger-fg: hsl(0 70% 74%);
+    --danger-border: hsl(0 32% 32%);
+    --toast-bg: hsl(30 12% 88%);
+    --toast-fg: hsl(30 15% 12%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --------------------------------------------------------------- overlays */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background: rgba(26, 19, 12, 0.38);
+  backdrop-filter: blur(3px);
+}
+
+.modal {
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.45);
+}
+
+/* Shared buttons */
+.primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.primary:hover {
+  background: var(--accent-strong);
+}
+.secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.secondary:hover {
+  background: var(--hover);
+}
+.danger {
+  border: 1px solid transparent;
+  background: hsl(0 62% 42%);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.danger:hover {
+  background: hsl(0 65% 36%);
+}
+
+/* ---------------------------------------------------- CodeMirror widgets */
+
+.cm-burley-block {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.cm-burley-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cm-burley-block-lines {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.cm-burley-block-spacer {
+  flex: 1;
+}
+
+.cm-burley-block-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cm-burley-block-btn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.cm-burley-block-body {
+  padding: 12px 14px;
+}
+
+.cm-burley-code {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.8px;
+  line-height: 1.55;
+  tab-size: 2;
+  color: var(--text-primary);
+}
+
+.cm-burley-block-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--danger-fg);
+  font-size: 12px;
+}
+.cm-burley-block-error code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Plotly */
+.burley-plotly {
+  min-height: 320px;
+}
+.burley-plotly-chart {
+  width: 100%;
+  height: 420px;
+}
+.burley-plotly-status {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* Images */
+.cm-burley-image {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  margin: 2px 0;
+  cursor: pointer;
+}
+.cm-burley-image img {
+  max-width: 100%;
+  border-radius: 8px;
+  display: block;
+}
+.cm-burley-image-caption {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.cm-burley-image-error {
+  font-size: 12px;
+  color: var(--danger-fg);
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* Links */
+.cm-burley-link {
+  color: hsl(var(--md-link));
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cm-burley-link-internal {
+  color: hsl(var(--md-link));
+  border-bottom: 1px dashed hsl(var(--md-link) / 0.5);
+  text-decoration: none;
+}
+.cm-burley-link:hover {
+  color: var(--accent);
+}
+
+/* Math */
+.cm-burley-math {
+  cursor: pointer;
+}
+.cm-burley-math-inline {
+  display: inline-block;
+  vertical-align: middle;
+}
+.cm-burley-math-block {
+  display: block;
+  text-align: center;
+  padding: 6px 0;
+}
+.cm-burley-math-block-inner {
+  text-align: center;
+  overflow-x: auto;
+}
+.cm-burley-math .katex {
+  font-size: 1.06em;
+}
+
+/* Library tables */
+.cm-table-widget {
+  margin: 8px 0;
+}
+.cm-table-widget table {
+  font-size: 0.94em;
+}
+
+/* Checkbox / task list polish */
+.cm-burley-task {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -1px;
+  margin-right: 3px;
+}
+.cm-burley-task input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.cm-burley-task input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+/* Blockquote lines */
+.cm-burley-quote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 14px !important;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Read-only mode: hide the caret while browsing */
+.cm-burley-locked .cm-cursor {
+  display: none;
+}

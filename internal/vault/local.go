@@ -1,0 +1,581 @@
+package vault
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
+
+const (
+	maxFileBytes  = 32 << 20  // 32 MiB for Markdown reads/writes
+	maxAssetBytes = 128 << 20 // 128 MiB for assets
+	maxScanBytes  = 4 << 20   // per-file limit for the pure-Go search fallback
+)
+
+// LocalVault is a Vault backed by a directory on the local filesystem.
+type LocalVault struct {
+	root string
+
+	// DisableRipgrep forces the pure-Go content search implementation. Useful
+	// for tests and for hosts without ripgrep installed.
+	DisableRipgrep bool
+
+	// RipgrepPath overrides ripgrep discovery. Empty means look up "rg".
+	RipgrepPath string
+
+	rgPath    string
+	rgChecked bool
+}
+
+// NewLocalVault opens a vault rooted at root.
+func NewLocalVault(root string) (*LocalVault, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, fmt.Errorf("vault root %q: %w", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("vault root %q is not a directory", root)
+	}
+	return &LocalVault{root: abs}, nil
+}
+
+// Root returns the absolute vault root.
+func (v *LocalVault) Root() string { return v.root }
+
+// resolve turns a client supplied relative path into an absolute path that is
+// guaranteed to live inside the vault root. Symlinks are evaluated and must
+// also resolve inside the root.
+func (v *LocalVault) resolve(rel string) (string, string, error) {
+	clean, err := NormalizeRel(rel)
+	if err != nil {
+		return "", "", err
+	}
+	abs := filepath.Join(v.root, filepath.FromSlash(clean))
+
+	// Defense in depth: filepath.Join already cleans, but verify containment
+	// with filepath.Rel so platform-specific quirks cannot slip through.
+	inside, err := isInside(v.root, abs)
+	if err != nil || !inside {
+		return "", "", ErrForbidden
+	}
+
+	// If the path (or its closest existing parent) is a symlink, ensure the
+	// resolved target is still inside the root.
+	if err := checkSymlinks(v.root, abs); err != nil {
+		return "", "", err
+	}
+	return abs, clean, nil
+}
+
+func isInside(rootAbs, targetAbs string) (bool, error) {
+	rel, err := filepath.Rel(rootAbs, targetAbs)
+	if err != nil {
+		return false, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func checkSymlinks(rootAbs, targetAbs string) error {
+	// Walk up to the closest existing ancestor, since writes may target files
+	// that do not exist yet.
+	cur := targetAbs
+	for {
+		if _, err := os.Lstat(cur); err == nil {
+			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ErrForbidden
+		}
+		cur = parent
+	}
+	eval, err := filepath.EvalSymlinks(cur)
+	if err != nil {
+		return ErrForbidden
+	}
+	inside, err := isInside(rootAbs, eval)
+	if err != nil || !inside {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func notFoundIfNeeded(err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// Tree returns the recursive directory tree of Markdown files. Directories that
+// contain no Markdown files (recursively) are omitted, as are hidden folders.
+func (v *LocalVault) Tree(ctx context.Context) ([]Entry, error) {
+	entries, _, err := v.walk(ctx, v.root, "")
+	if err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		entries = []Entry{}
+	}
+	return entries, nil
+}
+
+func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string) ([]Entry, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	dirents, err := os.ReadDir(dirAbs)
+	if err != nil {
+		return nil, false, notFoundIfNeeded(err)
+	}
+
+	var dirs []Entry
+	var files []Entry
+	hasMarkdown := false
+
+	for _, de := range dirents {
+		name := de.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		rel := name
+		if relDir != "" {
+			rel = relDir + "/" + name
+		}
+		info, err := de.Info()
+		if err != nil {
+			continue
+		}
+		if de.IsDir() {
+			if name == "node_modules" || name == "vendor" {
+				continue
+			}
+			children, childMD, err := v.walk(ctx, filepath.Join(dirAbs, name), rel)
+			if err != nil {
+				return nil, false, err
+			}
+			if childMD {
+				hasMarkdown = true
+				dirs = append(dirs, Entry{
+					Name:     name,
+					Path:     rel,
+					IsDir:    true,
+					ModTime:  info.ModTime().UnixMilli(),
+					Children: children,
+				})
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() || !IsMarkdownPath(name) {
+			continue
+		}
+		hasMarkdown = true
+		files = append(files, Entry{
+			Name:    name,
+			Path:    rel,
+			IsDir:   false,
+			ModTime: info.ModTime().UnixMilli(),
+			Size:    info.Size(),
+		})
+	}
+
+	sort.Slice(dirs, func(i, j int) bool { return strings.ToLower(dirs[i].Name) < strings.ToLower(dirs[j].Name) })
+	sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name) })
+
+	return append(dirs, files...), hasMarkdown, nil
+}
+
+// Read returns a Markdown file's content and metadata.
+func (v *LocalVault) Read(ctx context.Context, relPath string) (FileData, error) {
+	abs, clean, err := v.resolve(relPath)
+	if err != nil {
+		return FileData{}, err
+	}
+	if !IsMarkdownPath(clean) {
+		return FileData{}, ErrInvalidPath
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return FileData{}, notFoundIfNeeded(err)
+	}
+	if info.IsDir() {
+		return FileData{}, ErrInvalidPath
+	}
+	if info.Size() > maxFileBytes {
+		return FileData{}, ErrTooLarge
+	}
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return FileData{}, notFoundIfNeeded(err)
+	}
+	return FileData{
+		Path:    clean,
+		Content: string(b),
+		ModTime: info.ModTime().UnixMilli(),
+		Hash:    HashBytes(b),
+	}, nil
+}
+
+// Write atomically replaces a Markdown file after checking expectedHash. An
+// empty expectedHash means "create or overwrite".
+func (v *LocalVault) Write(ctx context.Context, relPath string, content []byte, expectedHash string) (FileData, error) {
+	if len(content) > maxFileBytes {
+		return FileData{}, ErrTooLarge
+	}
+	abs, clean, err := v.resolve(relPath)
+	if err != nil {
+		return FileData{}, err
+	}
+	if !IsMarkdownPath(clean) {
+		return FileData{}, ErrInvalidPath
+	}
+	if err := ctx.Err(); err != nil {
+		return FileData{}, err
+	}
+
+	// Snapshot the current state for conflict detection.
+	current := FileData{Path: clean}
+	var currentBytes []byte
+	info, statErr := os.Stat(abs)
+	switch {
+	case statErr == nil:
+		if info.IsDir() {
+			return FileData{}, ErrInvalidPath
+		}
+		currentBytes, err = os.ReadFile(abs)
+		if err != nil {
+			return FileData{}, notFoundIfNeeded(err)
+		}
+		current = FileData{
+			Path:    clean,
+			Content: string(currentBytes),
+			ModTime: info.ModTime().UnixMilli(),
+			Hash:    HashBytes(currentBytes),
+		}
+	case errors.Is(statErr, fs.ErrNotExist):
+		// New file: current hash stays empty.
+	default:
+		return FileData{}, statErr
+	}
+
+	if expectedHash != "" && expectedHash != current.Hash {
+		return FileData{}, &ConflictError{Current: current}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return FileData{}, err
+	}
+
+	perm := fs.FileMode(0o644)
+	if statErr == nil {
+		perm = info.Mode().Perm()
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(abs), ".burley-tmp-*")
+	if err != nil {
+		return FileData{}, err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmpName)
+	}
+	if _, err := tmp.Write(content); err != nil {
+		cleanup()
+		return FileData{}, err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return FileData{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return FileData{}, err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		os.Remove(tmpName)
+		return FileData{}, err
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		os.Remove(tmpName)
+		return FileData{}, err
+	}
+
+	newInfo, err := os.Stat(abs)
+	if err != nil {
+		return FileData{}, err
+	}
+	return FileData{
+		Path:    clean,
+		Content: string(content),
+		ModTime: newInfo.ModTime().UnixMilli(),
+		Hash:    HashBytes(content),
+	}, nil
+}
+
+var assetTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".avif": "image/avif",
+	".bmp":  "image/bmp",
+	".ico":  "image/x-icon",
+	".svg":  "image/svg+xml",
+	".json": "application/json",
+	".csv":  "text/csv",
+	".tsv":  "text/tab-separated-values",
+	".txt":  "text/plain; charset=utf-8",
+	".yaml": "text/yaml; charset=utf-8",
+	".yml":  "text/yaml; charset=utf-8",
+	".pdf":  "application/pdf",
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+}
+
+// ReadAsset returns raw bytes plus a MIME type for a non-Markdown asset.
+func (v *LocalVault) ReadAsset(ctx context.Context, relPath string) ([]byte, string, error) {
+	abs, clean, err := v.resolve(relPath)
+	if err != nil {
+		return nil, "", err
+	}
+	ext := strings.ToLower(path.Ext(clean))
+	mimeType, ok := assetTypes[ext]
+	if !ok {
+		return nil, "", ErrInvalidPath
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, "", notFoundIfNeeded(err)
+	}
+	if info.IsDir() {
+		return nil, "", ErrInvalidPath
+	}
+	if info.Size() > maxAssetBytes {
+		return nil, "", ErrTooLarge
+	}
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, "", notFoundIfNeeded(err)
+	}
+	return b, mimeType, nil
+}
+
+// SearchContent searches Markdown files for query. It uses ripgrep when
+// available and falls back to a pure-Go scan otherwise.
+func (v *LocalVault) SearchContent(ctx context.Context, query string, max int) ([]SearchMatch, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []SearchMatch{}, nil
+	}
+	if max <= 0 {
+		max = 100
+	}
+	if !v.DisableRipgrep {
+		if rg, ok := v.ripgrep(); ok {
+			matches, err := v.searchRipgrep(ctx, rg, query, max)
+			if err == nil {
+				return matches, nil
+			}
+			// Fall through to the Go implementation on rg failures (e.g.
+			// binary missing after lookup, unsupported flags).
+		}
+	}
+	return v.searchGo(ctx, query, max)
+}
+
+func (v *LocalVault) ripgrep() (string, bool) {
+	if v.rgChecked {
+		return v.rgPath, v.rgPath != ""
+	}
+	v.rgChecked = true
+	if v.RipgrepPath != "" {
+		if p, err := exec.LookPath(v.RipgrepPath); err == nil {
+			v.rgPath = p
+			return p, true
+		}
+		return "", false
+	}
+	if p, err := exec.LookPath("rg"); err == nil {
+		v.rgPath = p
+		return p, true
+	}
+	return "", false
+}
+
+type rgMessage struct {
+	Type string `json:"type"`
+	Data struct {
+		Path struct {
+			Text string `json:"text"`
+		} `json:"path"`
+		Lines struct {
+			Text string `json:"text"`
+		} `json:"lines"`
+		LineNumber int `json:"line_number"`
+		Submatches []struct {
+			Start int `json:"start"`
+			End   int `json:"end"`
+		} `json:"submatches"`
+	} `json:"data"`
+}
+
+func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max int) ([]SearchMatch, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	args := []string{
+		"--json",
+		"--max-count", "50",
+		"--smart-case",
+		"--no-messages",
+		"--glob", "*.md",
+		"--glob", "*.markdown",
+		"--glob", "!.*",
+		"--",
+		query,
+		v.root,
+	}
+	cmd := exec.CommandContext(ctx, rg, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	if err != nil && len(stdout) == 0 {
+		return nil, fmt.Errorf("ripgrep: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+
+	matches := make([]SearchMatch, 0, max)
+	scanner := bufio.NewScanner(bytes.NewReader(stdout))
+	scanner.Buffer(make([]byte, 64*1024), 8<<20)
+	for scanner.Scan() {
+		var msg rgMessage
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+			continue
+		}
+		if msg.Type != "match" {
+			continue
+		}
+		abs := msg.Data.Path.Text
+		rel, relErr := filepath.Rel(v.root, abs)
+		if relErr != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		line := strings.TrimRight(msg.Data.Lines.Text, "\r\n")
+		col := 1
+		if len(msg.Data.Submatches) > 0 {
+			col = msg.Data.Submatches[0].Start + 1
+		}
+		matches = append(matches, SearchMatch{
+			Path:    filepath.ToSlash(rel),
+			Line:    msg.Data.LineNumber,
+			Column:  col,
+			Text:    truncate(line, 400),
+			Snippet: truncate(strings.TrimSpace(line), 240),
+		})
+		if len(matches) >= max {
+			break
+		}
+	}
+	if len(matches) == 0 {
+		return []SearchMatch{}, nil
+	}
+	return matches, nil
+}
+
+func (v *LocalVault) searchGo(ctx context.Context, query string, max int) ([]SearchMatch, error) {
+	matches := make([]SearchMatch, 0, max)
+	needle := strings.ToLower(query)
+
+	err := filepath.WalkDir(v.root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if p != v.root && strings.HasPrefix(name, ".") {
+				return filepath.SkipDir
+			}
+			if name == "node_modules" || name == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() || !IsMarkdownPath(name) {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil || info.Size() > maxScanBytes {
+			return nil
+		}
+		data, readErr := os.ReadFile(p)
+		if readErr != nil {
+			return nil
+		}
+		rel, relErr := filepath.Rel(v.root, p)
+		if relErr != nil {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			idx := strings.Index(strings.ToLower(line), needle)
+			if idx < 0 {
+				continue
+			}
+			line = strings.TrimRight(line, "\r")
+			matches = append(matches, SearchMatch{
+				Path:    relSlash,
+				Line:    i + 1,
+				Column:  idx + 1,
+				Text:    truncate(line, 400),
+				Snippet: truncate(strings.TrimSpace(line), 240),
+			})
+			if len(matches) >= max {
+				return errLimitReached
+			}
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errLimitReached) {
+		return nil, err
+	}
+	return matches, nil
+}
+
+var errLimitReached = errors.New("search limit reached")
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	// Keep it valid UTF-8-ish by trimming at a rune boundary.
+	cut := n
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut] + "…"
+}

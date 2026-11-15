@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "type": "bar",
+      "name": "Notes saved",
+      "x": ["Week 1", "Week 2", "Week 3", "Week 4"],
+      "y": [14, 22, 31, 27],
+      "marker": { "color": "#c2410c" }
+    },
+    {
+      "type": "scatter",
+      "mode": "lines+markers",
+      "name": "Daily edits",
+      "x": ["Week 1", "Week 2", "Week 3", "Week 4"],
+      "y": [9, 15, 18, 24],
+      "line": { "color": "#0f766e" }
+    }
+  ],
+  "layout": {
+    "title": "Editing activity",
+    "barmode": "group"
+  }
+}

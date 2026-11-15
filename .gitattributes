@@ -1,0 +1,3 @@
+# Normalize text files to LF, but keep the CRLF round-trip fixture byte-exact.
+* text=auto
+demo-vault/notes/crlf-note.md -text

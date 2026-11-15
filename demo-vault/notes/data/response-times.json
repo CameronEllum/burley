@@ -1,0 +1,37 @@
+{
+  "data": [
+    {
+      "type": "scatter",
+      "mode": "lines+markers",
+      "name": "p50",
+      "x": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      "y": [180, 165, 150, 140, 126, 118],
+      "fill": "tozeroy",
+      "fillcolor": "rgba(194, 65, 12, 0.12)",
+      "line": { "width": 2, "color": "#c2410c" }
+    },
+    {
+      "type": "scatter",
+      "mode": "lines+markers",
+      "name": "p95",
+      "x": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      "y": [620, 590, 540, 505, 470, 440],
+      "line": { "width": 2, "dash": "dash", "color": "#0f766e" }
+    },
+    {
+      "type": "scatter",
+      "mode": "lines+markers",
+      "name": "p99",
+      "x": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      "y": [1180, 1105, 1040, 980, 910, 860],
+      "line": { "width": 2, "dash": "dot", "color": "#7c3aed" }
+    }
+  ],
+  "layout": {
+    "title": { "text": "Response time percentiles" },
+    "xaxis": { "title": { "text": "Month" } },
+    "yaxis": { "title": { "text": "Milliseconds" } },
+    "legend": { "orientation": "h", "y": -0.25 },
+    "hovermode": "x unified"
+  }
+}

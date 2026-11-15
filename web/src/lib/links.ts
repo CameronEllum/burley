@@ -1,0 +1,129 @@
+/**
+ * Clickable links in the live preview.
+ *
+ * The library's link plugin does not rebuild on cursor movement, which makes
+ * links impossible to edit by keyboard. This implementation follows the same
+ * cursor-aware pattern as the math/image previews: rendered link text while the
+ * cursor is away, raw Markdown while it is inside.
+ */
+import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
+import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
+import { syntaxTree } from '@codemirror/language'
+import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
+import { isExternalRef, resolveRelative } from './paths'
+import { api } from './api'
+import { getActiveView } from './viewRef'
+
+const LINK_SYNTAX = /^\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)$/
+const MD_FILE = /\.(md|markdown|mdown|mkd)$/i
+
+let openPathHandler: ((path: string) => void) | null = null
+
+/** Registered by the editor so `.md` links can navigate inside Burley. */
+export function setLinkOpenHandler(handler: ((path: string) => void) | null): void {
+  openPathHandler = handler
+}
+
+class LinkWidget extends WidgetType {
+  constructor(
+    readonly label: string,
+    readonly url: string,
+    readonly title: string,
+    readonly internalPath: string | null,
+    readonly editPos: number,
+  ) {
+    super()
+  }
+
+  eq(other: LinkWidget): boolean {
+    return (
+      other.label === this.label &&
+      other.url === this.url &&
+      other.title === this.title &&
+      other.internalPath === this.internalPath
+    )
+  }
+
+  toDOM(): HTMLElement {
+    const anchor = document.createElement('a')
+    anchor.className = 'cm-burley-link'
+    anchor.textContent = this.label || this.url || 'link'
+    if (this.internalPath) {
+      anchor.href = '#'
+      anchor.title = this.internalPath
+      anchor.classList.add('cm-burley-link-internal')
+      anchor.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (openPathHandler && this.internalPath) openPathHandler(this.internalPath)
+      })
+    } else if (this.url) {
+      anchor.href = this.url
+      anchor.title = this.title || this.url
+      anchor.target = '_blank'
+      anchor.rel = 'noopener noreferrer'
+    } else {
+      anchor.href = '#'
+    }
+    return anchor
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
+function buildLinkDecorations(state: EditorState): DecorationSet {
+  const decorations: Range<Decoration>[] = []
+  const readOnly = state.facet(readOnlyFacet)
+  const currentFile = state.facet(filePathFacet)
+
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== 'Link') return
+      if (!readOnly && selectionTouches(state, node.from, node.to)) return
+      const raw = state.doc.sliceString(node.from, node.to).trim()
+      const match = LINK_SYNTAX.exec(raw)
+      if (!match) return
+      const label = match[1] ?? ''
+      const href = match[2] ?? match[3] ?? ''
+      const title = match[4] ?? ''
+      if (!href) return
+
+      let internalPath: string | null = null
+      let url = href
+      if (!isExternalRef(href)) {
+        const resolved = resolveRelative(currentFile, href.split('#')[0])
+        if (resolved && MD_FILE.test(resolved)) {
+          internalPath = resolved
+          url = ''
+        } else if (resolved) {
+          url = api.assetUrl(resolved)
+        } else {
+          return
+        }
+      }
+
+      decorations.push(
+        Decoration.replace({
+          widget: new LinkWidget(label, url, title, internalPath, node.from + 1),
+        }).range(node.from, node.to),
+      )
+    },
+  })
+
+  return Decoration.set(decorations, true)
+}
+
+/** Inline link previews with internal Markdown navigation. */
+export const linkPreviewField: StateField<DecorationSet> = StateField.define<DecorationSet>({
+  create: buildLinkDecorations,
+  update(deco, tr) {
+    if (tr.docChanged || tr.reconfigured) return buildLinkDecorations(tr.state)
+    if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
+      return buildLinkDecorations(tr.state)
+    }
+    return deco
+  },
+  provide: (field) => EditorView.decorations.from(field),
+})
