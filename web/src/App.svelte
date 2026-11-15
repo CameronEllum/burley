@@ -22,6 +22,9 @@
   const LAST_PATH_KEY = 'burley:last-path'
   const SIDEBAR_KEY = 'burley:sidebar'
   const SIDEBAR_TAB_KEY = 'burley:sidebar-tab'
+  const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
+  const SIDEBAR_MIN = 220
+  const SIDEBAR_MAX = 560
 
   let tree = $state<Entry[]>([])
   let files = $state<FlatFile[]>([])
@@ -42,6 +45,7 @@
   let readOnly = $state(false)
   let sidebarOpen = $state(true)
   let sidebarTab = $state<'files' | 'outline'>('files')
+  let sidebarWidth = $state(302)
   let treeFilter = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
@@ -98,6 +102,10 @@
     if (storedSidebar !== null) sidebarOpen = storedSidebar === '1'
     const storedTab = localStorage.getItem(SIDEBAR_TAB_KEY)
     if (storedTab === 'files' || storedTab === 'outline') sidebarTab = storedTab
+    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
+    if (Number.isFinite(storedWidth) && storedWidth >= SIDEBAR_MIN) {
+      sidebarWidth = clampSidebarWidth(storedWidth)
+    }
 
     applyTheme(themeMode)
     const unwatchTheme = watchSystemTheme(() => {
@@ -329,6 +337,42 @@
     localStorage.setItem(SIDEBAR_TAB_KEY, tab)
   }
 
+  function clampSidebarWidth(width: number): number {
+    const max = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN + 80, window.innerWidth * 0.55))
+    return Math.round(Math.min(max, Math.max(SIDEBAR_MIN, width)))
+  }
+
+  function setSidebarWidth(width: number, persist = true) {
+    sidebarWidth = clampSidebarWidth(width)
+    if (persist) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth))
+  }
+
+  function startSidebarResize(event: PointerEvent) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    document.body.classList.add('resizing-sidebar')
+
+    const onMove = (moveEvent: PointerEvent) => {
+      sidebarWidth = clampSidebarWidth(startWidth + moveEvent.clientX - startX)
+    }
+    const onUp = () => {
+      document.body.classList.remove('resizing-sidebar')
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth))
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  function handleResizerKeydown(event: KeyboardEvent) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    setSidebarWidth(sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16))
+  }
+
   function jumpToOutline(item: OutlineItem) {
     editor?.scrollToLine(item.line)
   }
@@ -500,7 +544,7 @@
     </div>
   </header>
 
-  <main class="workspace" class:collapsed={!sidebarOpen}>
+  <main class="workspace" class:collapsed={!sidebarOpen} style={`--sidebar-width: ${sidebarWidth}px`}>
     <aside class="sidebar" class:closed={!sidebarOpen} aria-label="Sidebar">
       <div class="sidebar-tabs" role="tablist" aria-label="Sidebar panels">
         <button
@@ -596,6 +640,16 @@
           <span>Click to jump</span>
         </div>
       {/if}
+
+      <button
+        type="button"
+        class="sidebar-resizer"
+        aria-label="Resize sidebar"
+        title="Drag to resize — double-click to reset"
+        onpointerdown={startSidebarResize}
+        onkeydown={handleResizerKeydown}
+        ondblclick={() => setSidebarWidth(302)}
+      ></button>
     </aside>
 
 
@@ -893,7 +947,7 @@
   .workspace {
     position: relative;
     display: grid;
-    grid-template-columns: 302px minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width, 302px) minmax(0, 1fr);
     min-height: 0;
     overflow: hidden;
   }
@@ -1004,14 +1058,49 @@
   }
 
   .sidebar {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     border-right: 1px solid var(--border-soft);
     background: var(--bg-sidebar);
   }
   .sidebar.closed {
     display: none;
+  }
+  .sidebar-resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 9px;
+    z-index: 20;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+  }
+  .sidebar-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    background: transparent;
+    transition: background 0.12s ease;
+  }
+  .sidebar-resizer:hover::after,
+  .sidebar-resizer:focus-visible::after,
+  :global(body.resizing-sidebar) .sidebar-resizer::after {
+    background: var(--accent);
+  }
+  :global(body.resizing-sidebar) {
+    user-select: none;
+    cursor: col-resize;
   }
   .sidebar-tabs {
     display: flex;
@@ -1317,6 +1406,9 @@
       width: min(320px, 85vw);
       z-index: 40;
       box-shadow: 14px 0 40px -20px rgb(0 0 0 / 0.35);
+    }
+    .sidebar-resizer {
+      display: none;
     }
     .path-crumb {
       display: none;

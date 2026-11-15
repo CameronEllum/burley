@@ -17,7 +17,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 
 ### Functional Requirements
 1. **Remote EC2 File Access:** Read, browse, and edit `.md` files stored in folders on an EC2 server (via a lightweight Go server on EC2 accessed over an SSH tunnel, or via SFTP from a local client).
-2. **Left-Pane File Tree & Outline:** Collapsible directory tree of `.md` files (and optional assets) docked in the **left** sidebar, with a Typora-style **Files | Outline** tab bar at the top so each panel gets full height. The Outline tab lists the current note's headings and jumps to them.
+2. **Left-Pane File Tree & Outline:** Collapsible directory tree of `.md` files (and optional assets) docked in the **left** sidebar, with a Typora-style **Files | Outline** tab bar at the top so each panel gets full height. The Outline tab lists the current note's headings and jumps to them. The sidebar divider is draggable (220–560 px, persisted; arrow keys adjust, double-click resets).
 3. **Fast Fuzzy Search:**
    - Instant (`< 5 ms`) fuzzy filename/path quick-switcher (`Ctrl+P` / `Cmd+P`).
    - Fast full-text content search across the folder (`Ctrl+Shift+F` / `Cmd+Shift+F`).
@@ -173,8 +173,9 @@ type Vault interface {
 
 ### 6.1 UI Layout
 - **Top Bar (compact):** Active file path, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
-- **Left Sidebar (~20–25% width, collapsible):**
+- **Left Sidebar (~20–25% width, collapsible and resizable):**
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
+  - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
   - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty).
   - **Outline tab:** the open note's headings (H1–H6, indented by level, code fences excluded). Clicking an entry scrolls to that heading; the heading containing the cursor is highlighted.
 - **Main Pane (~75–80% width):** Full-height CodeMirror 6 editor with comfortable max-width reading measure (e.g. `820px` centered) and clean typography.
@@ -266,6 +267,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Saving a file preserves original line endings and leaves untouched Markdown formatting unchanged.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
+- [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.
 - [ ] Starting a second instance on a busy port automatically moves to the next free port and logs the actual URL.
 - [ ] The Quit button stops the server (loopback-only `POST /api/quit`) and shows the shutdown overlay.
 - [ ] Light/dark theme follows the OS by default and the top-bar toggle overrides it.

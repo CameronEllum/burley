@@ -34,6 +34,8 @@ the compiled frontend, so deployment is a single executable.
 - **Files | Outline tabs:** Typora-style tabs at the top of the left sidebar;
   the outline lists the note's headings (indented, code fences excluded) and
   clicking one jumps to it.
+- **Resizable sidebar:** drag the divider (220–560 px), use arrow keys when it
+  is focused, or double-click to reset; the width is remembered.
 - **Math and charts offline:** KaTeX for `$...$` / `$$...$$`, plus a plugin
   registry for fenced blocks. ```` ```plotly ```` accepts inline JSON or
   `src: ./data.json`; Plotly is lazily loaded and charts stay interactive.

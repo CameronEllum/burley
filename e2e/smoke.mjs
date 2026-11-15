@@ -286,6 +286,34 @@ try {
   await page.waitForTimeout(250)
   check('sidebar collapses with Ctrl+B', (await page.locator('.sidebar.closed').count()) === 1)
   await page.keyboard.press('Control+b')
+  await page.waitForTimeout(200)
+
+  // Resizable sidebar (drag + keyboard + persistence + reset).
+  const sidebarBefore = (await page.locator('.sidebar').boundingBox()).width
+  const resizer = page.locator('.sidebar-resizer')
+  const handleBox = await resizer.boundingBox()
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 120)
+  await page.mouse.down()
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + 90, handleBox.y + 120, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(250)
+  const sidebarAfter = (await page.locator('.sidebar').boundingBox()).width
+  check(
+    'sidebar can be resized by dragging',
+    sidebarAfter >= sidebarBefore + 70,
+    `${sidebarBefore}px -> ${sidebarAfter}px`,
+  )
+  const storedWidth = Number(await page.evaluate(() => localStorage.getItem('burley:sidebar-width')))
+  check('sidebar width persists', Math.abs(storedWidth - sidebarAfter) <= 2, `${storedWidth}px`)
+  await resizer.focus()
+  await page.keyboard.press('ArrowLeft')
+  await page.waitForTimeout(150)
+  const sidebarKeyboard = (await page.locator('.sidebar').boundingBox()).width
+  check('sidebar resizer supports arrow keys', sidebarKeyboard < sidebarAfter, `${sidebarKeyboard}px`)
+  await resizer.dblclick()
+  await page.waitForTimeout(200)
+  const sidebarReset = (await page.locator('.sidebar').boundingBox()).width
+  check('double-click resets sidebar width', Math.abs(sidebarReset - 302) <= 2, `${sidebarReset}px`)
 
   // Theme: follows the OS by default and cycles system → light → dark.
   const themeButton = page.locator('button[aria-label^="Theme:"]')
