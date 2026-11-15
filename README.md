@@ -81,6 +81,12 @@ the compiled frontend, so deployment is a single executable.
 - **Talk (CLI agents):** detect `claude`, `codex`, `gemini`, or `opencode`, then
   chat in a right-side panel (Alt+T) in Ask/Edit mode with SSE streaming,
   Markdown/KaTeX replies, and insert-at-cursor code blocks.
+- **Selection sparkle bar:** when a CLI agent is available, selecting text in the
+  editor floats a small action bar above it: **Explain · Summarize · Shorten ·
+  Rewrite**, plus a free-text **Ask**. Answers stream into the popover; Rewrite
+  previews a word-level diff with **Replace selection** / **Insert below**, and
+  **Copy** / **Open in Talk** hand off the result. `Alt+Enter` opens the
+  selection in Talk, `Esc` dismisses. Hidden entirely when no agent is detected.
 - **Shortcut sheet:** `Ctrl+?` anywhere, `?` when not typing, or the `?` button.
 - **Export:** download a self-contained HTML file (inline images/fonts, static
   Plotly SVG) or open the browser's Save-as-PDF dialog with print CSS.
@@ -230,10 +236,11 @@ light/dark themes and the quit confirmation. Screenshots are written to `e2e/`.
 | `Ctrl+Shift+R` | Reload the folder tree |
 | `Ctrl+Shift+Z` | Toggle Zen focus mode (`Esc` exits) |
 | `/` on a blank line | Slash commands for a block template |
+| `Alt+Enter` (with a sparkle bar open) | Send the selection to the Talk panel |
 | `Alt+Click` an image | Open the figure viewer |
 | `←` / `→` in the viewer | Previous / next figure (`Esc` closes) |
 | `>Restart Lua VM` | Reset the sandboxed Lua VM from the `>` palette |
-| `Esc` | Close search / dialogs |
+| `Esc` | Close search / dialogs / the selection bar |
 
 ---
 

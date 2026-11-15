@@ -379,6 +379,157 @@ try {
   check('progressive loading polled more than once', progressCalls >= 2, `${progressCalls} requests`)
   await progressPage.close()
 
+  // Selection sparkle bar: AI actions for a text selection, only when a CLI
+  // agent is detected. Agent listing and the SSE stream are mocked.
+  const sparklePage = await context.newPage()
+  const sparkleRequests = []
+  await sparklePage.route('**/api/agents', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agents: [{ id: 'claude', name: 'Claude Code', path: 'C:/bin/claude', available: true }],
+      }),
+    }),
+  )
+  await sparklePage.route('**/api/agent/chat', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}')
+    sparkleRequests.push(body)
+    let sse
+    if (body.prompt === 'Ping') {
+      sse = `event: error\ndata: ${JSON.stringify({ message: '\u001b[91mAgent exploded\u001b[0m' })}\n\n`
+    } else {
+      const text = body.prompt.startsWith('Rewrite')
+        ? 'A clearer rewrite of the chosen text.'
+        : 'The selected text explains the Burley workflow.'
+      sse = [
+        'event: meta',
+        'data: {"agent":"claude"}',
+        '',
+        'event: delta',
+        `data: ${JSON.stringify({ text })}`,
+        '',
+        'event: done',
+        'data: {"status":"ok"}',
+        '',
+        '',
+      ].join('\n')
+    }
+    await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse })
+  })
+  // Never persist the rewritten selection into the demo vault.
+  await sparklePage.route('**/api/file**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    const body = JSON.parse(route.request().postData() ?? '{}')
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        path: body.path,
+        content: body.content,
+        modTime: Date.now(),
+        hash: 'mock-save',
+      }),
+    })
+  })
+  await sparklePage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
+  await sparklePage.waitForSelector('.file-row', { timeout: 10000 })
+  await sparklePage.locator('.file-row', { hasText: 'welcome' }).click()
+  await sparklePage.waitForSelector('.cm-content', { timeout: 10000 })
+  await sparklePage.waitForTimeout(500)
+
+  const selectFirstLine = async () => {
+    await sparklePage.locator('.cm-content').click()
+    await sparklePage.keyboard.press('Control+Home')
+    await sparklePage.keyboard.press('Shift+End')
+    await sparklePage.waitForSelector('.sparkle-popover', { timeout: 5000 })
+  }
+
+  await selectFirstLine()
+  check(
+    'selection opens the sparkle bar with quick actions',
+    (await sparklePage.locator('.sparkle-action').count()) === 4,
+  )
+  check(
+    'the sparkle bar names the detected agent',
+    (await sparklePage.locator('.sparkle-agent').innerText()).includes('Claude Code'),
+  )
+  await sparklePage.keyboard.press('Escape')
+  await sparklePage.waitForTimeout(250)
+  check('Escape dismisses the sparkle bar', (await sparklePage.locator('.sparkle-popover').count()) === 0)
+
+  await selectFirstLine()
+  await sparklePage.keyboard.press('Alt+Enter')
+  await sparklePage.waitForSelector('.talk-panel', { timeout: 5000 })
+  check(
+    'Alt+Enter hands the selection to Talk',
+    (await sparklePage.locator('.sparkle-popover').count()) === 0,
+  )
+  await sparklePage.keyboard.press('Alt+t')
+  await sparklePage.waitForTimeout(300)
+
+  await selectFirstLine()
+  await sparklePage.locator('.sparkle-action', { hasText: 'Explain' }).click()
+  await sparklePage.waitForSelector('.sparkle-markdown', { timeout: 5000 })
+  check(
+    'Explain streams an answer into the popover',
+    (await sparklePage.locator('.sparkle-markdown').innerText()).includes('Burley workflow'),
+  )
+  check(
+    'the agent request carries the selection in ask mode',
+    sparkleRequests.length === 1 &&
+      sparkleRequests[0].mode === 'ask' &&
+      (sparkleRequests[0].selection ?? '').length > 0 &&
+      sparkleRequests[0].prompt.startsWith('Explain'),
+    JSON.stringify(sparkleRequests[0] ?? {}).slice(0, 120),
+  )
+
+  await sparklePage.locator('.sparkle-btn', { hasText: 'Back' }).click()
+  await sparklePage.locator('.sparkle-action', { hasText: 'Rewrite' }).click()
+  await sparklePage.waitForSelector('.sparkle-diff', { timeout: 5000 })
+  check(
+    'Rewrite previews a word-level diff',
+    (await sparklePage.locator('.sparkle-add').count()) >= 1 &&
+      (await sparklePage.locator('.sparkle-del').count()) >= 1,
+  )
+  await sparklePage.locator('.sparkle-btn', { hasText: 'Replace selection' }).click()
+  await sparklePage.waitForTimeout(400)
+  check(
+    'Replace swaps the selection for the rewrite',
+    (await sparklePage.locator('.cm-content').innerText()).includes('A clearer rewrite'),
+  )
+
+  await selectFirstLine()
+  await sparklePage.locator('.sparkle-input').fill('Ping')
+  await sparklePage.locator('.sparkle-input').press('Enter')
+  await sparklePage.waitForSelector('.sparkle-error', { timeout: 5000 })
+  check(
+    'agent stderr is shown without ANSI escapes',
+    (await sparklePage.locator('.sparkle-error').innerText()).trim() === 'Agent exploded',
+    await sparklePage.locator('.sparkle-error').innerText(),
+  )
+  await sparklePage.close()
+
+  // With no CLI agent the bar never appears, even for a selection.
+  const plainPage = await context.newPage()
+  await plainPage.route('**/api/agents', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"agents":[]}' }),
+  )
+  await plainPage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
+  await plainPage.waitForSelector('.file-row', { timeout: 10000 })
+  await plainPage.locator('.file-row', { hasText: 'welcome' }).click()
+  await plainPage.waitForSelector('.cm-content', { timeout: 10000 })
+  await plainPage.waitForTimeout(400)
+  await plainPage.locator('.cm-content').click()
+  await plainPage.keyboard.press('Control+Home')
+  await plainPage.keyboard.press('Shift+End')
+  await plainPage.waitForTimeout(700)
+  check(
+    'no CLI agent means no sparkle bar',
+    (await plainPage.locator('.sparkle-popover').count()) === 0,
+  )
+  await plainPage.close()
+
   // List markers stay visible in the live preview (feature-tour note).
   await page.keyboard.press('Control+p')
   await page.waitForSelector('.search-modal', { timeout: 5000 })

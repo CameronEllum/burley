@@ -10,6 +10,8 @@
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
 import { setFigureOpenHandler, type FigureItem } from './lib/figures'
 import { bugReportUrl, openExternal, REPO_URL } from './lib/project'
+import SelectionSparkle from './components/SelectionSparkle.svelte'
+import { cleanSuggestion, SPARKLE_PROMPTS, type SparkleAction } from './lib/sparkle'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
@@ -98,6 +100,36 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let talkError = $state('')
   let talkMessagesEl = $state<HTMLDivElement | null>(null)
   let talkAbort: AbortController | null = null
+  let sparkle = $state<{
+    text: string
+    from: number
+    to: number
+    anchor: { left: number; top: number; bottom: number }
+  } | null>(null)
+  let sparkleTimer: ReturnType<typeof setTimeout> | null = null
+  let sparkleAction = $state<SparkleAction | ''>('')
+  let sparkleQuestion = $state('')
+  let sparkleOutput = $state('')
+  let sparkleError = $state('')
+  let sparkleBusy = $state(false)
+  let sparkleAbort: AbortController | null = null
+  const sparkleAgent = $derived(talkAgent || agents[0]?.id || '')
+  const sparkleAgentName = $derived(agents.find((agent) => agent.id === sparkleAgent)?.name ?? '')
+  const sparklePlacement = $derived.by(() => {
+    if (!sparkle) return null
+    const width = Math.min(470, Math.max(300, window.innerWidth - 32))
+    const spaceAbove = sparkle.anchor.top - 16
+    const spaceBelow = window.innerHeight - sparkle.anchor.bottom - 16
+    const above = spaceAbove > spaceBelow && spaceAbove >= 160
+    const maxHeight = Math.max(160, Math.min(460, above ? spaceAbove : spaceBelow))
+    return {
+      width,
+      above,
+      maxHeight,
+      left: Math.min(window.innerWidth - width / 2 - 12, Math.max(width / 2 + 12, sparkle.anchor.left)),
+      top: above ? sparkle.anchor.top - 10 : sparkle.anchor.bottom + 10,
+    }
+  })
   let exportMenuOpen = $state(false)
   let exporting = $state(false)
   let favorites = $state<string[]>([])
@@ -107,7 +139,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let lightTheme = $state<LightPalette>(storedLightPalette())
   let darkTheme = $state<DarkPalette>(storedDarkPalette())
-  let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
+  let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null })
 
   let searchOpen = $state(false)
   let searchInitial = $state('')
@@ -333,6 +365,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       onChange: handleEditorChange,
       onSelectionChange: (info) => {
         cursor = info
+        scheduleSparkle(info)
       },
       onOpenPath: (path) => {
         void openFile(path)
@@ -389,6 +422,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
+      if (sparkleTimer) clearTimeout(sparkleTimer)
+      sparkleAbort?.abort()
       editor?.destroy()
       editor = null
     }
@@ -455,6 +490,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
+    closeSparkle()
     const decoded = decodeForEditor(data.content)
     currentPath = data.path
     format = decoded.format
@@ -469,7 +505,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     editor?.setDoc(data.path, decoded.text)
     setLuaDocument(data.path)
     editor?.setReadOnly(readOnly)
-    cursor = { line: 1, column: 1, selectedChars: 0 }
+    cursor = { line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null }
     rememberRecent(data.path)
     if (line) {
       setTimeout(() => editor?.scrollToLine(line), 0)
@@ -1028,6 +1064,152 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (element) element.scrollTop = element.scrollHeight
   })
 
+  // ------------------------------------------------------- selection sparkle bar
+
+  const sparkleEnabled = $derived(agents.length > 0)
+
+  function scheduleSparkle(info: SelectionInfo) {
+    if (sparkleTimer) {
+      clearTimeout(sparkleTimer)
+      sparkleTimer = null
+    }
+    if (!sparkleEnabled || !info.anchor || info.selectedChars === 0) {
+      if (sparkle) closeSparkle()
+      return
+    }
+    // Give a drag-selection time to settle before showing the bar.
+    sparkleTimer = setTimeout(() => {
+      sparkleTimer = null
+      if (!sparkleEnabled || !info.anchor) return
+      const text = editor?.getSelection() ?? ''
+      if (!text.trim()) return
+      if (sparkle && sparkle.text !== text) resetSparkle()
+      sparkle = { text, from: info.from, to: info.to, anchor: info.anchor }
+    }, 180)
+  }
+
+  async function runSparkle(action: SparkleAction, question?: string) {
+    if (!sparkle || sparkleBusy || !sparkleAgent) return
+    const prompt = action === 'ask' ? (question ?? '').trim() : SPARKLE_PROMPTS[action]
+    if (!prompt) return
+    sparkleAction = action
+    sparkleQuestion = action === 'ask' ? prompt : ''
+    sparkleOutput = ''
+    sparkleError = ''
+    sparkleBusy = true
+    const controller = new AbortController()
+    sparkleAbort = controller
+    try {
+      await streamAgentChat(
+        {
+          agent: sparkleAgent,
+          prompt,
+          path: currentPath,
+          mode: 'ask',
+          selection: sparkle.text,
+          history: [],
+        },
+        (event, data) => {
+          if (sparkleAbort !== controller) return
+          if (event === 'delta' && typeof data.text === 'string') {
+            sparkleOutput += data.text
+          } else if (event === 'error') {
+            sparkleError = data.message ?? 'Agent failed'
+          }
+        },
+        controller.signal,
+      )
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        sparkleError = err instanceof Error ? err.message : String(err)
+      }
+    } finally {
+      if (sparkleAbort === controller) sparkleAbort = null
+      sparkleBusy = false
+    }
+  }
+
+  function sparkleRangeValid(): boolean {
+    if (!sparkle) return false
+    return (editor?.getContent() ?? '').slice(sparkle.from, sparkle.to) === sparkle.text
+  }
+
+  function replaceSparkleSelection() {
+    if (!sparkle || !sparkleOutput || readOnly) return
+    const text = cleanSuggestion(sparkleOutput)
+    const { from, to } = sparkle
+    if (!sparkleRangeValid()) {
+      closeSparkle()
+      flash('The note changed — select the text again', true)
+      return
+    }
+    closeSparkle()
+    if (!text) return
+    editor?.replaceRange(from, to, text)
+    flash('Selection replaced')
+  }
+
+  function insertSparkle() {
+    if (!sparkle || !sparkleOutput || readOnly) return
+    const text = cleanSuggestion(sparkleOutput)
+    const at = sparkle.to
+    if (!sparkleRangeValid()) {
+      closeSparkle()
+      flash('The note changed — select the text again', true)
+      return
+    }
+    closeSparkle()
+    if (!text) return
+    editor?.insertTextAt(`\n\n${text}`, at)
+    flash('Inserted below the selection')
+  }
+
+  function copySparkle() {
+    if (!sparkleOutput) return
+    const text = cleanSuggestion(sparkleOutput)
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => flash('Copied the suggestion'))
+      .catch(() => flash('Could not copy to the clipboard', true))
+  }
+
+  function openSparkleInTalk() {
+    if (!sparkle) return
+    const question = sparkleQuestion
+    // Keep the editor selection alive so Talk picks it up as context.
+    talkOpen = true
+    talkMode = 'ask'
+    if (question) talkInput = question
+    closeSparkle()
+  }
+
+  function stopSparkle() {
+    sparkleAbort?.abort()
+    sparkleAbort = null
+    sparkleBusy = false
+  }
+
+  function resetSparkle() {
+    stopSparkle()
+    sparkleAction = ''
+    sparkleQuestion = ''
+    sparkleOutput = ''
+    sparkleError = ''
+  }
+
+  function closeSparkle() {
+    if (sparkleTimer) {
+      clearTimeout(sparkleTimer)
+      sparkleTimer = null
+    }
+    stopSparkle()
+    sparkle = null
+    sparkleAction = ''
+    sparkleQuestion = ''
+    sparkleOutput = ''
+    sparkleError = ''
+  }
+
   async function loadRecent() {
     try {
       const response = await api.recent()
@@ -1128,6 +1310,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function handleWindowPointerDown(event: PointerEvent) {
     const target = event.target as HTMLElement | null
     if (exportMenuOpen && !target?.closest('.export-wrap')) exportMenuOpen = false
+    if (sparkle && !target?.closest('.sparkle-popover')) closeSparkle()
     if (!contextMenu) return
     if (target?.closest('.context-menu')) return
     contextMenu = null
@@ -1336,6 +1519,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (event.key === 'Escape' && contextMenu) {
       event.preventDefault()
       contextMenu = null
+      return
+    }
+    if (event.key === 'Escape' && sparkle) {
+      event.preventDefault()
+      closeSparkle()
+      return
+    }
+    if (event.altKey && event.key === 'Enter' && sparkle) {
+      event.preventDefault()
+      openSparkleInTalk()
       return
     }
     if (event.key === 'Escape' && zenMode) {
@@ -2054,6 +2247,31 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     </button>
   </div>
 </dialog>
+
+{#if sparkle && sparklePlacement && sparkleEnabled}
+  <SelectionSparkle
+    left={sparklePlacement.left}
+    top={sparklePlacement.top}
+    above={sparklePlacement.above}
+    width={sparklePlacement.width}
+    maxHeight={sparklePlacement.maxHeight}
+    selection={sparkle.text}
+    agentName={sparkleAgentName}
+    busy={sparkleBusy}
+    action={sparkleAction}
+    output={sparkleOutput}
+    error={sparkleError}
+    canEdit={!readOnly}
+    onaction={runSparkle}
+    onreset={resetSparkle}
+    onreplace={replaceSparkleSelection}
+    oninsert={insertSparkle}
+    oncopy={copySparkle}
+    ontalk={openSparkleInTalk}
+    onstop={stopSparkle}
+    onclose={closeSparkle}
+  />
+{/if}
 
 {#if shortcutsOpen}
   <ShortcutsModal onclose={() => (shortcutsOpen = false)} />

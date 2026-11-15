@@ -10,6 +10,7 @@
         ['Ctrl Shift F', 'Palette in content-search mode (?)'],
         ['Ctrl Enter', 'Open highlighted file in a new tab'],
         ['Alt T', 'Toggle the Talk panel'],
+        ['Alt Enter', 'Send the selection to the Talk panel'],
         ['Ctrl ?', 'Show this shortcut sheet'],
         ['Ctrl Shift Z', 'Toggle Zen focus mode'],
       ],
@@ -19,6 +20,7 @@
       items: [
         ['Ctrl S', 'Save now (autosave is debounced)'],
         ['Escape', 'Close a dialog, or exit the element under the caret'],
+        ['Select text', 'AI actions in the sparkle bar (when an agent is installed)'],
         ['/', 'Slash commands: plotly, mermaid, math, table, callout, code, date, lua'],
         ['Ctrl B', 'Toggle the file tree'],
         ['Ctrl Shift R', 'Reload the file tree'],

@@ -49,6 +49,10 @@ export interface SelectionInfo {
   line: number
   column: number
   selectedChars: number
+  from: number
+  to: number
+  /** Viewport coordinates of the selection, for floating toolbars. */
+  anchor: { left: number; top: number; bottom: number } | null
 }
 
 export interface EditorOptions {
@@ -69,6 +73,7 @@ export interface EditorController {
   getSelection(): string
   insertText(text: string): void
   insertTextAt(text: string, pos: number): number
+  replaceRange(from: number, to: number, text: string): void
   replaceAll(content: string): void
   focus(): void
   scrollToLine(line: number, column?: number): void
@@ -259,6 +264,26 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     if (update.selectionSet || update.docChanged) {
       const head = update.state.selection.main.head
       const line = update.state.doc.lineAt(head)
+      const main = update.state.selection.main
+      let anchor: SelectionInfo['anchor'] = null
+      if (main.to > main.from) {
+        const start = update.view.coordsAtPos(main.from)
+        const end = update.view.coordsAtPos(main.to)
+        const headCoords = update.view.coordsAtPos(main.head)
+        if (start && end) {
+          anchor = {
+            left: Math.min(window.innerWidth - 24, Math.max(24, (start.left + end.right) / 2)),
+            top: Math.min(start.top, end.top),
+            bottom: Math.max(start.bottom, end.bottom),
+          }
+        } else if (headCoords) {
+          anchor = {
+            left: Math.min(window.innerWidth - 24, Math.max(24, headCoords.left)),
+            top: headCoords.top,
+            bottom: headCoords.bottom,
+          }
+        }
+      }
       opts.onSelectionChange({
         line: line.number,
         column: head - line.from + 1,
@@ -266,6 +291,9 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
           (sum, range) => sum + Math.max(0, range.to - range.from),
           0,
         ),
+        from: main.from,
+        to: main.to,
+        anchor,
       })
     }
   })
@@ -419,6 +447,17 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       })
       view.focus()
       return at + text.length
+    },
+
+    replaceRange(from: number, to: number, text: string) {
+      const start = Math.max(0, Math.min(from, view.state.doc.length))
+      const end = Math.max(start, Math.min(to, view.state.doc.length))
+      view.dispatch({
+        changes: { from: start, to: end, insert: text },
+        selection: { anchor: start + text.length },
+        scrollIntoView: true,
+      })
+      view.focus()
     },
 
     replaceAll(content: string) {

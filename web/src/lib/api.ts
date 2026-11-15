@@ -247,6 +247,13 @@ export const api = {
   },
 }
 
+/** CLI agents often emit ANSI colour codes in stderr; strip them for the UI. */
+const ANSI_PATTERN = /\u001b\[[0-9;?]*[ -/]*[@-~]/g
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_PATTERN, '')
+}
+
 /** Stream the agent SSE response, invoking onEvent for each event block. */
 export async function streamAgentChat(
   req: AgentChatRequest,
@@ -290,7 +297,12 @@ export async function streamAgentChat(
       }
       if (data) {
         try {
-          onEvent(event, JSON.parse(data))
+          const payload = JSON.parse(data)
+          if (payload && typeof payload === 'object') {
+            if (typeof payload.text === 'string') payload.text = stripAnsi(payload.text)
+            if (typeof payload.message === 'string') payload.message = stripAnsi(payload.message)
+          }
+          onEvent(event, payload)
         } catch {
           /* ignore malformed event */
         }
