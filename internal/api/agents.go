@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -32,6 +33,37 @@ func (s *server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agent.Detect()})
 }
 
+// handleAgentModels lists the models a CLI can serve and reports the pinned one.
+// Detection failures are returned in-band so the UI can fall back to manual input.
+func (s *server) handleAgentModels(w http.ResponseWriter, r *http.Request) {
+	id := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("agent")))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "agent is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	models, err := agent.Models(ctx, id, s.opts.Root)
+	if models == nil {
+		models = []string{}
+	}
+	pinned := ""
+	if settings, _, readErr := s.vault.ReadSettings(ctx); readErr == nil {
+		pinned = settings.AgentModels[id]
+	}
+	payload := map[string]any{
+		"agent":       id,
+		"models":      models,
+		"pinned":      pinned,
+		"unsupported": errors.Is(err, agent.ErrModelsUnsupported),
+	}
+	if err != nil {
+		payload["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
 // handleAgentChat runs a local CLI and streams its output over SSE.
 func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	var req chatRequest
@@ -53,6 +85,10 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "agent is not installed: "+req.Agent)
 		return
 	}
+	pinnedModel := ""
+	if settings, _, err := s.vault.ReadSettings(r.Context()); err == nil {
+		pinnedModel = settings.AgentModels[adapter.ID]
+	}
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
 	if mode != "edit" {
 		mode = "ask"
@@ -71,7 +107,7 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, adapter.Args(prompt)...)
+	cmd := exec.CommandContext(ctx, executable, adapter.Args(prompt, pinnedModel)...)
 	cmd.Dir = s.opts.Root
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -100,7 +136,7 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-	send("meta", map[string]any{"agent": adapter.ID, "mode": mode, "path": req.Path})
+	send("meta", map[string]any{"agent": adapter.ID, "mode": mode, "path": req.Path, "model": pinnedModel})
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)

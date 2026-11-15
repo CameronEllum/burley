@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AppSettings, ReleaseInfo } from '../lib/api'
+  import { api, type AgentInfo, type AgentModelsResponse, type AppSettings, type ReleaseInfo } from '../lib/api'
   import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
   import { bugReportUrl, featureRequestUrl } from '../lib/project'
 
@@ -7,6 +7,7 @@
     settings,
     onchange,
     onclose,
+    agents = [],
     version = '',
     repo = 'https://github.com/CameronEllum/burley',
     release = null,
@@ -16,6 +17,7 @@
     settings: AppSettings
     onchange: (patch: Partial<AppSettings>) => void
     onclose: () => void
+    agents?: AgentInfo[]
     version?: string
     repo?: string
     release?: ReleaseInfo | null
@@ -27,17 +29,84 @@
   const featureUrl = $derived(featureRequestUrl(repo))
   const releasesUrl = $derived(`${repo}/releases`)
 
-  let tab = $state<'behaviour' | 'appearance' | 'about'>(
-    localStorage.getItem('burley:settings-tab') === 'appearance'
-      ? 'appearance'
-      : localStorage.getItem('burley:settings-tab') === 'about'
-        ? 'about'
-        : 'behaviour',
+  type Tab = 'behaviour' | 'appearance' | 'agents' | 'about'
+
+  const storedTab = localStorage.getItem('burley:settings-tab')
+  let tab = $state<Tab>(
+    storedTab === 'appearance' || storedTab === 'agents' || storedTab === 'about'
+      ? storedTab
+      : 'behaviour',
   )
 
-  function switchTab(next: 'behaviour' | 'appearance' | 'about') {
+  function switchTab(next: Tab) {
     tab = next
     localStorage.setItem('burley:settings-tab', next)
+  }
+
+  let modelsByAgent = $state<Record<string, AgentModelsResponse>>({})
+  let loadingModels = $state<Record<string, boolean>>({})
+  let manualModels = $state<Record<string, string>>({})
+
+  async function loadModels(id: string, refresh = false) {
+    if (loadingModels[id]) return
+    if (!refresh && modelsByAgent[id]) return
+    loadingModels = { ...loadingModels, [id]: true }
+    try {
+      const response = await api.agentModels(id)
+      modelsByAgent = { ...modelsByAgent, [id]: response }
+    } catch (err) {
+      modelsByAgent = {
+        ...modelsByAgent,
+        [id]: {
+          agent: id,
+          models: [],
+          pinned: settings.agentModels[id] ?? '',
+          unsupported: true,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      }
+    } finally {
+      loadingModels = { ...loadingModels, [id]: false }
+    }
+  }
+
+  $effect(() => {
+    if (tab !== 'agents') return
+    for (const agent of agents) {
+      if (!modelsByAgent[agent.id] && !loadingModels[agent.id]) void loadModels(agent.id)
+    }
+  })
+
+  function pinModel(agentID: string, model: string) {
+    const next = { ...settings.agentModels }
+    if (model.trim()) next[agentID] = model.trim()
+    else delete next[agentID]
+    onchange({ agentModels: next })
+    manualModels = { ...manualModels, [agentID]: model }
+  }
+
+  function modelOptions(agentID: string, models: string[]): string[] {
+    const pinned = settings.agentModels[agentID]
+    if (pinned && !models.includes(pinned)) return [pinned, ...models]
+    return models
+  }
+
+  function modelGroups(models: string[]): Array<{ provider: string; models: string[] }> {
+    const groups = new Map<string, string[]>()
+    for (const model of models) {
+      const slash = model.indexOf('/')
+      const provider = slash > 0 ? model.slice(0, slash) : ''
+      const list = groups.get(provider)
+      if (list) list.push(model)
+      else groups.set(provider, [model])
+    }
+    return [...groups.entries()]
+      .map(([provider, list]) => ({ provider, models: list }))
+      .sort((a, b) => a.provider.localeCompare(b.provider))
+  }
+
+  function modelLabel(model: string, provider: string): string {
+    return provider ? model.slice(provider.length + 1) : model
   }
 
   const styles = [
@@ -75,6 +144,13 @@
         role="tab"
         aria-selected={tab === 'appearance'}
         onclick={() => switchTab('appearance')}>Appearance</button
+      >
+      <button
+        class="settings-tab"
+        class:active={tab === 'agents'}
+        role="tab"
+        aria-selected={tab === 'agents'}
+        onclick={() => switchTab('agents')}>Agents</button
       >
       <button
         class="settings-tab"
@@ -220,6 +296,104 @@
               </button>
             {/each}
           </div>
+        </section>
+      {:else if tab === 'agents'}
+        <section class="settings-section">
+          <h3>Model per CLI agent</h3>
+          <p class="settings-note">
+            The pin is used by Talk (<kbd>Alt T</kbd>) and the selection sparkle bar. Leave it on
+            <strong>Agent default</strong> to follow the CLI's own configuration.
+          </p>
+
+          {#if agents.length === 0}
+            <p class="settings-note">
+              No supported CLI agents were detected. Install <code>claude</code>, <code>codex</code>,
+              <code>gemini</code>, or <code>opencode</code> and reload.
+            </p>
+          {:else}
+            {#each agents as agent (agent.id)}
+              {@const info = modelsByAgent[agent.id]}
+              {@const pinned = settings.agentModels[agent.id] ?? ''}
+              <div class="agent-row">
+                <div class="agent-head">
+                  <strong>{agent.name}</strong>
+                  <code class="agent-path" title={agent.path}>{agent.path || agent.id}</code>
+                  <span class="grow"></span>
+                  <button
+                    class="agent-refresh"
+                    disabled={loadingModels[agent.id]}
+                    onclick={() => void loadModels(agent.id, true)}
+                  >
+                    {loadingModels[agent.id] ? 'Detecting…' : 'Refresh'}
+                  </button>
+                </div>
+
+                {#if info && info.models.length > 0}
+                  <div class="agent-controls">
+                    <select
+                      class="setting-select agent-model-select"
+                      aria-label={`Model for ${agent.name}`}
+                      value={pinned}
+                      onchange={(event) => pinModel(agent.id, event.currentTarget.value)}
+                    >
+                      <option value="">Agent default</option>
+                      {#each modelGroups(modelOptions(agent.id, info.models)) as group (group.provider)}
+                        <optgroup label={group.provider || 'Models'}>
+                          {#each group.models as model (model)}
+                            <option value={model} title={model}>{modelLabel(model, group.provider)}</option>
+                          {/each}
+                        </optgroup>
+                      {/each}
+                    </select>
+                    {#if pinned}
+                      <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
+                    {/if}
+                    <small class="agent-count">{info.models.length} models</small>
+                  </div>
+                {:else}
+                  <div class="agent-controls">
+                    <input
+                      class="agent-model-input"
+                      placeholder="provider/model (blank for default)"
+                      aria-label={`Model ID for ${agent.name}`}
+                      value={manualModels[agent.id] ?? pinned}
+                      oninput={(event) =>
+                        (manualModels = { ...manualModels, [agent.id]: event.currentTarget.value })}
+                      onkeydown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          pinModel(agent.id, event.currentTarget.value)
+                        }
+                      }}
+                    />
+                    <button
+                      class="agent-pin"
+                      onclick={() => pinModel(agent.id, manualModels[agent.id] ?? pinned)}
+                    >
+                      Pin
+                    </button>
+                    {#if pinned}
+                      <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
+                    {/if}
+                  </div>
+                  {#if loadingModels[agent.id]}
+                    <small class="agent-count">Detecting models…</small>
+                  {:else if info?.error}
+                    <small class="agent-count error">{info.error}</small>
+                  {:else if info?.unsupported}
+                    <small class="agent-count">
+                      This CLI cannot list models; type a model ID instead.
+                    </small>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          {/if}
+
+          <p class="settings-note agent-footnote">
+            Detection runs the CLI's own listing command (for OpenCode, <code>opencode models</code>)
+            inside this vault, so only models available here appear.
+          </p>
         </section>
       {:else}
         <section class="settings-section about-panel">
@@ -677,5 +851,121 @@
   }
   .grow {
     flex: 1;
+  }
+  .settings-note {
+    margin: 0 0 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .settings-note strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .settings-note kbd {
+    padding: 1px 4px;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    background: var(--bg-app);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+  .agent-row {
+    padding: 11px 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: var(--bg-app);
+  }
+  .agent-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .agent-head strong {
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .agent-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 250px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+  .agent-refresh,
+  .agent-clear,
+  .agent-pin {
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  .agent-refresh:hover,
+  .agent-clear:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .agent-refresh:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .agent-pin {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .agent-pin:hover {
+    background: var(--accent-strong);
+  }
+  .agent-controls {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 8px;
+  }
+  .agent-model-select {
+    flex: 1;
+    min-width: 0;
+    max-width: 340px;
+  }
+  .agent-model-input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: var(--bg-chrome);
+    color: var(--text-primary);
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 6px 9px;
+    outline: none;
+  }
+  .agent-model-input:focus {
+    border-color: var(--accent);
+  }
+  .agent-count {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .agent-count.error {
+    display: block;
+    margin-top: 7px;
+    color: var(--danger-fg);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .agent-footnote {
+    margin-top: 12px;
   }
 </style>

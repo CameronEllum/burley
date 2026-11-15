@@ -75,6 +75,61 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSettingsAgentModels(t *testing.T) {
+	v, dir := newTestVault(t)
+	ctx := context.Background()
+
+	settings := Settings{
+		Theme:       "system",
+		AgentModels: map[string]string{"opencode": "opencode-go/deepseek-v4.1-flash", "Claude": "sonnet"},
+	}
+	if err := v.WriteSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".burley", "settings.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `agent_model_opencode: "opencode-go/deepseek-v4.1-flash"`) {
+		t.Fatalf("unexpected yaml:\n%s", raw)
+	}
+
+	loaded, _, err := v.ReadSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AgentModels["opencode"] != "opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("opencode pin = %q", loaded.AgentModels["opencode"])
+	}
+	if loaded.AgentModels["claude"] != "sonnet" {
+		t.Fatalf("agent ids should be lowercased: %+v", loaded.AgentModels)
+	}
+
+	// Invalid pins are dropped instead of reaching the CLI.
+	bad := Settings{Theme: "system", AgentModels: map[string]string{
+		"opencode": "model with spaces",
+		"bad id":   "opencode-go/ok",
+		"":         "opencode-go/ok",
+	}}
+	if err := v.WriteSettings(ctx, bad); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, _ = v.ReadSettings(ctx)
+	if len(loaded.AgentModels) != 0 {
+		t.Fatalf("invalid pins kept: %+v", loaded.AgentModels)
+	}
+
+	// Hand-edited YAML is parsed the same way.
+	path := filepath.Join(dir, ".burley", "settings.yaml")
+	if err := os.WriteFile(path, []byte("theme: dark\nagent_model_opencode: 'opencode-go/deepseek-v4-pro'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, _ = v.ReadSettings(ctx)
+	if loaded.AgentModels["opencode"] != "opencode-go/deepseek-v4-pro" {
+		t.Fatalf("parsed pins = %+v", loaded.AgentModels)
+	}
+}
+
 func TestSettingsYAMLForms(t *testing.T) {
 	v, dir := newTestVault(t)
 	path := filepath.Join(dir, ".burley", "settings.yaml")

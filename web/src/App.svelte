@@ -78,6 +78,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let autoSave = $state(true)
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let spellCheck = $state(false)
+  let agentPins = $state<Record<string, string>>({})
   let rawMode = $state(false)
   let zenMode = $state(false)
   let scrollProgress = $state(0)
@@ -115,6 +116,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let sparkleAbort: AbortController | null = null
   const sparkleAgent = $derived(talkAgent || agents[0]?.id || '')
   const sparkleAgentName = $derived(agents.find((agent) => agent.id === sparkleAgent)?.name ?? '')
+  const sparkleModel = $derived(sparkleAgent ? (agentPins[sparkleAgent] ?? '') : '')
   const sparklePlacement = $derived.by(() => {
     if (!sparkle) return null
     const width = Math.min(470, Math.max(300, window.innerWidth - 32))
@@ -778,6 +780,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         autoSave,
         ctrlClickLink,
         spellCheck,
+        agentModels: agentPins,
       })
     } catch (err) {
       flash(`Could not save settings: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -822,6 +825,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       spellCheck = patch.spellCheck
       editor?.setSpellcheck(spellCheck)
     }
+    if (patch.agentModels !== undefined) {
+      agentPins = patch.agentModels
+    }
     void persistSettings()
   }
 
@@ -860,6 +866,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         autoSave = response.settings.autoSave
         ctrlClickLink = response.settings.ctrlClickLink
         spellCheck = response.settings.spellCheck
+        agentPins = response.settings.agentModels ?? {}
         applyTheme(themeMode, lightTheme, darkTheme)
         storeThemeMode(themeMode)
         storePalettes(lightTheme, darkTheme)
@@ -877,6 +884,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           autoSave,
           ctrlClickLink,
           spellCheck,
+          agentModels: agentPins,
         })
       }
     } catch (err) {
@@ -1594,6 +1602,12 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }, 2800)
   }
 
+  /** Short model label for chips (the provider prefix is implied by the agent). */
+  function shortModel(id: string): string {
+    if (!id) return ''
+    return id.split('/').pop() || id
+  }
+
   function isTypingTarget(target: EventTarget | null): boolean {
     const element = target as HTMLElement | null
     if (!element) return false
@@ -1993,6 +2007,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           {:else if agents.length === 1}
             <span class="talk-agent-name">{agents[0].name}</span>
           {/if}
+          {#if agentPins[talkAgent]}
+            <span class="talk-model" title={`Pinned model: ${agentPins[talkAgent]}`}>{shortModel(agentPins[talkAgent])}</span>
+          {/if}
           <span class="grow"></span>
           <button class="talk-icon" title="New chat" aria-label="New chat" onclick={newTalkChat}>+</button>
           <button class="talk-icon" title="Close Talk" aria-label="Close Talk" onclick={() => (talkOpen = false)}>×</button>
@@ -2257,6 +2274,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     maxHeight={sparklePlacement.maxHeight}
     selection={sparkle.text}
     agentName={sparkleAgentName}
+    model={sparkleModel}
     busy={sparkleBusy}
     action={sparkleAction}
     output={sparkleOutput}
@@ -2279,7 +2297,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, agentModels: agentPins }}
+    agents={agents}
     version={appVersion}
     repo={repoUrl}
     release={releaseInfo}
@@ -2713,6 +2732,20 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   .talk-agent-name {
     font-size: 11px;
     color: var(--text-muted);
+  }
+  .talk-model {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 7px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: var(--bg-app);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.01em;
   }
   .talk-icon {
     border: 0;

@@ -432,6 +432,30 @@ try {
       }),
     })
   })
+  // Model detection + pinning: the settings PUT is captured, not persisted.
+  let pinnedPayload = null
+  await sparklePage.route('**/api/agent/models**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agent: 'claude',
+        models: ['anthropic/claude-sonnet-5-5', 'anthropic/claude-opus-5-5'],
+        pinned: '',
+        unsupported: false,
+      }),
+    }),
+  )
+  await sparklePage.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    const body = JSON.parse(route.request().postData() ?? '{}')
+    pinnedPayload = body
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ settings: body, exists: true }),
+    })
+  })
   await sparklePage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
   await sparklePage.waitForSelector('.file-row', { timeout: 10000 })
   await sparklePage.locator('.file-row', { hasText: 'welcome' }).click()
@@ -507,6 +531,30 @@ try {
     'agent stderr is shown without ANSI escapes',
     (await sparklePage.locator('.sparkle-error').innerText()).trim() === 'Agent exploded',
     await sparklePage.locator('.sparkle-error').innerText(),
+  )
+
+  await sparklePage.locator('button[aria-label="Open settings"]').click()
+  await sparklePage.waitForSelector('.settings-modal', { timeout: 5000 })
+  await sparklePage.locator('.settings-tab', { hasText: 'Agents' }).click()
+  await sparklePage.waitForSelector('.agent-model-select', { timeout: 10000 })
+  check(
+    'agents tab lists the detected models',
+    (await sparklePage.locator('.agent-model-select option').count()) >= 3,
+  )
+  await sparklePage.locator('.agent-model-select').selectOption('anthropic/claude-opus-5-5')
+  await sparklePage.waitForTimeout(400)
+  check(
+    'pinning a model persists it in settings',
+    pinnedPayload?.agentModels?.claude === 'anthropic/claude-opus-5-5',
+    JSON.stringify(pinnedPayload?.agentModels ?? {}),
+  )
+  await sparklePage.locator('.settings-modal .secondary').click()
+  await sparklePage.waitForTimeout(250)
+  await selectFirstLine()
+  check(
+    'the sparkle bar shows the pinned model',
+    (await sparklePage.locator('.sparkle-model').innerText()).trim() === 'claude-opus-5-5',
+    await sparklePage.locator('.sparkle-model').innerText(),
   )
   await sparklePage.close()
 

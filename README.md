@@ -81,6 +81,12 @@ the compiled frontend, so deployment is a single executable.
 - **Talk (CLI agents):** detect `claude`, `codex`, `gemini`, or `opencode`, then
   chat in a right-side panel (Alt+T) in Ask/Edit mode with SSE streaming,
   Markdown/KaTeX replies, and insert-at-cursor code blocks.
+- **Per-agent model pinning:** **Settings → Agents** lists each detected CLI and
+  its models (OpenCode is enumerated with `opencode models`; the other CLIs take
+  a typed model ID). Pin one per agent or leave it on **Agent default** to follow
+  the CLI's own configuration. The pin applies to Talk and the selection sparkle
+  bar, shows as a chip in both headers, and is stored per vault in
+  `.burley/settings.yaml` (`agent_model_<id>`).
 - **Selection sparkle bar:** when a CLI agent is available, selecting text in the
   editor floats a small action bar above it: **Explain · Summarize · Shorten ·
   Rewrite**, plus a free-text **Ask**. Answers stream into the popover; Rewrite

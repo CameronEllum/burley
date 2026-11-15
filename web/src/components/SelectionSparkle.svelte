@@ -11,6 +11,7 @@
     maxHeight: number
     selection: string
     agentName: string
+    model: string
     busy: boolean
     action: SparkleAction | ''
     output: string
@@ -34,6 +35,7 @@
     maxHeight,
     selection,
     agentName,
+    model,
     busy,
     action,
     output,
@@ -72,6 +74,8 @@
 
   const diff = $derived(action === 'rewrite' && output ? wordDiff(selection, clean(output)) : [])
 
+  const modelLabel = $derived(model ? (model.split('/').pop() ?? model) : '')
+
   function submitQuestion(event: SubmitEvent) {
     event.preventDefault()
     const text = question.trim()
@@ -91,6 +95,9 @@
   <header class="sparkle-head">
     <span class="sparkle-glyph" aria-hidden="true">✦</span>
     <span class="sparkle-agent">{agentName || 'Agent'}</span>
+    {#if modelLabel}
+      <span class="sparkle-model" title={`Pinned model: ${model}`}>{modelLabel}</span>
+    {/if}
     <span class="sparkle-context">{selection.trim().split(/\s+/).length} words selected</span>
     <span class="sparkle-spacer"></span>
     <button class="sparkle-close" title="Close (Esc)" aria-label="Close" onclick={onclose}>×</button>
@@ -212,6 +219,18 @@
   .sparkle-agent {
     font-weight: 700;
     color: var(--text-primary);
+  }
+  .sparkle-model {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 1px 6px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 9px;
   }
   .sparkle-context {
     opacity: 0.8;

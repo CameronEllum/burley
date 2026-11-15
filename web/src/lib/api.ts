@@ -53,6 +53,8 @@ export interface AppSettings {
   autoSave: boolean
   ctrlClickLink: 'toggle' | 'open'
   spellCheck: boolean
+  /** Pinned CLI model per agent ID; missing means the agent's own default. */
+  agentModels: Record<string, string>
 }
 
 export interface AppMeta {
@@ -88,6 +90,15 @@ export interface AgentChatRequest {
   mode: 'ask' | 'edit'
   selection?: string
   history?: Array<{ role: 'user' | 'assistant'; content: string }>
+}
+
+/** Result of probing a CLI for its model catalog. */
+export interface AgentModelsResponse {
+  agent: string
+  models: string[]
+  pinned: string
+  unsupported: boolean
+  error?: string
 }
 
 export class ApiError extends Error {
@@ -197,6 +208,12 @@ export const api = {
 
   async agents(): Promise<{ agents: AgentInfo[] }> {
     return request<{ agents: AgentInfo[] }>('/api/agents')
+  },
+
+  async agentModels(agent: string, signal?: AbortSignal): Promise<AgentModelsResponse> {
+    return request<AgentModelsResponse>(`/api/agent/models?agent=${encodeURIComponent(agent)}`, {
+      signal,
+    })
   },
 
   async uploadAsset(notePath: string, file: File): Promise<{ path: string; ref: string; url: string; size: number }> {

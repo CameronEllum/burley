@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -21,6 +22,9 @@ type Settings struct {
 	AutoSave      bool   `json:"autoSave"`
 	CtrlClickLink string `json:"ctrlClickLink"` // toggle | open
 	SpellCheck    bool   `json:"spellCheck"`
+	// AgentModels pins a CLI model per agent ID (e.g. opencode). An empty or
+	// missing entry means "use the agent's own default".
+	AgentModels map[string]string `json:"agentModels"`
 }
 
 func defaultSettings() Settings {
@@ -33,6 +37,7 @@ func defaultSettings() Settings {
 		AutoSave:      true,
 		CtrlClickLink: "toggle",
 		SpellCheck:    false,
+		AgentModels:   map[string]string{},
 	}
 }
 
@@ -131,7 +136,44 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		AutoSave:      settings.AutoSave,
 		CtrlClickLink: ctrlClick,
 		SpellCheck:    settings.SpellCheck,
+		AgentModels:   normalizeAgentModels(settings.AgentModels),
 	}, nil
+}
+
+// normalizeAgentModels keeps only well-formed agent IDs and model references so
+// the CLI always receives a single, harmless argument.
+func normalizeAgentModels(models map[string]string) map[string]string {
+	clean := make(map[string]string, len(models))
+	for id, model := range models {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" || len(id) > 40 || !isAgentID(id) {
+			continue
+		}
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > 200 || !isModelID(model) {
+			continue
+		}
+		clean[id] = model
+	}
+	return clean
+}
+
+func isAgentID(id string) bool {
+	for _, r := range id {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func isModelID(model string) bool {
+	for _, r := range model {
+		if r <= ' ' || r > '~' || r == '"' || r == '\'' || r == '\\' || r == '`' {
+			return false
+		}
+	}
+	return true
 }
 
 func settingsYAML(settings Settings) string {
@@ -155,6 +197,20 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(yamlQuote(settings.CtrlClickLink))
 	b.WriteString("\nspell_check: ")
 	b.WriteString(boolYAML(settings.SpellCheck))
+	if len(settings.AgentModels) > 0 {
+		ids := make([]string, 0, len(settings.AgentModels))
+		for id := range settings.AgentModels {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		b.WriteString("\n# Pinned CLI models; delete a line to use the agent's own default.")
+		for _, id := range ids {
+			b.WriteString("\nagent_model_")
+			b.WriteString(id)
+			b.WriteString(": ")
+			b.WriteString(yamlQuote(settings.AgentModels[id]))
+		}
+	}
 	b.WriteByte('\n')
 	return b.String()
 }
@@ -171,7 +227,15 @@ func parseSettingsYAML(content string) Settings {
 			continue
 		}
 		parsed := parseYAMLScalar(value)
-		switch strings.ToLower(strings.TrimSpace(key)) {
+		lowerKey := strings.ToLower(strings.TrimSpace(key))
+		if strings.HasPrefix(lowerKey, "agent_model_") {
+			id := strings.TrimSpace(strings.TrimPrefix(lowerKey, "agent_model_"))
+			for name, model := range normalizeAgentModels(map[string]string{id: parsed}) {
+				settings.AgentModels[name] = model
+			}
+			continue
+		}
+		switch lowerKey {
 		case "theme":
 			theme := strings.ToLower(parsed)
 			if theme == "system" || theme == "light" || theme == "dark" {

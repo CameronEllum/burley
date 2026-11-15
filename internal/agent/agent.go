@@ -12,7 +12,11 @@ type Adapter struct {
 	ID      string
 	Name    string
 	Command string
-	Args    func(prompt string) []string
+	// Args builds the non-interactive invocation. model is empty when the user
+	// follows the CLI's own default.
+	Args func(prompt, model string) []string
+	// ModelsArgs is the subcommand that lists catalog models, when supported.
+	ModelsArgs []string
 }
 
 // Info is the API representation returned by GET /api/agents.
@@ -28,27 +32,50 @@ var adapters = []Adapter{
 		ID:      "claude",
 		Name:    "Claude Code",
 		Command: "claude",
-		Args: func(prompt string) []string {
-			return []string{"-p", prompt, "--output-format", "stream-json"}
+		Args: func(prompt, model string) []string {
+			args := []string{"-p", prompt, "--output-format", "stream-json"}
+			if model != "" {
+				args = append(args, "--model", model)
+			}
+			return args
 		},
 	},
 	{
 		ID:      "codex",
 		Name:    "Codex",
 		Command: "codex",
-		Args:    func(prompt string) []string { return []string{"exec", prompt} },
+		Args: func(prompt, model string) []string {
+			args := []string{"exec"}
+			if model != "" {
+				args = append(args, "-m", model)
+			}
+			return append(args, prompt)
+		},
 	},
 	{
 		ID:      "gemini",
 		Name:    "Gemini CLI",
 		Command: "gemini",
-		Args:    func(prompt string) []string { return []string{"-p", prompt} },
+		Args: func(prompt, model string) []string {
+			var args []string
+			if model != "" {
+				args = append(args, "-m", model)
+			}
+			return append(args, "-p", prompt)
+		},
 	},
 	{
 		ID:      "opencode",
 		Name:    "OpenCode",
 		Command: "opencode",
-		Args:    func(prompt string) []string { return []string{"run", prompt} },
+		Args: func(prompt, model string) []string {
+			args := []string{"run"}
+			if model != "" {
+				args = append(args, "--model", model)
+			}
+			return append(args, prompt)
+		},
+		ModelsArgs: []string{"models"},
 	},
 }
 
