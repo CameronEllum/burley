@@ -373,6 +373,16 @@ try {
     'lua-run cells show a Lua badge',
     (await page.locator('.cm-burley-lua-badge').first().innerText()).toLowerCase() === 'lua',
   )
+  const luaSourceFont = await page
+    .locator('.cm-burley-lua-source')
+    .first()
+    .evaluate((el) => getComputedStyle(el).fontFamily)
+  check('lua-run cells use a monospace face', luaSourceFont.toLowerCase().includes('mono'), luaSourceFont)
+  check(
+    'lua-run cells are syntax highlighted',
+    (await page.locator('.cm-burley-lua-source .hljs-keyword').count()) >= 1 &&
+      (await page.locator('.cm-burley-lua-source .hljs-string').count()) >= 1,
+  )
   const luaFileBefore = await getFile('notes/lua-cells.md')
   const runLuaCell = async (marker) => {
     for (let attempt = 0; attempt < 15; attempt++) {

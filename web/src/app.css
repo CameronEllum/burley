@@ -456,6 +456,30 @@ button {
 
 /* ------------------------------------------------------- Lua live cells */
 
+.cm-burley-lua-source {
+  background: var(--panel);
+  border-left: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.cm-burley-lua-source.cm-burley-lua-first {
+  border-top: 1px solid var(--border-soft);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  padding-top: 3px;
+}
+
+.cm-burley-lua-source.cm-burley-lua-last {
+  border-bottom: 1px solid var(--border-soft);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding-bottom: 3px;
+}
+
 .cm-burley-lua-run {
   display: inline-flex;
   align-items: center;
@@ -587,61 +611,61 @@ button {
 
 
 /* highlight.js token colors */
-.cm-burley-code .hljs-keyword,
-.cm-burley-code .hljs-selector-tag,
-.cm-burley-code .hljs-literal,
-.cm-burley-code .hljs-built_in,
-.cm-burley-code .hljs-type {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-keyword,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-selector-tag,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-literal,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-built_in,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-type {
   color: var(--syntax-keyword);
 }
-.cm-burley-code .hljs-string,
-.cm-burley-code .hljs-regexp,
-.cm-burley-code .hljs-char.escape_ {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-string,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-regexp,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-char.escape_ {
   color: var(--syntax-string);
 }
-.cm-burley-code .hljs-number {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-number {
   color: var(--syntax-number);
 }
-.cm-burley-code .hljs-comment,
-.cm-burley-code .hljs-quote,
-.cm-burley-code .hljs-doctag {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-comment,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-quote,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-doctag {
   color: var(--syntax-comment);
   font-style: italic;
 }
-.cm-burley-code .hljs-title,
-.cm-burley-code .hljs-title.function_,
-.cm-burley-code .hljs-section,
-.cm-burley-code .hljs-name {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-title,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-title.function_,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-section,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-name {
   color: var(--syntax-function);
 }
-.cm-burley-code .hljs-title.class_,
-.cm-burley-code .hljs-class {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-title.class_,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-class {
   color: var(--syntax-type);
 }
-.cm-burley-code .hljs-attr,
-.cm-burley-code .hljs-attribute,
-.cm-burley-code .hljs-property,
-.cm-burley-code .hljs-variable,
-.cm-burley-code .hljs-template-variable {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-attr,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-attribute,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-property,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-variable,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-template-variable {
   color: var(--syntax-property);
 }
-.cm-burley-code .hljs-meta,
-.cm-burley-code .hljs-symbol,
-.cm-burley-code .hljs-bullet {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-meta,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-symbol,
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-bullet {
   color: var(--text-muted);
 }
-.cm-burley-code .hljs-addition {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-addition {
   color: var(--ok-fg);
   background: var(--ok-bg);
 }
-.cm-burley-code .hljs-deletion {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-deletion {
   color: var(--danger-fg);
   background: var(--danger-bg);
 }
-.cm-burley-code .hljs-emphasis {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-emphasis {
   font-style: italic;
 }
-.cm-burley-code .hljs-strong {
+:is(.cm-burley-code, .cm-burley-lua-source) .hljs-strong {
   font-weight: 700;
 }
 

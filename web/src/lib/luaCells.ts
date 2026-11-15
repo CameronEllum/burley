@@ -10,6 +10,7 @@ import { StateEffect, StateField, type EditorState, type Extension, type Range }
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/common'
 import { renderMarkdown } from './markdown'
 import { getActiveView } from './viewRef'
 import type { LuaCellValue } from './lua/worker'
@@ -51,6 +52,46 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className
   if (text !== undefined) node.textContent = text
   return node
+}
+
+interface LuaToken {
+  from: number
+  to: number
+  cls: string
+}
+
+const tokenCache = new Map<string, LuaToken[]>()
+
+/** Tokenize Lua with highlight.js and flatten spans to document offsets. */
+function highlightLua(code: string): LuaToken[] {
+  const cached = tokenCache.get(code)
+  if (cached) return cached
+
+  const tokens: LuaToken[] = []
+  try {
+    const container = document.createElement('div')
+    container.innerHTML = hljs.highlight(code, { language: 'lua', ignoreIllegals: true }).value
+    let offset = 0
+    const walk = (node: Node, inherited: string) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent ?? ''
+        if (text.length > 0 && inherited) tokens.push({ from: offset, to: offset + text.length, cls: inherited })
+        offset += text.length
+        return
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return
+      const element = node as HTMLElement
+      const cls = element.className || inherited
+      for (const child of Array.from(element.childNodes)) walk(child, cls)
+    }
+    for (const child of Array.from(container.childNodes)) walk(child, '')
+  } catch {
+    return []
+  }
+
+  if (tokenCache.size > 64) tokenCache.clear()
+  tokenCache.set(code, tokens)
+  return tokens
 }
 
 class RunWidget extends WidgetType {
@@ -196,6 +237,30 @@ function build(state: EditorState, states: Map<string, LuaCellState>): Decoratio
       const code = codeNode ? state.doc.sliceString(codeNode.from, codeNode.to).replace(/\n$/, '') : ''
       const key = luaKey(code)
       const cell = states.get(key)
+
+      // Style the whole fence like a code block (monospace + syntax colors).
+      const startLine = state.doc.lineAt(node.from)
+      const endLine = state.doc.lineAt(node.to)
+      for (let n = startLine.number; n <= endLine.number; n++) {
+        const line = state.doc.line(n)
+        const classes = ['cm-burley-lua-source']
+        if (n === startLine.number) classes.push('cm-burley-lua-first')
+        if (n === endLine.number) classes.push('cm-burley-lua-last')
+        decorations.push(Decoration.line({ class: classes.join(' ') }).range(line.from))
+      }
+      if (codeNode) {
+        const raw = state.doc.sliceString(codeNode.from, codeNode.to)
+        for (const token of highlightLua(raw)) {
+          let from = codeNode.from + token.from
+          const to = codeNode.from + token.to
+          while (from < to) {
+            const line = state.doc.lineAt(from)
+            const end = Math.min(to, line.to)
+            if (end > from) decorations.push(Decoration.mark({ class: token.cls }).range(from, end))
+            from = line.to + 1
+          }
+        }
+      }
 
       decorations.push(
         Decoration.widget({ widget: new RunWidget(code, !!cell?.running), side: 1 }).range(info.to),

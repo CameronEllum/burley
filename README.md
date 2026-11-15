@@ -244,10 +244,12 @@ return { markdown = '**Total:** $' .. (1 + 2 + 3) .. '$' }
 ```
 ````
 
-Click **▶ Run** on the fence line. The first run compiles the bundled WASM VM
-(~1 s); later cells in the same note reuse its globals. Output stays in the
-panel — the `.md` file is never modified. Use **Restart Lua VM** in the `>` palette
-to drop globals and start fresh.
+Click **▶ Run** on the fence line. The cell body stays visible and is styled as
+Lua source — monospace, bordered, and syntax-highlighted — while outputs render
+in a panel beneath it. The first run compiles the bundled WASM VM (~1 s); later
+cells in the same note reuse its globals. Output stays in the panel — the `.md`
+file is never modified. Use **Restart Lua VM** in the `>` palette to drop globals
+and start fresh.
 
 Available inside a cell:
 
