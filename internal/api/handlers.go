@@ -81,6 +81,8 @@ type server struct {
 	releaseMu    sync.Mutex
 	releaseCache ReleaseInfo
 	releaseAt    time.Time
+
+	tree treeState
 }
 
 // ---------------------------------------------------------------- middleware
@@ -176,37 +178,6 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) handleTree(w http.ResponseWriter, r *http.Request) {
-	tree, err := s.vault.Tree(r.Context())
-	if err != nil {
-		vaultError(w, err)
-		return
-	}
-	type flatEntry struct {
-		Path    string `json:"path"`
-		Name    string `json:"name"`
-		ModTime int64  `json:"modTime"`
-		Size    int64  `json:"size"`
-	}
-	files := []flatEntry{}
-	var flatten func(entries []vault.Entry)
-	flatten = func(entries []vault.Entry) {
-		for _, e := range entries {
-			if e.IsDir {
-				flatten(e.Children)
-				continue
-			}
-			files = append(files, flatEntry{Path: e.Path, Name: e.Name, ModTime: e.ModTime, Size: e.Size})
-		}
-	}
-	flatten(tree)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"tree":  tree,
-		"files": files,
-		"root":  s.opts.Root,
-	})
-}
-
 func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	data, err := s.vault.Read(r.Context(), p)
@@ -242,6 +213,7 @@ func (s *server) handlePutFile(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
+	s.invalidateTree()
 	writeJSON(w, http.StatusOK, data)
 }
 
@@ -251,6 +223,7 @@ func (s *server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
+	s.invalidateTree()
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": p})
 }
 

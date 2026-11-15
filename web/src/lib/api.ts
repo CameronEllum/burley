@@ -22,6 +22,11 @@ export interface TreeResponse {
   tree: Entry[]
   files: FlatFile[]
   root: string
+  /** True once the background scan has visited the whole vault. */
+  done: boolean
+  scanning?: boolean
+  scanned?: number
+  error?: string
 }
 
 export interface FileData {
@@ -127,8 +132,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async tree(signal?: AbortSignal): Promise<TreeResponse> {
-    return request<TreeResponse>('/api/tree', { signal })
+  async tree(signal?: AbortSignal, refresh = false): Promise<TreeResponse> {
+    return request<TreeResponse>(`/api/tree${refresh ? '?refresh=1' : ''}`, { signal })
   },
 
   async file(path: string, signal?: AbortSignal): Promise<FileData> {

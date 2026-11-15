@@ -330,6 +330,55 @@ try {
   await page.waitForTimeout(300)
   check('Files tab restores the tree', (await page.locator('.tree-root').count()) === 1)
 
+  // Progressive tree loading: first response is a partial batch, then the next
+  // poll completes it (large folders).
+  const progressPage = await context.newPage()
+  let progressCalls = 0
+  const partialTree = {
+    tree: [{ name: 'early.md', path: 'early.md', isDir: false, modTime: 0, size: 12 }],
+    files: [{ path: 'early.md', name: 'early.md', modTime: 0, size: 12 }],
+    root: 'demo-vault',
+    done: false,
+    scanning: true,
+    scanned: 1,
+  }
+  await progressPage.route('**/api/tree**', async (route) => {
+    progressCalls++
+    if (progressCalls === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(partialTree),
+      })
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const real = await (await fetch(`${BASE}/api/tree`)).json()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...real, done: true }),
+    })
+  })
+  await progressPage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
+  await progressPage.waitForSelector('.file-row', { timeout: 10000 })
+  check(
+    'the first tree batch renders before the scan finishes',
+    (await progressPage.locator('.file-row', { hasText: 'early' }).count()) === 1 &&
+      (await progressPage.locator('.tree-scanning').count()) === 1,
+  )
+  check(
+    'the tree completes on the next poll',
+    await waitFor(
+      async () =>
+        (await progressPage.locator('.tree-scanning').count()) === 0 &&
+        (await progressPage.locator('.file-row', { hasText: 'welcome' }).count()) >= 1,
+      10000,
+    ),
+  )
+  check('progressive loading polled more than once', progressCalls >= 2, `${progressCalls} requests`)
+  await progressPage.close()
+
   // List markers stay visible in the live preview (feature-tour note).
   await page.keyboard.press('Control+p')
   await page.waitForSelector('.search-modal', { timeout: 5000 })

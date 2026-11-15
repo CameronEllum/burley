@@ -53,6 +53,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let files = $state<FlatFile[]>([])
   let root = $state('')
   let loading = $state(true)
+  let treeComplete = $state(true)
   let loadError = $state('')
   let scopePath = $state<string | null>(null)
 
@@ -115,7 +116,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let restoreEditorFocus = false
   let recent = $state<string[]>([])
   let recentSaveTimer: ReturnType<typeof setTimeout> | null = null
-
   let conflictData = $state<FileData | null>(null)
   let conflictOpen = $state(false)
 
@@ -140,6 +140,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let saving = false
   let saveQueued = false
   let toastTimer: ReturnType<typeof setTimeout> | null = null
+  let treePollTimer: ReturnType<typeof setTimeout> | null = null
+  let treeRequestId = 0
 
   const words = $derived(countWords(content))
   const readMinutes = $derived(Math.max(1, Math.round(words / 220)))
@@ -213,7 +215,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       id: 'refresh-tree',
       label: 'Refresh file tree',
       keywords: 'reload files rescan',
-      run: () => void refreshTree(),
+      run: () => void refreshTree(true),
     },
     {
       id: 'toggle-wide',
@@ -383,6 +385,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       setFigureOpenHandler(null)
       scroller.removeEventListener('scroll', onScroll)
       if (scrollFrame) cancelAnimationFrame(scrollFrame)
+      if (treePollTimer) clearTimeout(treePollTimer)
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
@@ -416,23 +419,38 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
   }
 
-  async function refreshTree() {
-    loading = true
+  async function refreshTree(refresh = false, quiet = false) {
+    const requestId = ++treeRequestId
+    if (treePollTimer) {
+      clearTimeout(treePollTimer)
+      treePollTimer = null
+    }
+    if (!quiet) loading = true
     try {
-      const response = await api.tree()
+      const response = await api.tree(undefined, refresh)
+      if (requestId !== treeRequestId) return
       tree = response.tree
       files = response.files
       root = response.root
-      loadError = ''
+      treeComplete = response.done
+      loadError = response.error ?? ''
+      loading = false
       if (scopePath && !findFolder(tree, scopePath)) {
         scopePath = null
         localStorage.removeItem(SCOPE_KEY)
       }
+      if (!response.done) {
+        treePollTimer = setTimeout(() => {
+          treePollTimer = null
+          void refreshTree(false, true)
+        }, 1000)
+      }
     } catch (err) {
+      if (requestId !== treeRequestId) return
       loadError = err instanceof Error ? err.message : String(err)
       flash(loadError, true)
-    } finally {
       loading = false
+      treeComplete = true
     }
   }
 
@@ -1160,7 +1178,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     try {
       await api.save(fullPath, `# ${title}\n\n`, '')
       closeNewDocDialog()
-      await refreshTree()
+      await refreshTree(true)
       await openFile(fullPath)
       flash(`Created ${fullPath}`)
     } catch (err) {
@@ -1181,7 +1199,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       await api.deleteFile(path)
       closeDeleteDialog()
       if (favorites.includes(path)) await persistFavorites(favorites.filter((entry) => entry !== path))
-      await refreshTree()
+      await refreshTree(true)
       if (currentPath === path) clearCurrentFile()
       flash(`Deleted ${path}`)
     } catch (err) {
@@ -1337,7 +1355,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       toggleSidebar()
     } else if (key === 'r' && event.shiftKey) {
       event.preventDefault()
-      void refreshTree()
+      void refreshTree(true)
     }
   }
 
@@ -1597,7 +1615,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             class="icon-btn small"
             title="Reload folder (Ctrl+Shift+R)"
             aria-label="Reload folder"
-            onclick={() => void refreshTree()}
+            onclick={() => void refreshTree(true)}
           >
             <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M15.6 8.1A5.7 5.7 0 1 0 16 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /><path d="M15.9 4.4v3.9h-3.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
@@ -1662,6 +1680,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             <p class="tree-status">Loading…</p>
           {:else if loadError}
             <p class="tree-status error">{loadError}</p>
+          {:else if files.length === 0 && !treeComplete}
+            <p class="tree-status">Scanning…</p>
           {:else}
             <FileTree
               entries={treeEntries}
@@ -1678,7 +1698,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <div class="sidebar-foot">
           <span>{files.length} note{files.length === 1 ? '' : 's'}</span>
           <span class="grow"></span>
-          <span title="Autosave after 1.5s of inactivity">autosave on</span>
+          {#if !treeComplete}
+            <span class="tree-scanning" title="Scanning the folder for Markdown files…">scanning…</span>
+          {:else}
+            <span title="Autosave after 1.5s of inactivity">autosave on</span>
+          {/if}
         </div>
       {:else}
         <div class="outline-scroll">
@@ -1742,6 +1766,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             <p>
               {#if files.length}
                 Pick a note from the sidebar, or press <kbd>Ctrl P</kbd> to jump to one.
+              {:else if !treeComplete}
+                Scanning the folder for Markdown files…
               {:else}
                 No Markdown files were found in this folder. Start the server with <code>--root</code> pointing at your
                 notes.
@@ -1749,7 +1775,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             </p>
             <div class="empty-actions">
               <button class="primary" onclick={() => openSearch('')}>Open a note</button>
-              <button class="secondary" onclick={() => void refreshTree()}>Reload folder</button>
+              <button class="secondary" onclick={() => void refreshTree(true)}>Reload folder</button>
             </div>
             {#if root}<code class="root-path">{root}</code>{/if}
           </div>
@@ -3131,14 +3157,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   .tree-status.error {
     color: var(--danger-fg);
   }
+  .tree-scanning {
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
   .sidebar-foot {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 7px 12px;
     border-top: 1px solid var(--border-soft);
-    font-size: 10.5px;
-    color: var(--text-muted);
+    font-size: 10.5px;    color: var(--text-muted);
   }
 
   .statusbar {

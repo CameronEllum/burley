@@ -64,6 +64,9 @@ the compiled frontend, so deployment is a single executable.
   centered quick-open box (`Ctrl+P` / `F1`) opens a palette with favorites,
   recents, `@` heading jumps, `>` commands, and `?` full-text search. Recents are
   stored in `.burley/recent.yaml` and stale paths are filtered against the tree.
+  Large folders populate progressively: the tree paints each batch the server
+  has scanned and refreshes every second until the footer's `scanning…` badge
+  disappears.
 - **Links:** a plain click opens a link; **Ctrl/Cmd-click** reveals its Markdown
   source for editing.
 - **Status bar:** the full file path and last-modified time live at the bottom,

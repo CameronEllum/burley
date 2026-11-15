@@ -142,6 +142,63 @@ func (v *LocalVault) Tree(ctx context.Context) ([]Entry, error) {
 	return entries, nil
 }
 
+// ScanTree walks every visible folder and calls visit for each Markdown file.
+// The HTTP layer uses this to publish a progressively populated tree for large
+// vaults; directories are derived from the file paths.
+func (v *LocalVault) ScanTree(ctx context.Context, visit func(Entry) error) error {
+	return v.scanDir(ctx, v.root, "", visit)
+}
+
+func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, visit func(Entry) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dirents, err := os.ReadDir(dirAbs)
+	if err != nil {
+		return notFoundIfNeeded(err)
+	}
+
+	for _, de := range dirents {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		name := de.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		rel := name
+		if relDir != "" {
+			rel = relDir + "/" + name
+		}
+		if de.IsDir() {
+			if name == "node_modules" || name == "vendor" {
+				continue
+			}
+			if err := v.scanDir(ctx, filepath.Join(dirAbs, name), rel, visit); err != nil {
+				return err
+			}
+			continue
+		}
+		if !IsMarkdownPath(name) {
+			continue
+		}
+		info, err := de.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if err := visit(Entry{
+			Name:    name,
+			Path:    rel,
+			IsDir:   false,
+			ModTime: info.ModTime().UnixMilli(),
+			Size:    info.Size(),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string) ([]Entry, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
