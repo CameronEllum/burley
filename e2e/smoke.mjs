@@ -238,12 +238,17 @@ try {
   await page.waitForTimeout(300)
   const revealedMath = await page.locator('.cm-burley-math-inline').count()
   check('clicking inline math reveals its source', revealedMath < mathWidgetCount, `${mathWidgetCount} -> ${revealedMath}`)
+  check(
+    'editing math shows a live KaTeX preview bubble',
+    await waitFor(async () => (await page.locator('.cm-burley-math-tooltip .katex').count()) >= 1),
+  )
   await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
   check(
     'Escape exits inline math editing',
     (await page.locator('.cm-burley-math-inline').count()) > revealedMath,
   )
+  check('math preview bubble hides after leaving the expression', (await page.locator('.cm-burley-math-tooltip').count()) === 0)
   check('task checkboxes rendered', (await page.locator('.cm-burley-task input[type="checkbox"]').count()) >= 3)
   const headingDecoration = await page
     .locator('.cm-header-1')

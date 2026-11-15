@@ -765,6 +765,23 @@ button {
   font-size: 1.06em;
 }
 
+.cm-burley-math-tooltip {
+  padding: 7px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-chrome);
+  color: var(--text-primary);
+  box-shadow: 0 12px 32px -14px rgb(0 0 0 / 0.35);
+  max-width: min(70vw, 720px);
+  overflow-x: auto;
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.cm-burley-math-tooltip .katex-display {
+  margin: 0;
+}
+
 /* Library tables */
 .cm-table-widget {
   margin: 8px 0;

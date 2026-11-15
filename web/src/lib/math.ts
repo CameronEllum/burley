@@ -68,6 +68,60 @@ class MathWidget extends WidgetType {
   }
 }
 
+export interface MathAtCursor {
+  tex: string
+  display: boolean
+  from: number
+  to: number
+}
+
+/**
+ * Math expression containing `head`, if any. Used by the live preview tooltip
+ * because Burley's math is regex-parsed rather than a Lezer node.
+ */
+export function mathAt(state: EditorState, head: number): MathAtCursor | null {
+  const match = blockMathAt(state, head)
+  if (match) return match
+  return inlineMathAt(state, head)
+}
+
+function blockMathAt(state: EditorState, head: number): MathAtCursor | null {
+  let openLine = -1
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n)
+    if (line.text.trim() !== '$$') continue
+    if (openLine < 0) {
+      openLine = n
+      continue
+    }
+    const open = state.doc.line(openLine)
+    if (head >= open.from && head <= line.to) {
+      const bodyFrom = open.to + 1
+      const bodyTo = n - 1 >= openLine + 1 ? state.doc.line(n - 1).to : open.to
+      return { tex: state.doc.sliceString(bodyFrom, bodyTo), display: true, from: open.from, to: line.to }
+    }
+    openLine = -1
+  }
+  return null
+}
+
+function inlineMathAt(state: EditorState, head: number): MathAtCursor | null {
+  const line = state.doc.lineAt(head)
+  const search = (pattern: RegExp, display: boolean): MathAtCursor | null => {
+    pattern.lastIndex = 0
+    for (let m = pattern.exec(line.text); m; m = pattern.exec(line.text)) {
+      const from = line.from + m.index
+      const to = from + m[0].length
+      if (head < from || head > to) continue
+      if (isInCode(state, from, to)) return null
+      const tex = display ? (m[1] ?? '') : (m[1] ?? '')
+      return { tex: tex.trim(), display, from, to }
+    }
+    return null
+  }
+  return search(DISPLAY_INLINE, true) ?? search(INLINE, false)
+}
+
 function buildInlineDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = []
   const readOnly = state.facet(readOnlyFacet)

@@ -7,7 +7,7 @@
  *  - Burley's own math, image, link and fenced-block widget layers
  */
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { EditorView, drawSelection, dropCursor, keymap } from '@codemirror/view'
+import { EditorView, drawSelection, dropCursor, keymap, tooltips } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -26,6 +26,7 @@ import { filePathFacet, readOnlyFacet } from './cm'
 import { blockPluginField } from './blockPlugins'
 import { imagePreviewField } from './images'
 import { blockMathField, inlineMathPlugin } from './math'
+import { mathTooltipField } from './mathTooltip'
 import { linkPreviewField, setLinkOpenHandler } from './links'
 import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
@@ -172,6 +173,8 @@ function previewExtensions(): Extension[] {
     linkPreviewField,
     inlineMathPlugin,
     blockMathField,
+    mathTooltipField(),
+    tooltips({ position: 'absolute' }),
     taskCheckboxField,
     blockquoteStyler,
     listMarkerStyler,
