@@ -664,6 +664,39 @@ try {
 
   await putFavorites(originalFavorites)
 
+  // Right-click file menu + HTML dialog confirmation for Delete.
+  const welcomeRow = page.locator('.file-row', { hasText: 'welcome' }).first()
+  await welcomeRow.click({ button: 'right' })
+  await page.waitForSelector('.context-menu', { timeout: 3000 })
+  check('right-click opens the file menu', (await page.locator('.context-menu-item').innerText()).includes('Delete'))
+  await page.locator('.context-menu-item', { hasText: 'Delete' }).click()
+  await page.waitForSelector('.delete-dialog[open]', { timeout: 3000 })
+  check('delete uses an HTML dialog', (await page.locator('dialog.delete-dialog[open]').count()) === 1)
+  check('delete dialog names the file', (await page.locator('.delete-dialog').innerText()).includes('welcome.md'))
+  await page.screenshot({ path: path.join(here, 'screenshot-delete.png') })
+  await page.locator('.delete-dialog .secondary').click()
+  await page.waitForTimeout(300)
+  check('cancelling the dialog keeps the note', (await fetch(`${BASE}/api/file?path=welcome.md`)).ok)
+
+  await welcomeRow.click({ button: 'right' })
+  await page.waitForSelector('.context-menu', { timeout: 3000 })
+  await page.locator('.context-menu-item', { hasText: 'Delete' }).click()
+  await page.waitForSelector('.delete-dialog[open]', { timeout: 3000 })
+  await page.locator('.delete-dialog .danger').click()
+  await page.waitForTimeout(900)
+  check(
+    'confirmed delete removes the note from the tree',
+    (await page.locator('.file-row', { hasText: 'welcome' }).count()) === 0,
+  )
+  check('deleting the open note shows the empty state', (await page.locator('.empty-state').count()) === 1)
+  check(
+    'deleted note returns 404 from the API',
+    (await fetch(`${BASE}/api/file?path=welcome.md`)).status === 404,
+  )
+  await putFile('welcome.md', original.welcome.content, '')
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
 
   // Visual snapshot (light).
   await page.locator('.file-row', { hasText: 'welcome' }).click()

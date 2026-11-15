@@ -9,6 +9,7 @@
     filter,
     favorites,
     ontogglefavorite,
+    oncontext,
     onselect,
   }: {
     entries: Entry[]
@@ -16,6 +17,7 @@
     filter: string
     favorites: string[]
     ontogglefavorite: (path: string) => void
+    oncontext: (event: MouseEvent, path: string) => void
     onselect: (path: string) => void
   } = $props()
 
@@ -35,7 +37,7 @@
 {:else}
   <ul class="tree-root">
     {#each visible as entry (entry.path)}
-      <TreeItem {entry} {selectedPath} {filter} {favorites} {ontogglefavorite} {onselect} />
+      <TreeItem {entry} {selectedPath} {filter} {favorites} {ontogglefavorite} {oncontext} {onselect} />
     {/each}
   </ul>
 {/if}

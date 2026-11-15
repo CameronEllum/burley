@@ -256,8 +256,34 @@ func TestStaticServingAndSPAFallback(t *testing.T) {
 	}
 }
 
-func TestPutBodyValidation(t *testing.T) {
+func TestDeleteEndpoint(t *testing.T) {
 	h := newHarness(t)
+	h.write(t, "welcome.md", "# Welcome\n")
+	h.write(t, "notes/keep.txt", "text")
+
+	resp, data := h.do(t, "DELETE", "/api/file?path=welcome.md", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"deleted":"welcome.md"`) {
+		t.Fatalf("delete = %d %s", resp.StatusCode, data)
+	}
+	resp, _ = h.do(t, "GET", "/api/file?path=welcome.md", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("get deleted = %d, want 404", resp.StatusCode)
+	}
+	resp, data = h.do(t, "DELETE", "/api/file?path=welcome.md", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("delete missing = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "DELETE", "/api/file?path=notes/keep.txt", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete txt = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "DELETE", "/api/file?path=../escape.md", nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("delete traversal = %d %s", resp.StatusCode, data)
+	}
+}
+
+func TestPutBodyValidation(t *testing.T) {	h := newHarness(t)
 	resp, data := h.do(t, "PUT", "/api/file", map[string]any{"content": "x"})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("missing path = %d %s", resp.StatusCode, data)

@@ -179,8 +179,29 @@ func TestWriteAtomicConflictAndEOL(t *testing.T) {
 	}
 }
 
-func TestWritePreservesPermissions(t *testing.T) {
+func TestDelete(t *testing.T) {
 	v, dir := newTestVault(t)
+	writeFile(t, dir, "notes/delete-me.md", "# Bye\n")
+	writeFile(t, dir, "notes/keep.txt", "text")
+
+	if err := v.Delete(context.Background(), "notes/delete-me.md"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes", "delete-me.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("file still exists: %v", err)
+	}
+	if err := v.Delete(context.Background(), "notes/delete-me.md"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete = %v, want ErrNotFound", err)
+	}
+	if err := v.Delete(context.Background(), "notes/keep.txt"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("non-markdown delete = %v, want ErrInvalidPath", err)
+	}
+	if err := v.Delete(context.Background(), "../escape.md"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("traversal delete = %v, want ErrForbidden", err)
+	}
+}
+
+func TestWritePreservesPermissions(t *testing.T) {	v, dir := newTestVault(t)
 	p := filepath.Join(dir, "perm.md")
 	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)

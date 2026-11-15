@@ -343,6 +343,28 @@ func writeFileAtomic(abs string, data []byte, perm fs.FileMode) error {
 	return nil
 }
 
+// Delete permanently removes a Markdown file from the vault.
+func (v *LocalVault) Delete(ctx context.Context, relPath string) error {
+	abs, clean, err := v.resolve(relPath)
+	if err != nil {
+		return err
+	}
+	if !IsMarkdownPath(clean) {
+		return ErrInvalidPath
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return notFoundIfNeeded(err)
+	}
+	if info.IsDir() {
+		return ErrInvalidPath
+	}
+	return os.Remove(abs)
+}
+
 var assetTypes = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",

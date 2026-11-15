@@ -47,6 +47,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("GET /api/file", s.handleGetFile)
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
+	mux.HandleFunc("DELETE /api/file", s.handleDeleteFile)
 	mux.HandleFunc("GET /api/asset", s.handleAsset)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/favorites", s.handleGetFavorites)
@@ -226,8 +227,16 @@ func (s *server) handlePutFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, data)
 }
 
-func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
+	if err := s.vault.Delete(r.Context(), p); err != nil {
+		vaultError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": p})
+}
+
+func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {	p := r.URL.Query().Get("path")
 	b, mimeType, err := s.vault.ReadAsset(r.Context(), p)
 	if err != nil {
 		vaultError(w, err)

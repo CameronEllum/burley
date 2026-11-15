@@ -43,6 +43,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 12. **Favorites:** Star notes from the top bar or by hovering tree rows. Favorites appear in a collapsible section above the file tree, are filtered by the single **Filter notes…** box (which also filters the tree), and come first in an empty `Ctrl+P` query. They live in `.burley/favorites.yaml` in the vault root — YAML, vault-relative, display order preserved — and are exposed through `GET`/`PUT /api/favorites`. Missing files are shown dimmed with a remove button. A thin divider separates the pinned section from the folder tree.
 13. **Cross-device settings:** Theme (`system`/`light`/`dark`) and reading width (`wideMode`) are stored in `.burley/settings.yaml` and exposed via `GET`/`PUT /api/settings`. `localStorage` is still used for an instant first paint, then reconciled with the server.
 14. **Recents:** The last 10 opened files are stored most-recent-first in `.burley/recent.yaml` via `GET`/`PUT /api/recent`, powering the palette's recent group across devices.
+15. **Delete with confirmation:** Right-click a file in the left tree for a context menu with **Delete**. Deletion asks for confirmation in a native HTML `<dialog>`, permanently removes the note through `DELETE /api/file`, refreshes the tree, clears the editor if the open note was deleted, and removes it from favorites.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -163,6 +164,7 @@ type Vault interface {
 | `GET /api/tree` | Directory tree of `.md` files | `?refresh=1` (optional) | `200` JSON `[]Entry` (nested tree) + flat file list |
 | `GET /api/file` | Read a Markdown file | `?path=notes/todo.md` | `200` JSON `FileData` (`content`, `modTime`, `hash`) |
 | `PUT /api/file` | Save file with conflict check | JSON `{ path, content, expectedHash }` | `200` updated `FileData`, or `409 Conflict` with current server `FileData` |
+| `DELETE /api/file` | Permanently delete a Markdown note | `?path=notes/todo.md` | `200` JSON `{"deleted": path}` |
 | `GET /api/asset` | Serve images / JSON / CSV | `?path=notes/img/fig1.png` | `200` raw bytes with `Content-Type` |
 | `GET /api/search` | Content search via `rg` | `?q=eigenvalue` | `200` JSON `[]SearchMatch` (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read the YAML favorite list | none | `200` JSON `{"favorites":["a.md"]}` |
@@ -194,7 +196,7 @@ type Vault interface {
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
   - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
   - **Favorites section** above the tree: collapsible, drag-to-reorder, missing paths dimmed with a remove button. The single **Filter notes…** box filters favorites and the tree together; the section header hides when no favorite matches. A thin divider separates it from the folder tree. File rows show a hover star; the empty `Ctrl+P` list puts favorites first.
-  - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty).
+  - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty). Right-clicking a file opens a context menu with **Delete**, confirmed through a native `<dialog>`.
   - **Outline tab:** the open note's headings (H1–H6, indented by level, code fences excluded). Clicking an entry scrolls to that heading; the heading containing the cursor is highlighted.
 - **Main Pane (~75–80% width):** Full-height CodeMirror 6 editor with comfortable max-width reading measure (e.g. `820px` centered) and clean typography.
 - **Status Bar (bottom):** Vault path, line/column, word count, line-ending indicator (`LF`/`CRLF`), save errors, and a read-only indicator.
@@ -292,6 +294,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] The palette opens directly beneath the wide, centered quick-open box; the status bar shows the full path and modification time (not the top bar).
 - [ ] Recents are stored in `.burley/recent.yaml`, survive a reload, and feed the palette's recent group.
 - [ ] Ctrl/Cmd-click on a rendered link reveals its Markdown source; a plain click still opens it.
+- [ ] Right-clicking a file offers Delete, the confirmation is an HTML `<dialog>`, and cancel keeps the file.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

@@ -48,6 +48,7 @@ type Vault interface {
 	Tree(ctx context.Context) ([]Entry, error)
 	Read(ctx context.Context, relPath string) (FileData, error)
 	Write(ctx context.Context, relPath string, content []byte, expectedHash string) (FileData, error)
+	Delete(ctx context.Context, relPath string) error
 	ReadAsset(ctx context.Context, relPath string) ([]byte, string, error)
 	ReadFavorites(ctx context.Context) ([]string, error)
 	WriteFavorites(ctx context.Context, paths []string) error

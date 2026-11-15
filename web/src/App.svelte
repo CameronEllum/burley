@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
   import { api, ConflictError, type Entry, type FileData, type FlatFile } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
@@ -71,6 +71,9 @@
 
   let quitOpen = $state(false)
   let shuttingDown = $state(false)
+  let contextMenu = $state<{ x: number; y: number; path: string } | null>(null)
+  let pendingDelete = $state<string | null>(null)
+  let deleteDialogEl = $state<HTMLDialogElement | null>(null)
 
   let toast = $state('')
   let toastError = $state(false)
@@ -90,7 +93,7 @@
   })
   const modifiedLabel = $derived(
     modTime
-      ? new Date(modTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+      ? new Date(modTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
       : '',
   )
   const eolLabel = $derived(format.eol === '\r\n' ? 'CRLF' : 'LF')
@@ -583,6 +586,67 @@
     quitOpen = true
   }
 
+  function showContextMenu(event: MouseEvent, path: string) {
+    event.preventDefault()
+    const width = 180
+    const height = 48
+    contextMenu = {
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
+      path,
+    }
+  }
+
+  function handleWindowPointerDown(event: PointerEvent) {
+    if (!contextMenu) return
+    if ((event.target as HTMLElement | null)?.closest('.context-menu')) return
+    contextMenu = null
+  }
+
+  async function requestDelete() {
+    const path = contextMenu?.path
+    contextMenu = null
+    if (!path) return
+    pendingDelete = path
+    await tick()
+    deleteDialogEl?.showModal()
+  }
+
+  function closeDeleteDialog() {
+    deleteDialogEl?.close()
+    pendingDelete = null
+  }
+
+  async function confirmDelete() {
+    const path = pendingDelete
+    if (!path) return
+    try {
+      await api.deleteFile(path)
+      closeDeleteDialog()
+      if (favorites.includes(path)) await persistFavorites(favorites.filter((entry) => entry !== path))
+      await refreshTree()
+      if (currentPath === path) clearCurrentFile()
+      flash(`Deleted ${path}`)
+    } catch (err) {
+      flash(`Could not delete ${path}: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
+
+  function clearCurrentFile() {
+    currentPath = ''
+    content = ''
+    hash = ''
+    modTime = 0
+    dirty = false
+    saveError = ''
+    saveState = 'saved'
+    conflictData = null
+    conflictOpen = false
+    format = defaultFormat
+    editor?.setDoc('', '')
+    localStorage.removeItem(LAST_PATH_KEY)
+  }
+
   function cancelQuit() {
     quitOpen = false
   }
@@ -656,6 +720,11 @@
       quitOpen = false
       return
     }
+    if (event.key === 'Escape' && contextMenu) {
+      event.preventDefault()
+      contextMenu = null
+      return
+    }
     const mod = event.ctrlKey || event.metaKey
     if (!mod) return
     const key = event.key.toLowerCase()
@@ -704,7 +773,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onpointerdown={handleWindowPointerDown} />
 
 <div class="app-shell">
   <header class="topbar">
@@ -917,6 +986,7 @@
               filter={treeFilter}
               favorites={favorites}
               ontogglefavorite={(path) => toggleFavorite(path)}
+              oncontext={showContextMenu}
               onselect={(path) => void openFile(path)}
             />
           {/if}
@@ -1008,17 +1078,21 @@
   </main>
 
   <footer class="statusbar">
-    <span class="status-item status-file crumb-file" title={absolutePath || root}>
-      {absolutePath || root || '—'}
-    </span>
-    {#if modifiedLabel}
-      <span class="status-item status-modified">modified {modifiedLabel}</span>
-    {/if}
+    <div class="status-left">
+      <span class="status-item status-file crumb-file" title={absolutePath || root}>
+        {absolutePath || root || '—'}
+      </span>
+      {#if modifiedLabel}
+        <span class="status-item status-modified">modified {modifiedLabel}</span>
+      {/if}
+    </div>
     {#if saveError}<span class="status-item error">{saveError}</span>{/if}
-    <span class="status-item" title="Line endings preserved on save">{eolLabel}</span>
-    <span class="status-item">{words} words</span>
-    <span class="status-item">Ln {cursor.line}, Col {cursor.column}</span>
-    {#if readOnly}<span class="status-item lock">Read-only</span>{/if}
+    <div class="status-right">
+      <span class="status-item" title="Line endings preserved on save">{eolLabel}</span>
+      <span class="status-item">{words} words</span>
+      <span class="status-item">Ln {cursor.line}, Col {cursor.column}</span>
+      {#if readOnly}<span class="status-item lock">Read-only</span>{/if}
+    </div>
   </footer>
 </div>
 
@@ -1060,6 +1134,49 @@
 {#if toast}
   <div class="toast" class:error={toastError} role="status">{toast}</div>
 {/if}
+
+{#if contextMenu}
+  <div
+    class="context-menu"
+    style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px;`}
+    role="menu"
+    aria-label="File actions"
+  >
+    <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <span>Delete</span>
+    </button>
+  </div>
+{/if}
+
+<dialog
+  bind:this={deleteDialogEl}
+  class="delete-dialog"
+  aria-labelledby="delete-title"
+  oncancel={(event) => {
+    event.preventDefault()
+    closeDeleteDialog()
+  }}
+  onclick={(event) => {
+    if (event.target === event.currentTarget) closeDeleteDialog()
+  }}
+>
+  <div class="delete-head">
+    <span class="delete-icon" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="20" height="20"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </span>
+    <div>
+      <h2 id="delete-title">Delete note?</h2>
+      <p>
+        <code>{pendingDelete}</code> will be permanently deleted from this vault. This cannot be undone.
+      </p>
+    </div>
+  </div>
+  <div class="delete-actions">
+    <button class="secondary" onclick={closeDeleteDialog}>Cancel</button>
+    <button class="danger" onclick={() => void confirmDelete()}>Delete</button>
+  </div>
+</dialog>
 
 {#if quitOpen}
   <div class="modal-backdrop" role="presentation">
@@ -1805,17 +1922,32 @@
   .status-item {
     white-space: nowrap;
   }
-  .status-item.status-file {
+  .status-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
+  }
+  .status-file {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--text-primary);
   }
-  .status-item.status-modified {
+  .status-modified {
+    flex: 0 0 auto;
     font-size: 10.5px;
+  }
+  .status-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
     flex: 0 0 auto;
   }
   .status-item.error {
@@ -1849,6 +1981,95 @@
       opacity: 0;
       transform: translate(-50%, 6px);
     }
+  }
+
+  .context-menu {
+    position: fixed;
+    z-index: 180;
+    min-width: 168px;
+    padding: 4px;
+    background: var(--bg-app);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 14px 34px -12px rgb(0 0 0 / 0.35);
+  }
+  .context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .context-menu-item:hover {
+    background: var(--hover);
+  }
+  .context-menu-item.danger {
+    color: var(--danger-fg);
+  }
+  .context-menu-item.danger:hover {
+    background: var(--danger-bg);
+  }
+
+  .delete-dialog {
+    width: min(440px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.5);
+  }
+  .delete-dialog::backdrop {
+    background: rgba(26, 19, 12, 0.4);
+    backdrop-filter: blur(3px);
+  }
+  .delete-head {
+    display: flex;
+    gap: 12px;
+    padding: 20px 20px 8px;
+  }
+  .delete-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+  }
+  .delete-dialog h2 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 650;
+  }
+  .delete-dialog p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .delete-dialog code {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+    background: var(--panel);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--text-primary);
+  }
+  .delete-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 16px;
   }
 
   .quit-modal {

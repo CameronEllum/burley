@@ -89,8 +89,7 @@ export const api = {
     return request<FileData>(`/api/file?path=${encodeURIComponent(path)}`, { signal })
   },
 
-  async save(path: string, content: string, expectedHash: string, signal?: AbortSignal): Promise<FileData> {
-    const res = await fetch('/api/file', {
+  async save(path: string, content: string, expectedHash: string, signal?: AbortSignal): Promise<FileData> {    const res = await fetch('/api/file', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ path, content, expectedHash }),
@@ -111,6 +110,12 @@ export const api = {
       throw new ApiError(res.status, message)
     }
     return (await res.json()) as FileData
+  },
+
+  async deleteFile(path: string): Promise<{ deleted: string }> {
+    return request<{ deleted: string }>(`/api/file?path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    })
   },
 
   async search(query: string, signal?: AbortSignal): Promise<SearchMatch[]> {

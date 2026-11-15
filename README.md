@@ -37,6 +37,8 @@ the compiled frontend, so deployment is a single executable.
   source for editing.
 - **Status bar:** the full file path and last-modified time live at the bottom
   (the top bar stays uncluttered).
+- **Right-click delete:** a file tree context menu offers Delete, confirmed in a
+  native HTML dialog; the tree, editor, and favorites update immediately.
 - **Files | Outline tabs:** Typora-style tabs at the top of the left sidebar;
   the outline lists the note's headings (indented, code fences excluded) and
   clicking one jumps to it.
@@ -215,6 +217,7 @@ See [the todo list](./notes/todo.md).
 | `GET /api/tree` | Nested `tree` plus flat `files` list |
 | `GET /api/file?path=...` | File content, `modTime`, SHA-256 `hash` |
 | `PUT /api/file` | `{path, content, expectedHash}`; `409` returns the current file |
+| `DELETE /api/file` | Permanently delete a Markdown note (`?path=...`) |
 | `GET /api/asset?path=...` | Images / JSON / CSV and other whitelisted assets |
 | `GET /api/search?q=...` | Content search results (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read `.burley/favorites.yaml` |

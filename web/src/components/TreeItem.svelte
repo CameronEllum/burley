@@ -10,6 +10,7 @@
     filter,
     favorites,
     ontogglefavorite,
+    oncontext,
     onselect,
   }: {
     entry: Entry
@@ -17,6 +18,7 @@
     filter: string
     favorites: string[]
     ontogglefavorite: (path: string) => void
+    oncontext: (event: MouseEvent, path: string) => void
     onselect: (path: string) => void
   } = $props()
 
@@ -49,7 +51,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {favorites} {ontogglefavorite} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {favorites} {ontogglefavorite} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}
@@ -61,6 +63,10 @@
       class:active={entry.path === selectedPath}
       title={entry.path}
       onclick={() => onselect(entry.path)}
+      oncontextmenu={(event) => {
+        event.preventDefault()
+        oncontext(event, entry.path)
+      }}
     >
       <span class="file-dot" aria-hidden="true"></span>
       <span class="label">{stripMdExt(entry.name)}</span>
