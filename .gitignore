@@ -6,7 +6,7 @@ node_modules/
 
 # Playwright artifacts
 e2e/node_modules/
-e2e/debug.png
+e2e/debug*
 e2e/screenshot*.png
 e2e/test-results/
 

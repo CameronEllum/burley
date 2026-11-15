@@ -45,6 +45,8 @@ the compiled frontend, so deployment is a single executable.
 - **Read-only lock:** browse without a caret or accidental edits.
 - **Dark mode:** follows the OS preference by default; the top-bar toggle cycles
   system → light → dark and is remembered.
+- **Narrow/wide reading mode:** one click widens the editor to 1200 px with
+  tighter gutters (820 px when narrow); remembered between sessions.
 - **One-click Quit + port increment:** `POST /api/quit` gracefully stops the
   server. If the preferred port is busy, Burley tries the next 20 ports and then
   an OS-assigned port, logging the URL actually used.

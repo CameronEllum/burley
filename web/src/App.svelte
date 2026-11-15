@@ -23,6 +23,7 @@
   const SIDEBAR_KEY = 'burley:sidebar'
   const SIDEBAR_TAB_KEY = 'burley:sidebar-tab'
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
+  const WIDE_MODE_KEY = 'burley:wide-mode'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
 
@@ -46,6 +47,7 @@
   let sidebarOpen = $state(true)
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
+  let wideMode = $state(false)
   let treeFilter = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
@@ -106,6 +108,7 @@
     if (Number.isFinite(storedWidth) && storedWidth >= SIDEBAR_MIN) {
       sidebarWidth = clampSidebarWidth(storedWidth)
     }
+    wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
 
     applyTheme(themeMode)
     const unwatchTheme = watchSystemTheme(() => {
@@ -373,6 +376,11 @@
     setSidebarWidth(sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16))
   }
 
+  function toggleWideMode() {
+    wideMode = !wideMode
+    localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+  }
+
   function jumpToOutline(item: OutlineItem) {
     editor?.scrollToLine(item.line)
   }
@@ -526,6 +534,20 @@
           <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M15.8 12.4A6.4 6.4 0 0 1 7.6 4.2a6.4 6.4 0 1 0 8.2 8.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
         {/if}
       </button>
+      <button
+        class="icon-btn wide-btn"
+        class:on={wideMode}
+        title={wideMode ? 'Switch to narrow reading width' : 'Switch to wide reading width'}
+        aria-label="Toggle wide reading mode"
+        aria-pressed={wideMode}
+        onclick={toggleWideMode}
+      >
+        {#if wideMode}
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M8 12l-4 4M4 12v4h4M12 8l4-4M12 4h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        {:else}
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M12 8l4-4M12 4h4v4M8 12l-4 4M8 16H4v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        {/if}
+      </button>
       <button class="toggle-btn" class:on={readOnly} title="Toggle read-only mode" onclick={toggleReadOnly}>
         {#if readOnly}
           <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="5" y="9" width="10" height="7.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 9V6.9a2.6 2.6 0 0 1 5.2 0V9" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
@@ -654,7 +676,12 @@
 
 
     <section class="editor-pane">
-      <div class="editor-host" bind:this={editorHost}></div>
+      <div
+        class="editor-host"
+        class:wide={wideMode}
+        bind:this={editorHost}
+        style={`--editor-measure: ${wideMode ? '1200px' : '820px'}; --editor-gutter: ${wideMode ? '28px' : '48px'}`}
+      ></div>
 
       {#if !currentPath}
         <div class="empty-state">
@@ -964,6 +991,9 @@
   .editor-host {
     position: absolute;
     inset: 0;
+  }
+  .editor-host.wide {
+    background: var(--bg-app);
   }
   .loading-bar {
     position: absolute;

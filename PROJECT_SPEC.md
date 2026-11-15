@@ -37,6 +37,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
    - A **Quit** button (`POST /api/quit`) that gracefully stops the server and shows a "Burley has stopped" overlay.
    - **Automatic port increment:** if the preferred port is busy, try the next 20 ports, then an OS-assigned port; log the URL actually used.
 10. **Theme:** Follows the OS light/dark preference by default, with a top-bar **system → light → dark** toggle that overrides it.
+11. **Reading Width:** A top-bar narrow/wide toggle expands the editor measure from `820px` to `1200px` and tightens the gutters; the choice is persisted in `localStorage`.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -173,7 +174,7 @@ type Vault interface {
 ## 6. Frontend Design (Svelte + CodeMirror 6)
 
 ### 6.1 UI Layout
-- **Top Bar (compact):** Active file path, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
+- **Top Bar (compact):** Active file path, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), a **wide/narrow reading-width toggle**, **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
 - **Left Sidebar (~20–25% width, collapsible and resizable):**
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
   - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
@@ -249,7 +250,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 1. Add a **Read-Only** toggle in the top bar.
 2. Resolve relative image URLs (`![](...)`) to `/api/asset`.
 3. Add the **Quit** button + `POST /api/quit` graceful shutdown and the **port increment** fallback in `createListener`.
-4. Add the **theme switch** (system → light → dark) with OS preference as the default; verify both palettes.
+4. Add the **theme switch** (system → light → dark) with OS preference as the default, and the **narrow/wide reading-width** toggle; verify both palettes and widths.
 5. Cross-compile for EC2 Linux (`GOOS=linux GOARCH=amd64 go build -o burley ./cmd/server`).
 6. Copy binary to EC2, optionally configure a `systemd` user service running `burley --root /path/to/docs`, and connect via:
    ```bash
@@ -273,3 +274,4 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Starting a second instance on a busy port automatically moves to the next free port and logs the actual URL.
 - [ ] The Quit button stops the server (loopback-only `POST /api/quit`) and shows the shutdown overlay.
 - [ ] Light/dark theme follows the OS by default and the top-bar toggle overrides it.
+- [ ] The narrow/wide toggle expands the reading measure and the choice survives a reload.

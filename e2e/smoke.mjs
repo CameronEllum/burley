@@ -365,6 +365,32 @@ try {
     (await themeButton.getAttribute('aria-label'))?.includes('follow system'),
   )
 
+  // Narrow / wide reading width.
+  const contentEl = page.locator('.cm-content')
+  const narrowContentWidth = (await contentEl.boundingBox()).width
+  const wideButton = page.locator('button[aria-label="Toggle wide reading mode"]')
+  await wideButton.click()
+  await page.waitForTimeout(350)
+  const wideContentWidth = (await contentEl.boundingBox()).width
+  check(
+    'wide mode expands the reading measure',
+    wideContentWidth > narrowContentWidth + 120,
+    `${narrowContentWidth}px -> ${wideContentWidth}px`,
+  )
+  check(
+    'wide mode persists',
+    (await page.evaluate(() => localStorage.getItem('burley:wide-mode'))) === '1',
+  )
+  await page.screenshot({ path: path.join(here, 'screenshot-wide.png') })
+  await wideButton.click()
+  await page.waitForTimeout(350)
+  const backToNarrow = (await contentEl.boundingBox()).width
+  check(
+    'wide mode toggles back to narrow',
+    Math.abs(backToNarrow - narrowContentWidth) < 4,
+    `${backToNarrow}px`,
+  )
+
   // Visual snapshot (light).
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(2500)
