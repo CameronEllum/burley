@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Entry } from '../lib/api'
-  import { pathMatches } from '../lib/tree'
   import { stripMdExt } from '../lib/paths'
   import TreeItem from './TreeItem.svelte'
 
@@ -8,6 +7,7 @@
     entry,
     selectedPath,
     filter,
+    visiblePaths,
     favorites,
     ontogglefavorite,
     oncontext,
@@ -16,6 +16,7 @@
     entry: Entry
     selectedPath: string
     filter: string
+    visiblePaths: Set<string> | null
     favorites: string[]
     ontogglefavorite: (path: string) => void
     oncontext: (event: MouseEvent, path: string) => void
@@ -26,18 +27,18 @@
   const filtering = $derived(filter.trim().length > 0)
   const containsSelected = $derived(!!selectedPath && selectedPath.startsWith(entry.path + '/'))
   const isFavorite = $derived(favorites.includes(entry.path))
+  const visible = $derived(visiblePaths === null || visiblePaths.has(entry.path))
   $effect(() => {
     if (containsSelected) open = true
   })
   const expanded = $derived(open || filtering)
   const children = $derived(
-    filtering
-      ? (entry.children ?? []).filter((child) => pathMatches(child, filter.trim()))
-      : (entry.children ?? []),
+    (entry.children ?? []).filter((child) => visiblePaths === null || visiblePaths.has(child.path)),
   )
 </script>
 
-{#if entry.isDir}
+{#if visible}
+  {#if entry.isDir}
   <li class="dir">
     <button class="row dir-row" onclick={() => (open = !open)} aria-expanded={expanded}>
       <span class="chevron" class:open={expanded} aria-hidden="true">
@@ -51,7 +52,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {favorites} {ontogglefavorite} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {ontogglefavorite} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}
@@ -89,6 +90,7 @@
       </svg>
     </button>
   </li>
+  {/if}
 {/if}
 
 <style>

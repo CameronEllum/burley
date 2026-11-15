@@ -1423,16 +1423,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .search-trigger kbd {
-    flex: 0 0 auto;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    border: 1px solid var(--border-soft);
-    background: var(--panel);
-    color: var(--text-muted);
-  }
   @media (max-width: 1100px) {
     .search-trigger-label {
       display: none;

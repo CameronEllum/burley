@@ -157,6 +157,17 @@ try {
   await page.waitForTimeout(300)
   check('tree expands folders', (await page.locator('.file-row').count()) >= 2)
 
+  await page.locator('.tree-filter').fill('deep/analysis')
+  await page.waitForTimeout(300)
+  const pathFiltered = await page.locator('.file-row').allInnerTexts()
+  check(
+    'tree filter matches full note paths',
+    pathFiltered.length === 1 && pathFiltered[0].includes('analysis'),
+    pathFiltered.join(', '),
+  )
+  await page.locator('.tree-filter').fill('')
+  await page.waitForTimeout(200)
+
   // Open the welcome note from the sidebar.
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(800)

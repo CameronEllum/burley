@@ -1,6 +1,6 @@
 <script lang="ts">
+  import fuzzysort from 'fuzzysort'
   import type { Entry } from '../lib/api'
-  import { pathMatches } from '../lib/tree'
   import TreeItem from './TreeItem.svelte'
 
   let {
@@ -21,8 +21,35 @@
     onselect: (path: string) => void
   } = $props()
 
+  function flatten(entries: Entry[]): Entry[] {
+    const result: Entry[] = []
+    for (const entry of entries) {
+      if (entry.isDir) result.push(...flatten(entry.children ?? []))
+      else result.push(entry)
+    }
+    return result
+  }
+
+  // Match against the complete relative path, then keep every ancestor folder
+  // so nested notes remain visible in the tree.
+  const visiblePaths = $derived.by(() => {
+    const query = filter.trim()
+    if (!query) return null
+    const matches = fuzzysort.go(query, flatten(entries), {
+      key: 'path',
+      limit: 1000,
+      threshold: -100000,
+    })
+    const paths = new Set<string>()
+    for (const match of matches) {
+      const parts = match.obj.path.split('/')
+      for (let i = 1; i <= parts.length; i++) paths.add(parts.slice(0, i).join('/'))
+    }
+    return paths
+  })
+
   const visible = $derived(
-    filter.trim() ? entries.filter((entry) => pathMatches(entry, filter.trim())) : entries,
+    visiblePaths ? entries.filter((entry) => visiblePaths.has(entry.path)) : entries,
   )
 </script>
 
@@ -37,7 +64,16 @@
 {:else}
   <ul class="tree-root">
     {#each visible as entry (entry.path)}
-      <TreeItem {entry} {selectedPath} {filter} {favorites} {ontogglefavorite} {oncontext} {onselect} />
+      <TreeItem
+        {entry}
+        {selectedPath}
+        {filter}
+        {visiblePaths}
+        {favorites}
+        {ontogglefavorite}
+        {oncontext}
+        {onselect}
+      />
     {/each}
   </ul>
 {/if}
