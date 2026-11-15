@@ -127,6 +127,7 @@ const fakeOpenCodeSource = `package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -141,6 +142,10 @@ func main() {
 	if path := os.Getenv("FAKE_ARGS_FILE"); path != "" {
 		_ = os.WriteFile(path, []byte(strings.Join(args, "\x00")), 0o644)
 	}
+	stdin, _ := io.ReadAll(os.Stdin)
+	if path := os.Getenv("FAKE_STDIN_FILE"); path != "" {
+		_ = os.WriteFile(path, stdin, 0o644)
+	}
 	fmt.Println("fake opencode answer")
 }
 `
@@ -150,6 +155,8 @@ func TestAgentModelsAndPinnedModel(t *testing.T) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	argsFile := filepath.Join(t.TempDir(), "args.bin")
 	t.Setenv("FAKE_ARGS_FILE", argsFile)
+	stdinFile := filepath.Join(t.TempDir(), "stdin.txt")
+	t.Setenv("FAKE_STDIN_FILE", stdinFile)
 
 	root := t.TempDir()
 	v, err := vault.NewLocalVault(root)
@@ -185,7 +192,7 @@ func TestAgentModelsAndPinnedModel(t *testing.T) {
 		t.Fatalf("pinned = %q", listing.Pinned)
 	}
 
-	body := `{"agent":"opencode","prompt":"hi","path":"","mode":"ask"}`
+	body := `{"agent":"opencode","prompt":"hi","path":"","mode":"ask","selection":"chosen words"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/agent/chat", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -206,10 +213,20 @@ func TestAgentModelsAndPinnedModel(t *testing.T) {
 		t.Fatalf("agent args were not recorded: %v", err)
 	}
 	args := strings.Split(string(raw), "\x00")
-	if len(args) < 4 || args[0] != "run" || args[1] != "--model" || args[2] != "opencode-go/deepseek-v4-pro" {
+	if len(args) != 3 || args[0] != "run" || args[1] != "--model" || args[2] != "opencode-go/deepseek-v4-pro" {
 		t.Fatalf("agent args = %q", args)
 	}
-	if !strings.Contains(args[len(args)-1], "hi") {
-		t.Fatalf("prompt missing from args: %q", args)
+
+	// The prompt goes over stdin; this keeps multi-line prompts intact on
+	// Windows, where the npm .cmd shim would otherwise truncate them.
+	prompt, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("agent stdin was not recorded: %v", err)
+	}
+	if !strings.Contains(string(prompt), "User: hi") {
+		t.Fatalf("prompt missing from stdin:\n%s", prompt)
+	}
+	if !strings.Contains(string(prompt), "Selected text:") || !strings.Contains(string(prompt), "chosen words") {
+		t.Fatalf("context missing from stdin:\n%s", prompt)
 	}
 }

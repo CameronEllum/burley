@@ -15,6 +15,10 @@ type Adapter struct {
 	// Args builds the non-interactive invocation. model is empty when the user
 	// follows the CLI's own default.
 	Args func(prompt, model string) []string
+	// StdinPrompt sends the prompt over stdin instead of argv. npm-installed
+	// CLIs are .cmd shims on Windows, where cmd.exe truncates multi-line
+	// arguments at the first newline; stdin keeps the whole prompt intact.
+	StdinPrompt bool
 	// ModelsArgs is the subcommand that lists catalog models, when supported.
 	ModelsArgs []string
 }
@@ -73,9 +77,13 @@ var adapters = []Adapter{
 			if model != "" {
 				args = append(args, "--model", model)
 			}
-			return append(args, prompt)
+			if prompt != "" {
+				args = append(args, prompt)
+			}
+			return args
 		},
-		ModelsArgs: []string{"models"},
+		StdinPrompt: true,
+		ModelsArgs:  []string{"models"},
 	},
 }
 

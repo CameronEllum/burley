@@ -71,6 +71,18 @@ func TestAdapterArgsPinModel(t *testing.T) {
 	}
 }
 
+func TestOpenCodePromptsViaStdin(t *testing.T) {
+	adapter, _ := adapterByID("opencode")
+	if !adapter.StdinPrompt {
+		t.Fatal("opencode should send the prompt over stdin")
+	}
+	for _, other := range adapters {
+		if other.ID != "opencode" && other.StdinPrompt {
+			t.Fatalf("%s should pass the prompt in argv", other.ID)
+		}
+	}
+}
+
 func TestOnlyOpenCodeListsModels(t *testing.T) {
 	for _, adapter := range adapters {
 		if adapter.ID == "opencode" {

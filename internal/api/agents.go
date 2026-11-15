@@ -107,8 +107,15 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, adapter.Args(prompt, pinnedModel)...)
+	argsPrompt := prompt
+	if adapter.StdinPrompt {
+		argsPrompt = ""
+	}
+	cmd := exec.CommandContext(ctx, executable, adapter.Args(argsPrompt, pinnedModel)...)
 	cmd.Dir = s.opts.Root
+	if adapter.StdinPrompt {
+		cmd.Stdin = strings.NewReader(prompt)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "agent pipe: "+err.Error())
