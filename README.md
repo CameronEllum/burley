@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/CameronEllum/burley/actions/workflows/ci.yml/badge.svg)](https://github.com/CameronEllum/burley/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Built with DeepSeek](https://vibecoded.fyi/badges/flat/llms/deepseek.svg)](https://vibecoded.fyi/)
+[![Built with Gemini](https://vibecoded.fyi/badges/flat/llms/gemini.svg)](https://vibecoded.fyi/)
+[![Coded with OpenCode](https://vibecoded.fyi/badges/flat/agents/opencode.svg)](https://vibecoded.fyi/)
 
 A fast, folder-first Markdown viewer and live-preview editor for a plain folder of
 `.md` files — locally or on a remote host reached over an SSH tunnel.
