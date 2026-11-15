@@ -124,6 +124,34 @@ try {
   await page.waitForTimeout(300)
   check('Files tab restores the tree', (await page.locator('.tree-root').count()) === 1)
 
+  // List markers stay visible in the live preview (feature-tour note).
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.search-modal', { timeout: 5000 })
+  await page.locator('.search-input').fill('feature-tour')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(800)
+  check('feature tour opened', (await page.locator('.crumb-file').innerText()).includes('feature-tour'))
+  await page.locator('.sidebar-tab', { hasText: 'Outline' }).click()
+  await page.waitForTimeout(300)
+  await page.locator('.outline-item', { hasText: 'Lists' }).first().click()
+  await page.waitForTimeout(400)
+  await page.locator('.sidebar-tab', { hasText: 'Files' }).click()
+  await page.waitForTimeout(300)
+  const bullets = page.locator('.cm-burley-list-mark.bullet')
+  const ordered = page.locator('.cm-burley-list-mark.ordered')
+  check('unordered list bullets are visible', (await bullets.count()) >= 2, `${await bullets.count()} bullets`)
+  check('ordered list numbers are visible', (await ordered.count()) >= 1, `${await ordered.count()} numbers`)
+  const bulletGlyph = await bullets
+    .first()
+    .evaluate((el) => getComputedStyle(el, '::before').content)
+  check('bullet glyph rendered', /[•◦▪]/.test(bulletGlyph), bulletGlyph)
+  const orderedWidth = await ordered.first().evaluate((el) => el.getBoundingClientRect().width)
+  check('ordered marker has visible width', orderedWidth > 5, `${orderedWidth}px`)
+  await page.screenshot({ path: path.join(here, 'screenshot-lists.png') })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
   // CodeMirror virtualizes the viewport, so walk the note to exercise every
   // widget type (plotly, code block, image chart) as it scrolls into view.
   const scroller = page.locator('.cm-scroller')

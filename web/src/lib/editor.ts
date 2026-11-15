@@ -30,6 +30,7 @@ import { blockMathField, inlineMathPlugin } from './math'
 import { linkPreviewField, setLinkOpenHandler } from './links'
 import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
+import { listMarkerStyler } from './lists'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -162,6 +163,7 @@ function markdownExtensions(readOnly: boolean): Extension[] {
     blockMathField,
     taskCheckboxField,
     blockquoteStyler,
+    listMarkerStyler,
     readOnlySelectionGuard,
     readOnlyCompartment.of(readOnlyExtensions(readOnly)),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),

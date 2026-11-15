@@ -137,5 +137,5 @@ src: ./data/response-times.json
 
 - [x] Inline JSON spec renders
 - [x] Relative `src:` spec renders
-- [ ] Confirm charts resize with the pane
+- [x] Confirm charts resize with the pane
 - [ ] Confirm editing elsewhere does not redraw the charts

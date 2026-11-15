@@ -428,6 +428,52 @@ button {
   font-style: italic;
 }
 
+/* List markers: override the library's collapsed formatting marks. */
+.cm-burley-list-mark {
+  font-size: 1rem !important;
+  opacity: 1 !important;
+  color: var(--text-muted) !important;
+  font-family: var(--font-body) !important;
+  transition: none !important;
+}
+.cm-burley-list-mark.bullet {
+  position: relative;
+  display: inline-block;
+  width: 0.58em;
+  color: transparent !important;
+}
+.cm-burley-list-mark.bullet::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 1.05em;
+  line-height: inherit;
+}
+.cm-burley-list-mark.bullet.depth-2::before {
+  content: '◦';
+}
+.cm-burley-list-mark.bullet.depth-3::before {
+  content: '▪';
+  font-size: 0.82em;
+}
+.cm-burley-list-mark.ordered {
+  color: var(--text-muted) !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+/* The live-preview library nests the raw token in a collapsed span. */
+.cm-burley-list-mark .cm-formatting-block {
+  font-size: 1rem !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+  color: inherit !important;
+  font-family: inherit !important;
+}
+
 /* Read-only mode: hide the caret while browsing */
 .cm-burley-locked .cm-cursor {
   display: none;

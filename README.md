@@ -21,7 +21,8 @@ the compiled frontend, so deployment is a single executable.
 
 - **Obsidian-style live preview** (CodeMirror 6 + `codemirror-live-markdown`):
   headings, emphasis, links, blockquotes, GFM tables and task checkboxes render
-  inline; raw Markdown appears only when the cursor enters an element.
+  inline; raw Markdown appears only when the cursor enters an element. List
+  markers stay visible as bullets (•/◦/▪) and numbers instead of disappearing.
 - **Lossless saves:** the plain-text buffer is edited directly, files are written
   atomically (temp file + rename), and the original line endings (LF/CRLF), BOM
   and trailing newline are preserved.

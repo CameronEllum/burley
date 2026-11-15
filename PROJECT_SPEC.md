@@ -23,6 +23,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
    - Fast full-text content search across the folder (`Ctrl+Shift+F` / `Cmd+Shift+F`).
 4. **Live-Preview Markdown Rendering & Editing:**
    - Headings, emphasis, lists, task checkboxes, links, blockquotes, tables, and code blocks rendered inline.
+   - Bullets and ordered-list numbers stay visible while unfocused (nested bullets use •/◦/▪).
    - Optional one-click **Read-Only / Lock** mode (`EditorView.editable.of(false)`) to browse without revealing syntax on click.
 5. **Math / Equations:** Inline (`$...$`) and block (`$$...$$`) LaTeX math rendered with **KaTeX**.
 6. **Specialized Content Blocks (Plugins):** Extensible fenced code-block renderer starting with **`plotly`** (```` ```plotly ````), supporting inline JSON specs and relative data files (e.g., `src: ./data/results.json`).
@@ -265,6 +266,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] `Ctrl+P` fuzzy-opens files in `< 50 ms`.
 - [ ] Math (`$...$`, `$$...$$`) and ```` ```plotly ```` blocks render offline with zero external CDN requests.
 - [ ] Saving a file preserves original line endings and leaves untouched Markdown formatting unchanged.
+- [ ] Bullets and ordered-list numbers remain visible in live preview while the cursor is elsewhere.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.
