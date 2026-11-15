@@ -28,7 +28,11 @@ export const blockquoteStyler: Extension = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        syntaxTree(update.state) !== syntaxTree(update.startState)
+      ) {
         this.decorations = buildQuoteDecorations(update.state)
       }
     }

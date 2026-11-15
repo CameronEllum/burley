@@ -53,7 +53,12 @@ export const listMarkerStyler: Extension = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.selectionSet ||
+        syntaxTree(update.state) !== syntaxTree(update.startState)
+      ) {
         this.decorations = buildListDecorations(update.state)
       }
     }

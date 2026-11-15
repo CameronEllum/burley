@@ -9,7 +9,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -138,7 +138,7 @@ function buildLinkDecorations(state: EditorState): DecorationSet {
 export const linkPreviewField: StateField<DecorationSet> = StateField.define<DecorationSet>({
   create: buildLinkDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured) return buildLinkDecorations(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildLinkDecorations(tr.state)
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildLinkDecorations(tr.state)
     }

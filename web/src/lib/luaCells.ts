@@ -12,6 +12,7 @@ import { syntaxTree } from '@codemirror/language'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/common'
 import { renderMarkdown } from './markdown'
+import { previewGeometryChanged } from './cm'
 import { getActiveView } from './viewRef'
 import type { LuaCellValue } from './lua/worker'
 
@@ -279,7 +280,7 @@ const cellField = StateField.define<CellFieldValue>({
   create: (state) => ({ states: new Map(), decorations: build(state, new Map()) }),
   update(value, tr) {
     let states = value.states
-    let changed = tr.docChanged || tr.reconfigured
+    let changed = tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)
 
     for (const effect of tr.effects) {
       if (!effect.is(setLuaCellState)) continue

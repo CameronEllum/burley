@@ -13,7 +13,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { Table, TaskList } from '@lezer/markdown'
-import { bracketMatching, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { bracketMatching, forceParsing, HighlightStyle, syntaxHighlighting, syntaxTreeAvailable } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import {
   collapseOnSelectionFacet,
@@ -223,6 +223,33 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   let rawMode = false
   let zenFocus = false
   let spellcheck = false
+  let parseRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Large notes are parsed lazily; nudge the parser until the tree covers the
+   * document so tables, fenced blocks, links and math render everywhere (not
+   * just in the initially parsed viewport).
+   */
+  function refreshParsedPreview(target: EditorView): void {
+    if (parseRefreshTimer) {
+      clearTimeout(parseRefreshTimer)
+      parseRefreshTimer = null
+    }
+    let attempts = 0
+    const tick = () => {
+      parseRefreshTimer = null
+      if (!target.dom.isConnected) return
+      if (syntaxTreeAvailable(target.state, target.state.doc.length)) return
+      try {
+        const complete = forceParsing(target, target.state.doc.length, 40)
+        if (complete || attempts++ >= 150) return
+      } catch {
+        return
+      }
+      parseRefreshTimer = setTimeout(tick, 20)
+    }
+    parseRefreshTimer = setTimeout(tick, 0)
+  }
 
   const listener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
@@ -316,6 +343,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       view.setState(next)
       view.scrollDOM.scrollTop = 0
       view.scrollDOM.scrollLeft = 0
+      refreshParsedPreview(view)
     },
 
     setReadOnly(value: boolean) {
@@ -428,6 +456,10 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       document.removeEventListener('mouseup', onMouseUp)
       setLinkOpenHandler(null)
       setActiveView(null)
+      if (parseRefreshTimer) {
+        clearTimeout(parseRefreshTimer)
+        parseRefreshTimer = null
+      }
       view.destroy()
     },
   }

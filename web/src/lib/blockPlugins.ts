@@ -11,7 +11,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemir
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import hljs from 'highlight.js/lib/common'
-import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -294,7 +294,7 @@ export function blockPluginField(): Extension {
   return StateField.define<DecorationSet>({
     create: buildBlockDecorations,
     update(deco, tr) {
-      if (tr.docChanged || tr.reconfigured) return buildBlockDecorations(tr.state)
+      if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildBlockDecorations(tr.state)
       if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
         return buildBlockDecorations(tr.state)
       }

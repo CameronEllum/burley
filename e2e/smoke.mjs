@@ -719,6 +719,55 @@ try {
   check('relative image loaded', seen.image)
   check('GFM table rendered', seen.table)
 
+  // Regression (issue #1): large notes are parsed lazily, but widgets in the
+  // visible region and after scrolling must still render without a click.
+  const bigLines = [
+    '# Large render test',
+    '',
+    '| A | B |',
+    '| --- | --- |',
+    '| top | table |',
+    '',
+    '```go',
+    'fmt.Println("top")',
+    '```',
+    '',
+  ]
+  for (let i = 0; i < 2500; i++) {
+    bigLines.push(`Paragraph ${i} with a [link](https://example.com/${i}) and $x_${i} = ${i}$.`, '')
+    if (i % 250 === 0) bigLines.push('| A | B |', '| --- | --- |', `| n | ${i} |`, '')
+  }
+  bigLines.push('| A | B |', '| --- | --- |', '| end | table |')
+  await putFile('notes/render-large.md', bigLines.join('\n'), '')
+  await page.goto(`${BASE}/?file=notes%2Frender-large.md`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(3000)
+  check(
+    'large note renders its opening table without interaction',
+    (await page.locator('.cm-burley-table-widget').count()) >= 1,
+  )
+  check(
+    'large note renders its opening code block',
+    (await page.locator('.cm-burley-block[data-lang="go"]').count()) >= 1,
+  )
+  check('large note renders links', (await page.locator('.cm-burley-link').count()) >= 1)
+  check('large note renders inline math', (await page.locator('.cm-burley-math-inline').count()) >= 1)
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await page.waitForTimeout(1500)
+  check(
+    'large note renders widgets after scrolling',
+    (await page.locator('.cm-burley-table-widget').count()) >= 1,
+  )
+  await fetch(`${BASE}/api/file?path=notes%2Frender-large.md`, { method: 'DELETE' })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(800)
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await page.waitForTimeout(600)
+
   // Figure lightbox: browse images and charts in document order.
   await page.locator('.cm-burley-image').first().scrollIntoViewIfNeeded()
   await page.waitForTimeout(400)

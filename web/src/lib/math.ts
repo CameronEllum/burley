@@ -15,7 +15,7 @@
  */
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
-import { isInCode, readOnlyFacet, selectionTouches } from './cm'
+import { isInCode, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { getActiveView } from './viewRef'
 import katex from 'katex'
 
@@ -230,7 +230,7 @@ function buildBlockMath(state: EditorState): DecorationSet {
 export const blockMathField: Extension = StateField.define<DecorationSet>({
   create: buildBlockMath,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured) return buildBlockMath(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildBlockMath(tr.state)
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildBlockMath(tr.state)
     }

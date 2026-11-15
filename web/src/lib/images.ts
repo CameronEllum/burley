@@ -7,7 +7,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -152,7 +152,7 @@ function buildImageDecorations(state: EditorState): DecorationSet {
 export const imagePreviewField: StateField<DecorationSet> = StateField.define<DecorationSet>({
   create: buildImageDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured) return buildImageDecorations(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildImageDecorations(tr.state)
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildImageDecorations(tr.state)
     }

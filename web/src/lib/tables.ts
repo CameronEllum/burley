@@ -9,7 +9,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { readOnlyFacet } from './cm'
+import { previewGeometryChanged, readOnlyFacet } from './cm'
 import { getActiveView } from './viewRef'
 
 type Alignment = 'left' | 'center' | 'right' | null
@@ -391,7 +391,7 @@ export function tableEditorField(): Extension {
   return StateField.define<DecorationSet>({
     create: buildTableDecorations,
     update(deco, tr) {
-      if (tr.docChanged || tr.reconfigured) return buildTableDecorations(tr.state)
+      if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildTableDecorations(tr.state)
       return deco
     },
     provide: (field) => EditorView.decorations.from(field),
