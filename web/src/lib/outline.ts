@@ -67,10 +67,7 @@ export function buildOutline(markdown: string): OutlineItem[] {
     const atx = ATX.exec(line)
     if (atx) {
       const text = cleanHeadingText(atx[2])
-      if (text) {
-        const level = atx[1].length
-        items.push({ level, text, line: i + 1, id: `${i + 1}-${text}` })
-      }
+      if (text) pushItem(atx[1].length, text, i)
       continue
     }
 
@@ -80,8 +77,7 @@ export function buildOutline(markdown: string): OutlineItem[] {
       if (underline) {
         const text = cleanHeadingText(line)
         if (text) {
-          const level = underline[1].startsWith('=') ? 1 : 2
-          items.push({ level, text, line: i + 1, id: `${i + 1}-${text}` })
+          pushItem(underline[1].startsWith('=') ? 1 : 2, text, i)
           i++
           continue
         }

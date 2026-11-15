@@ -173,6 +173,10 @@ try {
   await page.locator('.cm-burley-link-internal').first().click()
   await page.waitForTimeout(700)
   check('plain click opens an internal link', (await page.locator('.status-file').innerText()).includes('todo.md'))
+  check(
+    'relative link updates the URL',
+    new URL(page.url()).searchParams.get('file') === 'notes/todo.md',
+  )
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(600)
 
@@ -202,6 +206,7 @@ try {
     targetLine > 0 && statusText.includes(`Ln ${targetLine},`),
     statusText.replace(/\s+/g, ' '),
   )
+  check('outline updates the URL hash', new URL(page.url()).hash === '#math')
   check(
     'outline highlights the current heading',
     await mathItem.evaluate((el) => el.classList.contains('active')),
@@ -663,6 +668,47 @@ try {
   check('missing favorite can be removed', (await page.locator('.favorite-item.missing').count()) === 0)
 
   await putFavorites(originalFavorites)
+
+  // Deep links + browser history.
+  const deepPage = await context.newPage()
+  const featurePath = 'notes/feature-tour.md'
+  await deepPage.goto(`${BASE}/?file=${encodeURIComponent(featurePath)}#lists`, {
+    waitUntil: 'networkidle',
+  })
+  await deepPage.waitForSelector('.cm-content', { timeout: 15000 })
+  await deepPage.waitForTimeout(900)
+  const deepStatus = await deepPage.locator('.status-file').innerText()
+  check('deep link opens the requested file', deepStatus.includes('feature-tour.md'), deepStatus)
+  const featureMarkdown = await fs.readFile(path.join(vault, featurePath), 'utf8')
+  const listsLine = featureMarkdown.split('\n').findIndex((line) => /^##\s+Lists\s*$/.test(line)) + 1
+  check(
+    'deep-link hash scrolls to the heading',
+    (await deepPage.locator('.statusbar').innerText()).includes(`Ln ${listsLine},`),
+  )
+  if ((await deepPage.locator('.file-row', { hasText: 'todo' }).count()) === 0) {
+    await deepPage.locator('.dir-row').first().click()
+    await deepPage.waitForTimeout(300)
+  }
+  await deepPage.locator('.file-row', { hasText: 'todo' }).click()
+  await deepPage.waitForTimeout(800)
+  check(
+    'opening a file pushes a history entry',
+    new URL(deepPage.url()).searchParams.get('file') === 'notes/todo.md',
+  )
+  await deepPage.goBack()
+  await deepPage.waitForTimeout(900)
+  check(
+    'browser Back restores the previous file',
+    (await deepPage.locator('.status-file').innerText()).includes('feature-tour.md'),
+  )
+  check('browser Back restores the heading hash', new URL(deepPage.url()).hash === '#lists')
+  await deepPage.goForward()
+  await deepPage.waitForTimeout(900)
+  check(
+    'browser Forward returns to the next file',
+    (await deepPage.locator('.status-file').innerText()).includes('todo.md'),
+  )
+  await deepPage.close()
 
   // Right-click file menu + HTML dialog confirmation for Delete.
   const welcomeRow = page.locator('.file-row', { hasText: 'welcome' }).first()

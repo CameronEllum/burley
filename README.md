@@ -39,6 +39,8 @@ the compiled frontend, so deployment is a single executable.
   (the top bar stays uncluttered).
 - **Right-click delete:** a file tree context menu offers Delete, confirmed in a
   native HTML dialog; the tree, editor, and favorites update immediately.
+- **Deep links & history:** the open file and heading live in the URL
+  (`?file=…#heading`), so notes are bookmarkable and Back/Forward work.
 - **Files | Outline tabs:** Typora-style tabs at the top of the left sidebar;
   the outline lists the note's headings (indented, code fences excluded) and
   clicking one jumps to it.

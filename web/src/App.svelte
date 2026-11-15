@@ -98,14 +98,15 @@
   )
   const eolLabel = $derived(format.eol === '\r\n' ? 'CRLF' : 'LF')
   const outline = $derived(buildOutline(content))
-  const activeHeadingLine = $derived.by(() => {
-    let line = 0
+  const activeHeading = $derived.by<OutlineItem | null>(() => {
+    let current: OutlineItem | null = null
     for (const item of outline) {
-      if (item.line <= cursor.line) line = item.line
+      if (item.line <= cursor.line) current = item
       else break
     }
-    return line
+    return current
   })
+  const activeHeadingLine = $derived(activeHeading?.line ?? 0)
   const fileByPath = $derived(new Map(files.map((file) => [file.path, file])))
   const favoriteItems = $derived.by(() =>
     favorites.map((path) => ({
@@ -124,6 +125,13 @@
   })
   const showFavorites = $derived(!treeFilter.trim() || filteredFavorites.length > 0)
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
+
+  $effect(() => {
+    const path = currentPath
+    const heading = activeHeading
+    if (!path) return
+    replaceUrl(path, heading?.slug ?? '')
+  })
   const paletteCommands = $derived<PaletteCommand[]>([
     {
       id: 'toggle-readonly',
@@ -211,12 +219,14 @@
       if (searchOpen) updatePaletteAnchor()
     }
     window.addEventListener('resize', onResize)
+    window.addEventListener('popstate', onPopState)
     void initialLoad()
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('keydown', paletteShortcut, true)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('popstate', onPopState)
       unwatchTheme()
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
@@ -229,12 +239,24 @@
   async function initialLoad() {
     await refreshTree()
     await Promise.all([loadFavorites(), loadSettings(), loadRecent()])
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get('file') ?? ''
+    const initialHash = window.location.hash.replace(/^#/, '')
     const stored = localStorage.getItem(LAST_PATH_KEY)
+    const exists = (path: string | null): path is string =>
+      !!path && files.some((file) => file.path === path)
     const target =
-      files.find((file) => file.path === stored)?.path ??
-      files.find((file) => !file.path.includes('/'))?.path ??
-      files[0]?.path
-    if (target) await openFile(target)
+      (exists(requested) && requested) ||
+      (exists(stored) && stored) ||
+      files.find((file) => !file.path.includes('/'))?.path ||
+      files[0]?.path ||
+      ''
+    if (target) {
+      await openFile(target, undefined, {
+        history: 'replace',
+        hash: target === requested ? initialHash : '',
+      })
+    }
   }
 
   async function refreshTree() {
@@ -253,7 +275,7 @@
     }
   }
 
-  function applyFile(data: FileData, line?: number) {
+  function applyFile(data: FileData, line?: number, headingSlug?: string) {
     const decoded = decodeForEditor(data.content)
     currentPath = data.path
     format = decoded.format
@@ -271,13 +293,55 @@
     rememberRecent(data.path)
     if (line) {
       setTimeout(() => editor?.scrollToLine(line), 0)
+    } else if (headingSlug) {
+      const heading = buildOutline(decoded.text).find((item) => item.slug === headingSlug)
+      if (heading) {
+        setTimeout(() => editor?.scrollToLine(heading.line), 0)
+      }
     }
   }
 
-  async function openFile(path: string, line?: number) {
+  function buildAppUrl(path: string, slug: string): string {
+    const url = new URL(window.location.href)
+    if (path) url.searchParams.set('file', path)
+    else url.searchParams.delete('file')
+    url.hash = slug ? `#${slug}` : ''
+    return url.toString()
+  }
+
+  function replaceUrl(path: string, slug: string) {
+    const next = buildAppUrl(path, slug)
+    if (next === window.location.href) return
+    window.history.replaceState({ file: path, slug }, '', next)
+  }
+
+  function scrollToHeadingSlug(slug: string) {
+    if (!slug) return
+    const heading = buildOutline(content).find((item) => item.slug === slug)
+    if (heading) editor?.scrollToLine(heading.line)
+  }
+
+  function onPopState() {
+    const params = new URLSearchParams(window.location.search)
+    const file = params.get('file') ?? ''
+    const slug = window.location.hash.replace(/^#/, '')
+    if (!file) return
+    if (file === currentPath) {
+      scrollToHeadingSlug(slug)
+      return
+    }
+    void openFile(file, undefined, { history: 'none', hash: slug })
+  }
+
+  async function openFile(
+    path: string,
+    line?: number,
+    options: { history?: 'push' | 'replace' | 'none'; hash?: string } = {},
+  ) {
     if (!path) return
     if (path === currentPath) {
       if (line) editor?.scrollToLine(line)
+      else if (options.hash) scrollToHeadingSlug(options.hash)
       return
     }
     if (dirty) {
@@ -290,8 +354,16 @@
     loadingFile = true
     try {
       const data = await api.file(path)
-      applyFile(data, line)
+      applyFile(data, line, options.hash)
       localStorage.setItem(LAST_PATH_KEY, path)
+      const mode = options.history ?? 'push'
+      if (mode !== 'none') {
+        const next = buildAppUrl(path, options.hash ?? '')
+        if (next !== window.location.href) {
+          const method = mode === 'push' ? 'pushState' : 'replaceState'
+          window.history[method]({ file: path, slug: options.hash ?? '' }, '', next)
+        }
+      }
     } catch (err) {
       flash(err instanceof Error ? err.message : String(err), true)
     } finally {
@@ -645,6 +717,7 @@
     format = defaultFormat
     editor?.setDoc('', '')
     localStorage.removeItem(LAST_PATH_KEY)
+    window.history.replaceState({}, '', buildAppUrl('', ''))
   }
 
   function cancelQuit() {

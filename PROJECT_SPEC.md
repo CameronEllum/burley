@@ -44,6 +44,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 13. **Cross-device settings:** Theme (`system`/`light`/`dark`) and reading width (`wideMode`) are stored in `.burley/settings.yaml` and exposed via `GET`/`PUT /api/settings`. `localStorage` is still used for an instant first paint, then reconciled with the server.
 14. **Recents:** The last 10 opened files are stored most-recent-first in `.burley/recent.yaml` via `GET`/`PUT /api/recent`, powering the palette's recent group across devices.
 15. **Delete with confirmation:** Right-click a file in the left tree for a context menu with **Delete**. Deletion asks for confirmation in a native HTML `<dialog>`, permanently removes the note through `DELETE /api/file`, refreshes the tree, clears the editor if the open note was deleted, and removes it from favorites.
+16. **URL deep links & history:** The open file and active heading are mirrored in the URL (`?file=notes/run1.md#loss-curve`). Opening a file pushes a history entry, the heading hash updates as the cursor moves, and Back/Forward restore both the file and heading. Deep links are bookmarkable and survive reloads.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -295,6 +296,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Recents are stored in `.burley/recent.yaml`, survive a reload, and feed the palette's recent group.
 - [ ] Ctrl/Cmd-click on a rendered link reveals its Markdown source; a plain click still opens it.
 - [ ] Right-clicking a file offers Delete, the confirmation is an HTML `<dialog>`, and cancel keeps the file.
+- [ ] Deep links (`?file=…#heading`) open the right file/heading; opening files pushes history and Back/Forward restore both.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

@@ -6,8 +6,7 @@ rendered at once, or click into any element to reveal its Markdown source.
 
 ## Text and emphasis
 
-Regular text with **bold**, *italic*, ***both at once***, ~~strikethrough~~,
-`inline code`, and a [link to Plotly charts](./plotly-charts.md).
+Regular text with **bold**, *italic*, ***both at once***, ~~strikethrough~~, `inline code`, and a [link to Plotly charts](./plotly-charts.md).
 
 A line ending with two spaces gets a hard break.  
 This line proves it.
@@ -80,8 +79,7 @@ export async function saveFile(path: string, content: string, expectedHash: stri
 
 ## Math
 
-Inline math works mid-sentence: the identity $e^{i\pi} + 1 = 0$ holds, and so
-does $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$.
+Inline math works mid-sentence: the identity $e^{i\pi} + 1 = 0$ holds, and so does $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$.
 
 A displayed derivation:
 
