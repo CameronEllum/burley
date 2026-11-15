@@ -14,6 +14,8 @@ const settingsName = "settings.yaml"
 // Settings are the cross-device UI preferences stored in .burley/settings.yaml.
 type Settings struct {
 	Theme         string `json:"theme"`         // system | light | dark
+	LightTheme    string `json:"lightTheme"`    // parchment | white
+	DarkTheme     string `json:"darkTheme"`     // ember | black
 	WideMode      bool   `json:"wideMode"`      // expanded reading measure
 	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
 	AutoSave      bool   `json:"autoSave"`
@@ -24,6 +26,8 @@ type Settings struct {
 func defaultSettings() Settings {
 	return Settings{
 		Theme:         "system",
+		LightTheme:    "parchment",
+		DarkTheme:     "ember",
 		WideMode:      false,
 		MarkdownStyle: "default",
 		AutoSave:      true,
@@ -98,8 +102,30 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		return Settings{}, ErrInvalidPath
 	}
 
+	lightTheme := strings.ToLower(strings.TrimSpace(settings.LightTheme))
+	if lightTheme == "" {
+		lightTheme = "parchment"
+	}
+	switch lightTheme {
+	case "parchment", "white":
+	default:
+		return Settings{}, ErrInvalidPath
+	}
+
+	darkTheme := strings.ToLower(strings.TrimSpace(settings.DarkTheme))
+	if darkTheme == "" {
+		darkTheme = "ember"
+	}
+	switch darkTheme {
+	case "ember", "black":
+	default:
+		return Settings{}, ErrInvalidPath
+	}
+
 	return Settings{
 		Theme:         theme,
+		LightTheme:    lightTheme,
+		DarkTheme:     darkTheme,
 		WideMode:      settings.WideMode,
 		MarkdownStyle: style,
 		AutoSave:      settings.AutoSave,
@@ -112,8 +138,13 @@ func settingsYAML(settings Settings) string {
 	var b strings.Builder
 	b.WriteString("# Burley settings — managed by the app, safe to edit by hand.\n")
 	b.WriteString("# theme: system | light | dark; markdown_style: default | github | academic | compact\n")
+	b.WriteString("# light_theme: parchment | white; dark_theme: ember | black\n")
 	b.WriteString("theme: ")
 	b.WriteString(yamlQuote(settings.Theme))
+	b.WriteString("\nlight_theme: ")
+	b.WriteString(yamlQuote(settings.LightTheme))
+	b.WriteString("\ndark_theme: ")
+	b.WriteString(yamlQuote(settings.DarkTheme))
 	b.WriteString("\nwide_mode: ")
 	b.WriteString(boolYAML(settings.WideMode))
 	b.WriteString("\nmarkdown_style: ")
@@ -149,6 +180,16 @@ func parseSettingsYAML(content string) Settings {
 		case "wide_mode", "wide":
 			if parsedBool, ok := parseYAMLBool(parsed); ok {
 				settings.WideMode = parsedBool
+			}
+		case "light_theme", "light_palette":
+			switch strings.ToLower(parsed) {
+			case "parchment", "white":
+				settings.LightTheme = strings.ToLower(parsed)
+			}
+		case "dark_theme", "dark_palette":
+			switch strings.ToLower(parsed) {
+			case "ember", "black":
+				settings.DarkTheme = strings.ToLower(parsed)
 			}
 		case "markdown_style", "style":
 			style := strings.ToLower(parsed)

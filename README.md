@@ -69,8 +69,9 @@ the compiled frontend, so deployment is a single executable.
 - **Status bar:** the full file path and last-modified time live at the bottom
   (the top bar stays uncluttered).
 - **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior,
-  spellcheck) and Appearance (theme, width, Markdown style: Default / GitHub /
-  Academic / Compact) tabs. Stored in `.burley/settings.yaml`.
+  spellcheck) and Appearance (mode, light theme, dark theme, width, Markdown
+  style: Default / GitHub / Academic / Compact) tabs. Stored in
+  `.burley/settings.yaml`.
 - **Raw mode:** `</>` toggles source view without losing cursor, scroll or undo;
   `Escape` exits the element under the caret.
 - **Talk (CLI agents):** detect `claude`, `codex`, `gemini`, or `opencode`, then
@@ -94,8 +95,15 @@ the compiled frontend, so deployment is a single executable.
 - **Relative assets:** `![](img/plot.png)` and chart data files resolve against
   the note's folder and are served through `/api/asset`.
 - **Read-only lock:** browse without a caret or accidental edits.
-- **Dark mode:** follows the OS preference by default; the top-bar toggle cycles
-  system → light → dark and is remembered.
+- **UI themes:** two light palettes (Parchment, White) and two dark
+  palettes (Ember, Black). Choose the light and dark theme in Settings →
+  Appearance; the top-bar sun / moon / monitor button cycles follow-system →
+  light → dark. Palettes are stored in `.burley/settings.yaml` and apply to the
+  chrome, sidebar, dialogs and editor surfaces (Markdown styles stay separate).
+- **Figure gallery & lightbox:** the `⤢` button on any image or Plotly chart
+  (or Alt-click an image, or a plain click in read-only mode) opens a full-screen
+  viewer with every figure in the note, `←`/`→` navigation, wheel zoom, drag to
+  pan and `0`/double-click to reset.
 - **Narrow/wide reading mode:** one click widens the editor to 1200 px with
   tighter gutters (820 px when narrow); remembered between sessions.
 - **Favorites with YAML storage:** star notes from the top bar or tree rows.
@@ -200,6 +208,10 @@ light/dark themes and the quit confirmation. Screenshots are written to `e2e/`.
 | `Ctrl+S` / `Cmd+S` | Save now (autosave runs 1.5 s after typing stops) |
 | `Ctrl+B` / `Cmd+B` | Toggle the file tree |
 | `Ctrl+Shift+R` | Reload the folder tree |
+| `Ctrl+Shift+Z` | Toggle Zen focus mode (`Esc` exits) |
+| `/` on a blank line | Slash commands for a block template |
+| `Alt+Click` an image | Open the figure viewer |
+| `←` / `→` in the viewer | Previous / next figure (`Esc` closes) |
 | `>Restart Lua VM` | Reset the sandboxed Lua VM from the `>` palette |
 | `Esc` | Close search / dialogs |
 

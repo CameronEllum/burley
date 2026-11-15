@@ -26,7 +26,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	v, dir := newTestVault(t)
 	ctx := context.Background()
 
-	if err := v.WriteSettings(ctx, Settings{Theme: "dark", WideMode: true}); err != nil {
+	if err := v.WriteSettings(ctx, Settings{Theme: "dark", LightTheme: "white", DarkTheme: "black", WideMode: true}); err != nil {
 		t.Fatalf("WriteSettings: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, ".burley", "settings.yaml"))
@@ -34,7 +34,10 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	if !strings.Contains(text, `theme: "dark"`) || !strings.Contains(text, "wide_mode: true") {
+	if !strings.Contains(text, `theme: "dark"`) ||
+		!strings.Contains(text, `light_theme: "white"`) ||
+		!strings.Contains(text, `dark_theme: "black"`) ||
+		!strings.Contains(text, "wide_mode: true") {
 		t.Fatalf("unexpected yaml:\n%s", text)
 	}
 
@@ -45,6 +48,9 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if settings.Theme != "dark" || !settings.WideMode {
 		t.Fatalf("settings = %+v", settings)
 	}
+	if settings.LightTheme != "white" || settings.DarkTheme != "black" {
+		t.Fatalf("palettes = %+v", settings)
+	}
 
 	// Empty theme falls back to system; explicit light is allowed.
 	if err := v.WriteSettings(ctx, Settings{Theme: "", WideMode: false}); err != nil {
@@ -54,9 +60,18 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if settings.Theme != "system" || settings.WideMode {
 		t.Fatalf("empty theme = %+v", settings)
 	}
+	if settings.LightTheme != "parchment" || settings.DarkTheme != "ember" {
+		t.Fatalf("default palettes = %+v", settings)
+	}
 
 	if err := v.WriteSettings(ctx, Settings{Theme: "neon"}); err == nil {
 		t.Fatal("invalid theme accepted")
+	}
+	if err := v.WriteSettings(ctx, Settings{LightTheme: "sepia"}); err == nil {
+		t.Fatal("invalid light theme accepted")
+	}
+	if err := v.WriteSettings(ctx, Settings{DarkTheme: "midnight"}); err == nil {
+		t.Fatal("invalid dark theme accepted")
 	}
 }
 
@@ -66,7 +81,7 @@ func TestSettingsYAMLForms(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "# hand edited\ntheme: 'Light'\nwide_mode: yes\nunknown: value\n"
+	content := "# hand edited\ntheme: 'Light'\nlight_theme: 'White'\ndark_theme: 'Black'\nwide_mode: yes\nunknown: value\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -77,5 +92,8 @@ func TestSettingsYAMLForms(t *testing.T) {
 	}
 	if settings.Theme != "light" || !settings.WideMode {
 		t.Fatalf("settings = %+v", settings)
+	}
+	if settings.LightTheme != "white" || settings.DarkTheme != "black" {
+		t.Fatalf("palettes = %+v", settings)
 	}
 }

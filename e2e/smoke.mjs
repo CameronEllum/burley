@@ -673,6 +673,84 @@ try {
   check('relative image loaded', seen.image)
   check('GFM table rendered', seen.table)
 
+  // Figure lightbox: browse images and charts in document order.
+  await page.locator('.cm-burley-image').first().scrollIntoViewIfNeeded()
+  await page.waitForTimeout(400)
+  await page.locator('.cm-burley-image').first().hover()
+  await page.locator('.cm-burley-image-expand').first().click()
+  check('image expand button opens the lightbox', await waitFor(async () => (await page.locator('.lightbox-backdrop').count()) === 1))
+  check(
+    'lightbox opens at the clicked figure',
+    (await page.locator('.lightbox-count').innerText()).trim() === '3 / 3',
+    await page.locator('.lightbox-count').innerText(),
+  )
+  check(
+    'lightbox shows the full image',
+    (await page.locator('.lightbox-image').getAttribute('src'))?.includes('banner.png'),
+  )
+  await page.locator('.lightbox-stage').hover()
+  await page.mouse.wheel(0, -400)
+  await page.waitForTimeout(300)
+  const zoomTransform = await page.locator('.lightbox-image').evaluate((el) => getComputedStyle(el).transform)
+  const zoomMatch = /matrix\(([\d.]+)/.exec(zoomTransform)
+  check('mouse wheel zooms the image', !!zoomMatch && Number(zoomMatch[1]) > 1, zoomTransform)
+  await page.keyboard.press('0')
+  await page.waitForTimeout(250)
+  const resetTransform = await page.locator('.lightbox-image').evaluate((el) => getComputedStyle(el).transform)
+  check('0 resets the zoom', resetTransform === 'none' || resetTransform.startsWith('matrix(1, 0, 0, 1'), resetTransform)
+  await page.keyboard.press('ArrowLeft')
+  await page.waitForTimeout(300)
+  check(
+    'left arrow steps to the previous figure',
+    (await page.locator('.lightbox-count').innerText()).trim() === '2 / 3',
+  )
+  check(
+    'lightbox re-renders the chart interactively',
+    await waitFor(async () => (await page.locator('.lightbox-plotly .main-svg').count()) >= 1),
+  )
+  await page.keyboard.press('ArrowLeft')
+  await page.waitForTimeout(250)
+  check(
+    'arrow keys wrap through the gallery',
+    (await page.locator('.lightbox-count').innerText()).trim() === '1 / 3',
+  )
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('Escape closes the lightbox', (await page.locator('.lightbox-backdrop').count()) === 0)
+  check(
+    'closing the lightbox restores editor focus',
+    await page.evaluate(() => !!document.activeElement?.closest('.cm-editor')),
+  )
+
+  const plotlyBlock = page.locator('.cm-burley-block[data-lang="plotly"]').first()
+  await plotlyBlock.scrollIntoViewIfNeeded()
+  await plotlyBlock.hover()
+  await plotlyBlock.locator('.cm-burley-block-expand').click()
+  check(
+    'plotly header offers the figure view',
+    await waitFor(async () => (await page.locator('.lightbox-backdrop').count()) === 1),
+  )
+  check(
+    'plotly figure opens at its own index',
+    (await page.locator('.lightbox-count').innerText()).trim() === '1 / 3',
+  )
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(250)
+
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await page.waitForTimeout(500)
+  await page.locator('.cm-burley-image').first().scrollIntoViewIfNeeded()
+  await page.waitForTimeout(400)
+  await page.locator('.cm-burley-image img').first().click({ modifiers: ['Alt'] })
+  check(
+    'Alt+click on an image opens the lightbox',
+    await waitFor(async () => (await page.locator('.lightbox-backdrop').count()) === 1),
+  )
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(250)
+
   await scroller.evaluate((el) => {
     el.scrollTop = 0
   })
@@ -950,7 +1028,7 @@ try {
   await openSettings('Appearance')
   check(
     'theme defaults to follow system',
-    (await page.locator('.settings-modal .theme-segments .segment.active').innerText()).trim() === 'System',
+    (await page.locator('.settings-modal .theme-segments .segment.active').innerText()).trim() === 'Follow system',
   )
   await page.locator('.settings-modal .segment', { hasText: 'Light' }).click()
   await page.waitForTimeout(200)
@@ -962,6 +1040,62 @@ try {
   check('dark palette applied', darkBackground === 'rgb(23, 20, 15)', darkBackground)
   await page.locator('.settings-modal .segment', { hasText: 'System' }).click()
   await page.waitForTimeout(150)
+
+  // UI palettes: configured light and dark themes, follow-system aware.
+  await page.locator('.settings-modal .segment', { hasText: 'Light' }).click()
+  await page.locator('.palette-card', { hasText: 'White' }).click()
+  await page.waitForTimeout(300)
+  const whiteState = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    palette: document.documentElement.dataset.palette,
+    bg: getComputedStyle(document.body).backgroundColor,
+  }))
+  check('white light palette is applied', whiteState.theme === 'light' && whiteState.palette === 'white', JSON.stringify(whiteState))
+  check('white palette paints white surfaces', whiteState.bg === 'rgb(255, 255, 255)', whiteState.bg)
+  await page.screenshot({ path: path.join(here, 'screenshot-white-theme.png') })
+  await page.locator('.settings-modal .segment', { hasText: 'Dark' }).click()
+  await page.locator('.palette-card', { hasText: 'Black' }).click()
+  await page.waitForTimeout(300)
+  const blackState = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    palette: document.documentElement.dataset.palette,
+    bg: getComputedStyle(document.body).backgroundColor,
+  }))
+  check('black dark palette is applied', blackState.theme === 'dark' && blackState.palette === 'black', JSON.stringify(blackState))
+  check('black palette paints near-black surfaces', blackState.bg === 'rgb(5, 5, 5)', blackState.bg)
+  await page.screenshot({ path: path.join(here, 'screenshot-black-theme.png') })
+  check(
+    'configured palettes persist to settings.yaml',
+    await waitFor(async () => {
+      const saved = await getSettings()
+      return saved.settings.lightTheme === 'white' && saved.settings.darkTheme === 'black'
+    }),
+  )
+  await page.locator('.settings-modal .segment', { hasText: 'Follow system' }).click()
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.waitForTimeout(300)
+  check(
+    'follow system uses the configured dark palette',
+    await page.evaluate(
+      () =>
+        document.documentElement.dataset.theme === 'dark' &&
+        document.documentElement.dataset.palette === 'black',
+    ),
+  )
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.waitForTimeout(300)
+  check(
+    'follow system uses the configured light palette',
+    await page.evaluate(
+      () =>
+        document.documentElement.dataset.theme === 'light' &&
+        document.documentElement.dataset.palette === 'white',
+    ),
+  )
+  await page.emulateMedia({ colorScheme: null })
+  await page.locator('.palette-card', { hasText: 'Parchment' }).click()
+  await page.locator('.palette-card', { hasText: 'Ember' }).click()
+  await page.waitForTimeout(300)
 
   const contentEl = page.locator('.cm-content')
   const narrowContentWidth = (await contentEl.boundingBox()).width
@@ -1006,6 +1140,30 @@ try {
   await page.locator('.settings-modal .style-card', { hasText: 'Default' }).click()
   await page.waitForTimeout(200)
   await closeSettings()
+
+  // The top-bar button cycles system → light → dark.
+  const themeButton = page.locator('button[aria-label^="Theme:"]')
+  check('theme button is visible in the top bar', await themeButton.isVisible())
+  await themeButton.click()
+  await page.waitForTimeout(250)
+  check(
+    'theme button cycles to light',
+    (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light',
+  )
+  check('theme button reflects the active mode', (await themeButton.getAttribute('aria-label')) === 'Theme: light')
+  await themeButton.click()
+  await page.waitForTimeout(250)
+  check(
+    'theme button cycles to dark',
+    (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark' &&
+      (await page.evaluate(() => document.documentElement.dataset.palette)) === 'ember',
+  )
+  await themeButton.click()
+  await page.waitForTimeout(250)
+  check(
+    'theme button returns to follow-system',
+    (await themeButton.getAttribute('aria-label')) === 'Theme: system',
+  )
 
   // Optional native spellchecking, with code/math excluded.
   await page.locator('.file-row', { hasText: 'welcome' }).click()

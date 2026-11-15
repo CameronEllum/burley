@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AppSettings } from '../lib/api'
+  import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
 
   let {
     settings,
@@ -104,15 +105,65 @@
         </section>
       {:else}
         <section class="settings-section">
-          <h3>Theme</h3>
+          <h3>Mode</h3>
           <div class="segmented theme-segments">
             {#each ['light', 'dark', 'system'] as const as option}
               <button
                 class="segment"
                 class:active={settings.theme === option}
                 onclick={() => onchange({ theme: option })}
-              >{option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark'}</button
+              >{option === 'system' ? 'Follow system' : option === 'light' ? 'Light' : 'Dark'}</button
               >
+            {/each}
+          </div>
+
+          <h3>Light theme</h3>
+          <div class="palette-grid">
+            {#each LIGHT_THEMES as palette (palette.id)}
+              <button
+                class="palette-card"
+                class:active={settings.lightTheme === palette.id}
+                onclick={() => onchange({ lightTheme: palette.id })}
+                title={palette.description}
+              >
+                <span
+                  class="palette-swatch"
+                  style={`--swatch-app:${palette.swatch.app};--swatch-chrome:${palette.swatch.chrome};--swatch-accent:${palette.swatch.accent};--swatch-border:${palette.swatch.border}`}
+                >
+                  <span class="swatch-side"></span>
+                  <span class="swatch-body">
+                    <span class="swatch-bar"></span>
+                    <span class="swatch-line"></span>
+                  </span>
+                </span>
+                <span class="palette-name">{palette.name}</span>
+                <span class="palette-description">{palette.description}</span>
+              </button>
+            {/each}
+          </div>
+
+          <h3>Dark theme</h3>
+          <div class="palette-grid">
+            {#each DARK_THEMES as palette (palette.id)}
+              <button
+                class="palette-card"
+                class:active={settings.darkTheme === palette.id}
+                onclick={() => onchange({ darkTheme: palette.id })}
+                title={palette.description}
+              >
+                <span
+                  class="palette-swatch"
+                  style={`--swatch-app:${palette.swatch.app};--swatch-chrome:${palette.swatch.chrome};--swatch-accent:${palette.swatch.accent};--swatch-border:${palette.swatch.border}`}
+                >
+                  <span class="swatch-side"></span>
+                  <span class="swatch-body">
+                    <span class="swatch-bar"></span>
+                    <span class="swatch-line"></span>
+                  </span>
+                </span>
+                <span class="palette-name">{palette.name}</span>
+                <span class="palette-description">{palette.description}</span>
+              </button>
             {/each}
           </div>
 
@@ -316,6 +367,77 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+  }
+  .palette-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .palette-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+    padding: 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: var(--bg-app);
+    cursor: pointer;
+    font: inherit;
+  }
+  .palette-card:hover {
+    border-color: var(--border-strong);
+  }
+  .palette-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .palette-swatch {
+    display: flex;
+    height: 42px;
+    border: 1px solid var(--swatch-border);
+    border-radius: 7px;
+    background: var(--swatch-chrome);
+    overflow: hidden;
+  }
+  .swatch-side {
+    width: 30%;
+    background: var(--swatch-app);
+    border-right: 1px solid var(--swatch-border);
+  }
+  .swatch-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 10px;
+    background: var(--swatch-app);
+  }
+  .swatch-bar {
+    width: 64%;
+    height: 5px;
+    border-radius: 2px;
+    background: var(--swatch-accent);
+    opacity: 0.9;
+  }
+  .swatch-line {
+    width: 80%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--swatch-border);
+  }
+  .palette-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .palette-card.active .palette-name {
+    color: var(--accent);
+  }
+  .palette-description {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    line-height: 1.35;
   }
   .style-card {
     display: flex;

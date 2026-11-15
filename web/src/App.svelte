@@ -8,6 +8,7 @@
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
+import { setFigureOpenHandler, type FigureItem } from './lib/figures'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
@@ -15,15 +16,23 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   import { buildOutline, type OutlineItem } from './lib/outline'
   import {
     applyTheme,
+    isDarkPalette,
+    isLightPalette,
     nextThemeMode,
+    storePalettes,
     storeThemeMode,
+    storedDarkPalette,
+    storedLightPalette,
     storedThemeMode,
     watchSystemTheme,
+    type DarkPalette,
+    type LightPalette,
     type ThemeMode,
   } from './lib/theme'
   import FileTree from './components/FileTree.svelte'
   import SearchModal from './components/SearchModal.svelte'
   import ConflictModal from './components/ConflictModal.svelte'
+import FigureLightbox from './components/FigureLightbox.svelte'
 
   type SaveState = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error'
 
@@ -68,6 +77,9 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   let rawMode = $state(false)
   let zenMode = $state(false)
   let scrollProgress = $state(0)
+  let figureOpen = $state(false)
+  let figureItems = $state<FigureItem[]>([])
+  let figureIndex = $state(0)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
   let agents = $state<AgentInfo[]>([])
@@ -87,6 +99,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   let dragFavoritePath = $state<string | null>(null)
   let treeFilter = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
+  let lightTheme = $state<LightPalette>(storedLightPalette())
+  let darkTheme = $state<DarkPalette>(storedDarkPalette())
   let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
 
   let searchOpen = $state(false)
@@ -298,9 +312,9 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     const storedFavoritesOpen = localStorage.getItem(FAVORITES_OPEN_KEY)
     if (storedFavoritesOpen !== null) favoritesOpen = storedFavoritesOpen === '1'
 
-    applyTheme(themeMode)
+    applyTheme(themeMode, lightTheme, darkTheme)
     const unwatchTheme = watchSystemTheme(() => {
-      if (themeMode === 'system') applyTheme('system')
+      if (themeMode === 'system') applyTheme('system', lightTheme, darkTheme)
     })
 
     editor = createEditor(editorHost, {
@@ -319,6 +333,11 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     editor.setSpellcheck(spellCheck)
     editor.setZenFocus(zenMode)
     setLuaNotifyHandler((message) => flash(message))
+    setFigureOpenHandler((figures, index) => {
+      figureItems = figures
+      figureIndex = index
+      figureOpen = true
+    })
 
     const scroller = editor.view.scrollDOM
     let scrollFrame = 0
@@ -350,6 +369,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       window.removeEventListener('popstate', onPopState)
       unwatchTheme()
       setLuaNotifyHandler(null)
+      setFigureOpenHandler(null)
       scroller.removeEventListener('scroll', onScroll)
       if (scrollFrame) cancelAnimationFrame(scrollFrame)
       if (toastTimer) clearTimeout(toastTimer)
@@ -678,7 +698,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   function cycleTheme() {
     themeMode = nextThemeMode(themeMode)
     storeThemeMode(themeMode)
-    applyTheme(themeMode)
+    applyTheme(themeMode, lightTheme, darkTheme)
     void persistSettings()
   }
 
@@ -686,6 +706,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     try {
       await api.saveSettings({
         theme: themeMode,
+        lightTheme,
+        darkTheme,
         wideMode,
         markdownStyle,
         autoSave,
@@ -701,7 +723,17 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     if (patch.theme) {
       themeMode = patch.theme
       storeThemeMode(themeMode)
-      applyTheme(themeMode)
+      applyTheme(themeMode, lightTheme, darkTheme)
+    }
+    if (patch.lightTheme) {
+      lightTheme = patch.lightTheme
+      storePalettes(lightTheme, darkTheme)
+      applyTheme(themeMode, lightTheme, darkTheme)
+    }
+    if (patch.darkTheme) {
+      darkTheme = patch.darkTheme
+      storePalettes(lightTheme, darkTheme)
+      applyTheme(themeMode, lightTheme, darkTheme)
     }
     if (patch.wideMode !== undefined) {
       wideMode = patch.wideMode
@@ -756,13 +788,16 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       const response = await api.settings()
       if (response.exists) {
         themeMode = response.settings.theme
+        lightTheme = isLightPalette(response.settings.lightTheme) ? response.settings.lightTheme : lightTheme
+        darkTheme = isDarkPalette(response.settings.darkTheme) ? response.settings.darkTheme : darkTheme
         wideMode = response.settings.wideMode
         markdownStyle = response.settings.markdownStyle
         autoSave = response.settings.autoSave
         ctrlClickLink = response.settings.ctrlClickLink
         spellCheck = response.settings.spellCheck
-        applyTheme(themeMode)
+        applyTheme(themeMode, lightTheme, darkTheme)
         storeThemeMode(themeMode)
+        storePalettes(lightTheme, darkTheme)
         localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
         setLinkClickBehavior(ctrlClickLink)
         editor?.setSpellcheck(spellCheck)
@@ -770,6 +805,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
         // First run on this EC2 host: migrate local browser preferences.
         await api.saveSettings({
           theme: themeMode,
+          lightTheme,
+          darkTheme,
           wideMode,
           markdownStyle,
           autoSave,
@@ -1402,6 +1439,30 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       <button class="icon-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (Ctrl+?)" onclick={() => (shortcutsOpen = true)}>
         <span class="shortcut-glyph" aria-hidden="true">?</span>
       </button>
+      <button
+        class="icon-btn theme-btn"
+        title={`Theme: ${themeMode} — click to cycle system / light / dark`}
+        aria-label={`Theme: ${themeMode}`}
+        onclick={cycleTheme}
+      >
+        {#if themeMode === 'system'}
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+            <rect x="2.8" y="3.6" width="14.4" height="10.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M10 3.6v10.2" stroke="currentColor" stroke-width="1.3" />
+            <path d="M7.2 16.4h5.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path d="M10 3.6a5.1 5.1 0 0 1 0 10.2z" fill="currentColor" opacity="0.55" />
+          </svg>
+        {:else if themeMode === 'light'}
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+            <circle cx="10" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M10 2.4v2M10 15.6v2M2.4 10h2M15.6 10h2M4.6 4.6l1.4 1.4M14 14l1.4 1.4M15.4 4.6L14 6M6 14l-1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+            <path d="M15.6 12.4A6.4 6.4 0 0 1 7.6 4.4a6.6 6.6 0 1 0 8 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          </svg>
+        {/if}
+      </button>
       <button class="icon-btn" aria-label="Open settings" title="Settings" onclick={() => (settingsOpen = true)}>
         <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
           <path
@@ -1774,6 +1835,17 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   />
 {/if}
 
+{#if figureOpen && figureItems.length}
+  <FigureLightbox
+    figures={figureItems}
+    bind:index={figureIndex}
+    onclose={() => {
+      figureOpen = false
+      editor?.focus()
+    }}
+  />
+{/if}
+
 {#if conflictOpen && conflictData}
   <ConflictModal
     path={currentPath}
@@ -1905,7 +1977,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck }}
     onchange={updateSetting}
     onclose={() => (settingsOpen = false)}
   />

@@ -41,6 +41,8 @@ export interface SearchMatch {
 
 export interface AppSettings {
   theme: 'system' | 'light' | 'dark'
+  lightTheme: 'parchment' | 'white'
+  darkTheme: 'ember' | 'black'
   wideMode: boolean
   markdownStyle: 'default' | 'github' | 'academic' | 'compact'
   autoSave: boolean

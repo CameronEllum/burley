@@ -11,6 +11,7 @@
         ['Ctrl Enter', 'Open highlighted file in a new tab'],
         ['Alt T', 'Toggle the Talk panel'],
         ['Ctrl ?', 'Show this shortcut sheet'],
+        ['Ctrl Shift Z', 'Toggle Zen focus mode'],
       ],
     },
     {
@@ -18,6 +19,7 @@
       items: [
         ['Ctrl S', 'Save now (autosave is debounced)'],
         ['Escape', 'Close a dialog, or exit the element under the caret'],
+        ['/', 'Slash commands: plotly, math, table, callout, code, date, lua'],
         ['Ctrl B', 'Toggle the file tree'],
         ['Ctrl Shift R', 'Reload the file tree'],
         ['Ctrl / Cmd Click', 'Reveal a rendered link’s Markdown source'],
@@ -29,6 +31,7 @@
       title: 'Mouse',
       items: [
         ['Right-click a file', 'Delete the note (with confirmation)'],
+        ['Alt-click an image', 'Open the figure viewer (arrows browse)'],
         ['Drag the divider', 'Resize the sidebar'],
         ['Double-click the divider', 'Reset the sidebar width'],
       ],

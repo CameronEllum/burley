@@ -113,6 +113,94 @@
     --toast-fg: hsl(30 15% 12%);
 }
 
+/* ------------------------------------------------------- UI palettes */
+
+/* White light theme: pure surfaces, neutral greys, same rust accent. */
+:root[data-theme='light'][data-palette='white'] {
+    --background: 0 0% 100%;
+    --foreground: 240 6% 10%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --primary: 20 82% 40%;
+    --border: 240 6% 90%;
+    --md-heading: 240 6% 10%;
+    --md-link: 200 80% 30%;
+    --md-bold: 240 6% 10%;
+    --md-italic: 240 6% 10%;
+
+    --bg-app: #ffffff;
+    --bg-chrome: #ffffff;
+    --bg-sidebar: #fafafa;
+    --panel: #f4f4f5;
+    --text-primary: #18181b;
+    --text-muted: #71717a;
+    --border-soft: #e4e4e7;
+    --border-strong: #d4d4d8;
+    --border-color: #e4e4e7;
+    --hover: rgba(24, 24, 27, 0.06);
+    --active: rgba(194, 65, 12, 0.08);
+    --accent: #c2410c;
+    --accent-strong: #9a3412;
+    --selection: rgba(194, 65, 12, 0.14);
+    --selection-strong: rgba(194, 65, 12, 0.22);
+    --toast-bg: #18181b;
+    --toast-fg: #ffffff;
+}
+
+/* Black dark theme: near-black surfaces, brighter rust and syntax colours. */
+:root[data-theme='dark'][data-palette='black'] {
+    --background: 0 0% 2%;
+    --foreground: 0 0% 92%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 0 0% 58%;
+    --primary: 24 95% 60%;
+    --border: 0 0% 15%;
+    --md-heading: 0 0% 96%;
+    --md-link: 195 75% 68%;
+    --md-bold: 0 0% 96%;
+    --md-italic: 0 0% 96%;
+
+    --bg-app: #050505;
+    --bg-chrome: #0b0b0b;
+    --bg-sidebar: #070707;
+    --panel: #141414;
+    --text-primary: #ededed;
+    --text-muted: #8f8f8f;
+    --border-soft: #232323;
+    --border-strong: #363636;
+    --border-color: #232323;
+    --hover: rgba(255, 255, 255, 0.06);
+    --active: rgba(249, 115, 22, 0.14);
+    --accent: #f97316;
+    --accent-strong: #fb923c;
+    --selection: rgba(249, 115, 22, 0.22);
+    --selection-strong: rgba(249, 115, 22, 0.32);
+
+    --syntax-keyword: #f0abfc;
+    --syntax-string: #5eead4;
+    --syntax-number: #fdba74;
+    --syntax-comment: #7c7c7c;
+    --syntax-function: #93c5fd;
+    --syntax-type: #d8b4fe;
+    --syntax-property: #fca5a5;
+    --syntax-punctuation: #a3a3a3;
+
+    --ok-bg: hsl(150 30% 8%);
+    --ok-fg: hsl(150 60% 70%);
+    --ok-border: hsl(150 30% 20%);
+    --warn-bg: hsl(30 40% 9%);
+    --warn-fg: hsl(35 85% 72%);
+    --warn-border: hsl(30 35% 22%);
+    --info-bg: hsl(210 40% 9%);
+    --info-fg: hsl(210 75% 76%);
+    --info-border: hsl(210 35% 22%);
+    --danger-bg: hsl(0 35% 10%);
+    --danger-fg: hsl(0 75% 76%);
+    --danger-border: hsl(0 35% 24%);
+    --toast-bg: #ededed;
+    --toast-fg: #0a0a0a;
+}
+
 *,
 *::before,
 *::after {
@@ -717,12 +805,39 @@ button {
 
 /* Images */
 .cm-burley-image {
+  position: relative;
   display: inline-flex;
   flex-direction: column;
   gap: 4px;
   max-width: 100%;
   margin: 2px 0;
   cursor: pointer;
+}
+.cm-burley-image-expand {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-chrome) 88%, transparent);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.cm-burley-image:hover .cm-burley-image-expand,
+.cm-burley-image-expand:focus-visible {
+  opacity: 1;
+}
+.cm-burley-image-expand:hover {
+  background: var(--panel);
+}
+.cm-burley-block-expand {
+  font-size: 13px;
 }
 .cm-burley-image img {
   max-width: 100%;
