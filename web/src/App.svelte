@@ -7,6 +7,7 @@
   import { baseName, dirOf, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
+import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
@@ -211,6 +212,15 @@
       run: toggleRawMode,
     },
     {
+      id: 'restart-lua',
+      label: 'Restart Lua VM',
+      keywords: 'lua cell sandbox reset',
+      run: () => {
+        restartLuaVM()
+        flash('Lua VM restarted')
+      },
+    },
+    {
       id: 'markdown-style',
       label: `Change Markdown style (currently ${markdownStyle})`,
       keywords: 'github academic compact typography',
@@ -296,6 +306,7 @@
     })
     editor.setRawMode(rawMode)
     editor.setSpellcheck(spellCheck)
+    setLuaNotifyHandler((message) => flash(message))
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', paletteShortcut, true)
@@ -312,6 +323,7 @@
       window.removeEventListener('resize', onResize)
       window.removeEventListener('popstate', onPopState)
       unwatchTheme()
+      setLuaNotifyHandler(null)
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
@@ -378,6 +390,7 @@
     conflictData = null
     conflictOpen = false
     editor?.setDoc(data.path, decoded.text)
+    setLuaDocument(data.path)
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0 }
     rememberRecent(data.path)

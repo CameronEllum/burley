@@ -32,6 +32,8 @@ import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
 import { frontmatterField } from './frontmatter'
+import { luaCellsField, setLuaCellRunHandler } from './luaCells'
+import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
 import { spellcheckExclusions } from './spellcheck'
 import { resolveRelative } from './paths'
@@ -161,6 +163,7 @@ function previewExtensions(): Extension[] {
     collapseOnSelectionFacet.of(true),
     mouseSelectingField,
     frontmatterField(),
+    luaCellsField(),
     livePreviewPlugin,
     markdownStylePlugin,
     tableEditorField(),
@@ -203,6 +206,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   if (opts.onOpenPath) {
     setLinkOpenHandler((path) => opts.onOpenPath?.(path))
   }
+  setLuaCellRunHandler(runLuaCell)
 
   let currentPath = ''
   let readOnly = false

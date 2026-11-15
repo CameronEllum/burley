@@ -454,6 +454,137 @@ button {
   background: var(--panel);
 }
 
+/* ------------------------------------------------------- Lua live cells */
+
+.cm-burley-lua-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.cm-burley-lua-btn {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.cm-burley-lua-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cm-burley-lua-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cm-burley-lua-badge {
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--info-fg);
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+}
+
+.cm-burley-lua-output {
+  margin: 2px 0 14px;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.cm-burley-lua-output-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px 3px 11px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cm-burley-lua-output-time {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.75;
+}
+
+.cm-burley-lua-output-body {
+  padding: 8px 12px;
+}
+
+.cm-burley-lua-pre,
+.cm-burley-lua-error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12.4px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.cm-burley-lua-pre + .cm-burley-lua-pre,
+.cm-burley-lua-pre + .cm-burley-lua-markdown,
+.cm-burley-lua-markdown + .cm-burley-lua-table {
+  margin-top: 8px;
+}
+
+.cm-burley-lua-error {
+  color: var(--danger-fg);
+}
+
+.cm-burley-lua-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.cm-burley-lua-markdown > :first-child {
+  margin-top: 0;
+}
+
+.cm-burley-lua-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-burley-lua-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.cm-burley-lua-table th,
+.cm-burley-lua-table td {
+  border: 1px solid var(--border-soft);
+  padding: 3px 9px;
+  text-align: left;
+}
+
+.cm-burley-lua-table th {
+  background: var(--bg-app);
+  font-weight: 650;
+}
+
+
 
 /* highlight.js token colors */
 .cm-burley-code .hljs-keyword,

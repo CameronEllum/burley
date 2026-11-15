@@ -40,6 +40,12 @@ the compiled frontend, so deployment is a single executable.
   whole vault. The scope survives reloads.
 - **Add document:** right-click a folder and choose **Add document** to name and
   create a new note in that folder (or at the vault root) and open it.
+- **Lua live cells:** fenced ```` ```lua-run ```` cells get a **▶ Run** button
+  and an output panel directly below the fence. Lua 5.4 runs in a sandboxed WASM
+  VM inside a Web Worker (`wasmoon`), one VM per note with a 5-second timeout,
+  and never writes output into the Markdown file. Cells can `print()`, return
+  text, Markdown/KaTeX, tables, JSON or sanitized HTML, and read the vault
+  through a read-only `vault.list/read/search` bridge.
 - **Spellcheck:** optional native browser spellchecking, enabled from Settings;
   code fences, inline code, math and URLs are excluded from squiggles.
 - **Lossless saves:** the plain-text buffer is edited directly, files are written
@@ -168,9 +174,9 @@ If the server picked a different port, point the test at it:
 `BURLEY_URL=http://127.0.0.1:8081 npm run smoke`.
 
 It exercises the tree layout, math, tables, task checkboxes, images, Plotly,
-frontmatter cards, folder scoping, image uploads, fuzzy/content search, autosave,
-CRLF preservation, conflict handling, read-only mode, light/dark themes and the
-quit confirmation. Screenshots are written to `e2e/`.
+frontmatter cards, Lua cells, folder scoping, image uploads, fuzzy/content
+search, autosave, CRLF preservation, conflict handling, read-only mode,
+light/dark themes and the quit confirmation. Screenshots are written to `e2e/`.
 
 ---
 
@@ -188,6 +194,7 @@ quit confirmation. Screenshots are written to `e2e/`.
 | `Ctrl+S` / `Cmd+S` | Save now (autosave runs 1.5 s after typing stops) |
 | `Ctrl+B` / `Cmd+B` | Toggle the file tree |
 | `Ctrl+Shift+R` | Reload the folder tree |
+| `>Restart Lua VM` | Reset the sandboxed Lua VM from the `>` palette |
 | `Esc` | Close search / dialogs |
 
 ---
@@ -228,8 +235,37 @@ src: ./data/results.json
 Move the caret into the block to edit it; move out to render again. The block
 header has **Edit** and **Copy** buttons.
 
-### Tasks, tables, links
+### Lua live cells
 
+````markdown
+```lua-run
+print('hello from Lua')
+return { markdown = '**Total:** $' .. (1 + 2 + 3) .. '$' }
+```
+````
+
+Click **▶ Run** on the fence line. The first run compiles the bundled WASM VM
+(~1 s); later cells in the same note reuse its globals. Output stays in the
+panel — the `.md` file is never modified. Use **Restart Lua VM** in the `>` palette
+to drop globals and start fresh.
+
+Available inside a cell:
+
+| Name | Behaviour |
+| --- | --- |
+| `print(...)` | Captured into the output panel |
+| `vault.list(prefix?)` | `{path, name, size, modTime}` for notes under a prefix |
+| `vault.read(path)` | Note text (raises on missing/forbidden paths) |
+| `vault.search(query)` | `{path, line, column, text, snippet}` matches |
+| `burley.notify(msg)` | Toast in the app |
+
+Return values: a string/number renders as text, `{ markdown = "…" }` uses the
+KaTeX pipeline, `{ table = { headers = {…}, rows = {{…}} } }` renders a table,
+`{ json = … }` pretty-prints JSON, and `{ html = "…" }` is sanitized. Cells run
+only when you click Run; a cell that takes longer than 5 s is terminated and the
+VM restarts.
+
+### Tasks, tables, links
 ```markdown
 - [x] Completed
 - [ ] Open
@@ -329,7 +365,7 @@ cmd/server/          CLI, embedded frontend, port fallback, graceful shutdown
 internal/vault/      Vault interface + LocalVault (atomic writes, path safety)
 internal/api/        REST handlers, static serving, quit endpoint
 web/                 Svelte 5 + Vite + TypeScript frontend
-  src/lib/           editor, math, images, links, tasks, frontmatter, spellcheck, outline, block plugins, theme
+  src/lib/           editor, math, images, links, tasks, frontmatter, lua cells, spellcheck, outline, block plugins, theme
   src/components/    FileTree, SearchModal, ConflictModal
 e2e/                 Playwright smoke test
 demo-vault/          Sample notes, images and Plotly data

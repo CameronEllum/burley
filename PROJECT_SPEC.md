@@ -58,6 +58,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 25. **Add document:** Right-clicking a folder (or the tree background) opens an **Add document** dialog. The name is validated and `.md` is appended when absent, the note is created through `PUT /api/file` (never overwriting an existing file), the tree refreshes, and the new note opens.
 26. **Image paste & drop:** Pasting a clipboard image or dropping an image file into the editor uploads it with `POST /api/asset?path=<note>`, which stores it in a sibling `<noteBase>_assets/` folder (sanitized, de-duplicated names, MIME whitelist, 32 MB cap). The response's note-relative `ref` is inserted as `![alt](<note>_assets/name.png)` at the caret or drop position.
 27. **Spellcheck:** The Behaviour tab toggles native browser spellchecking. When enabled, the editor sets `spellcheck="true"` and decorations mark code fences, inline code, math, HTML and link URLs with `spellcheck="false"` so they are not flagged.
+28. **Lua live cells (`lua-run`):** A fenced ```` ```lua-run ```` block keeps its source visible and adds a compact **▶ Run** button on the opening fence plus a block output panel after the closing fence. Lua 5.4 runs in a dedicated Web Worker via bundled `wasmoon` WASM: no DOM, `localStorage`, `os`, `io` or `package` access, and the host enforces a 5 s timeout by terminating and recreating the worker. One VM is kept per open note so later cells reuse helpers and globals; outputs are ephemeral (never written to the `.md`). A read-only `vault` table exposes `list(prefix?)`, `read(path)` and `search(query)` over the existing `/api/*` endpoints, and `burley.notify()` raises a toast. Return values marshal as text, `{markdown=…}` through the KaTeX pipeline, `{table={headers,rows}}`, `{json=…}`, or sanitized `{html=…}`; the `>` palette offers **Restart Lua VM**.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -112,8 +113,8 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 │   │   ├── vault.go             # Vault interface, Entry, FileContent, ConflictError
 │   │   ├── local.go             # LocalVault implementation (atomic writes, path safety)
 │   │   ├── assets.go            # Image uploads into <note>_assets/
-│   │   └── favorites.go         # YAML favorites at .burley/favorites.yaml
-│   │   └── settings.go          # YAML settings at .burley/settings.yaml
+│   │   ├── favorites.go         # YAML favorites at .burley/favorites.yaml
+│   │   ├── settings.go          # YAML settings at .burley/settings.yaml
 │   │   └── recent.go            # YAML recents at .burley/recent.yaml
 │   └── api/
 │       └── handlers.go          # REST handlers (/api/tree, /api/file, /api/search, /api/asset)
@@ -127,6 +128,10 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 │       │   ├── editor.ts        # CodeMirror 6 setup + codemirror-live-markdown
 │       │   ├── blockPlugins.ts  # Generic StateField/WidgetType plugin registry
 │       │   ├── frontmatter.ts   # YAML properties card (fold/unfold in place)
+│       │   ├── luaCells.ts      # lua-run Run buttons + output widgets
+│       │   ├── lua/
+│       │   │   ├── worker.ts    # wasmoon VM in a Web Worker (sandbox + vault bridge)
+│       │   │   └── runner.ts    # Worker host: queue, 5 s timeout, state effects
 │       │   ├── spellcheck.ts    # Exclude code/math from native spellcheck
 │       │   ├── outline.ts       # Heading extraction for the Outline tab
 │       │   ├── theme.ts         # system/light/dark theme handling
@@ -245,12 +250,21 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
    - *(If opening untrusted `.md` files later, render inside `<iframe sandbox="allow-scripts">` communicating via `postMessage` + `ResizeObserver` height sync.)*
 
 ### 6.4 Quick-Open Palette (`SearchModal.svelte`)
+
 - **Triggers:** `Ctrl+P`/`Cmd+P` and `F1` open an empty palette with `preventDefault()` captured on `window` (so Print/Help never open, even with CodeMirror focused). The **wide, centered top-bar Search files… box** opens it too and anchors the palette directly beneath itself; `Ctrl+Shift+O` opens `@`, `Ctrl+Shift+F` opens `?`.
 - **Files (no prefix):** empty query → favorites (in order) + thin divider + recent files (max 8, deduped, else first 10); typing → `fuzzysort` over full relative paths, matched characters highlighted, favorites first, others capped at 50. No matches → fallback row that switches to `?query`.
 - **`@` headings:** fuzzy-filters headings from the active document; Enter moves the cursor there.
 - **`>` commands:** fuzzy-filters registered actions (read-only, sidebar, star current file, refresh tree, wide/narrow, theme).
 - **`?` content:** debounced `120 ms` calls to `GET /api/search?q=...` with an `AbortController`; rows show file, line, and snippet.
 - **Interaction:** flat `selectedIndex` (divider excluded), wrapping arrows and `Ctrl+N/J/K`, `Enter`, `Ctrl+Enter` new tab, hover/click, `scrollIntoView`, reset-to-top on filter changes; `Esc`/backdrop close and restore CodeMirror focus. Recents live in `.burley/recent.yaml` and are loaded/saved through `/api/recent`.
+
+### 6.5 Lua Runtime (`luaCells.ts`, `lua/`)
+
+- **Widgets:** `luaCellsField` walks `FencedCode` nodes tagged `lua-run` (skipped by `blockPlugins` so the source stays visible). An inline widget after `CodeInfo` renders **▶ Run** + a `Lua` badge; a `block: true` widget at `node.to` renders the output panel. Widgets `eq` on the cell source hash, and the output lives in a `StateField` keyed by that hash, so editing elsewhere never clears it.
+- **Worker:** `lua/runner.ts` lazily creates `lua/worker.ts` (`new Worker(new URL('./worker.ts', import.meta.url), {type:'module'})`), queues runs FIFO, and dispatches results with `setLuaCellState` effects. `setLuaDocument` drops the VM when the open note changes; **Restart Lua VM** in the `>` palette does the same on demand.
+- **Timeout:** a 5 s timer terminates the worker and reports the timeout in the output panel; the next run recreates it.
+- **Sandbox:** `wasmoon` is bundled (`wasmoon/dist/glue.wasm` imported with `?url`) and loaded only on first run. `print` is captured; `os`, `io` and `package` are replaced with empty tables. The read-only `vault` bridge performs synchronous `XMLHttpRequest` calls to `/api/tree`, `/api/file` and `/api/search` (sync XHR is legal inside a worker), so Lua authors get plain tables without an async RPC layer.
+- **Output:** the worker normalizes return values to `{kind, text, headers, rows}`; the widget renders text/JSON in `<pre>`, Markdown through `renderMarkdown` (KaTeX), tables as real `<table>` elements, and HTML through DOMPurify.
 
 ---
 
@@ -340,3 +354,5 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] **Add document** creates a new note in the chosen folder without overwriting an existing file and opens it.
 - [ ] Pasting or dropping an image stores it in `<note>_assets/` and inserts a relative Markdown reference.
 - [ ] Spellcheck can be toggled, and code/math are excluded from squiggles.
+- [ ] `lua-run` cells show ▶ Run and render text, Markdown/KaTeX, tables, JSON and errors in an output panel without modifying the file.
+- [ ] Lua cells can list and read notes through the read-only `vault` bridge, and the VM resets when switching notes or via **Restart Lua VM**.

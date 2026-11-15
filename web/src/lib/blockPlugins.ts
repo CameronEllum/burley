@@ -240,6 +240,7 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
       const codeText = node.node.getChild('CodeText')
       const rawLang = codeInfo ? state.doc.sliceString(codeInfo.from, codeInfo.to) : ''
       const lang = rawLang.trim().split(/\s+/)[0].toLowerCase()
+      if (lang === 'lua-run') return
       const code = codeText ? state.doc.sliceString(codeText.from, codeText.to) : ''
       const renderer = renderers.get(lang) ?? genericCodeRenderer
 

@@ -360,6 +360,93 @@ try {
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(600)
 
+  // Lua live cells: sandboxed WASM, output panels, vault bridge.
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.search-modal', { timeout: 5000 })
+  await page.locator('.search-input').fill('lua-cells')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(800)
+  check('Lua note opened', (await page.locator('.crumb-file').innerText()).includes('lua-cells'))
+  check('lua-run cells show a Run button', (await page.locator('.cm-burley-lua-btn').count()) >= 1)
+  check(
+    'lua-run cells show a Lua badge',
+    (await page.locator('.cm-burley-lua-badge').first().innerText()).toLowerCase() === 'lua',
+  )
+  const luaFileBefore = await getFile('notes/lua-cells.md')
+  const runLuaCell = async (marker) => {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const button = page.locator(`.cm-burley-lua-run[data-cell*="${marker}"] .cm-burley-lua-btn`).first()
+      if ((await button.count()) > 0) {
+        await button.click()
+        return
+      }
+      await page.locator('.cm-scroller').evaluate((el) => el.scrollBy(0, 500))
+      await page.waitForTimeout(150)
+    }
+    throw new Error(`Lua cell not found: ${marker}`)
+  }
+  await runLuaCell('hello from Lua')
+  check(
+    'Lua cell prints to an output panel',
+    await waitFor(async () =>
+      (await page.locator('.cm-burley-lua-pre').allInnerTexts()).some((text) => text.includes('hello from Lua')),
+    ),
+  )
+  check(
+    'Lua arithmetic result is shown',
+    (await page.locator('.cm-burley-lua-pre').allInnerTexts()).some((text) => text.includes('42')),
+  )
+  check(
+    'Lua return value renders as text',
+    (await page.locator('.cm-burley-lua-pre').allInnerTexts()).some((text) => text.includes('Web Worker')),
+  )
+  await runLuaCell('local rows')
+  check(
+    'Lua tables render as HTML tables',
+    await waitFor(async () => (await page.locator('.cm-burley-lua-table').count()) === 1),
+  )
+  check(
+    'Lua table headers and rows are present',
+    (await page.locator('.cm-burley-lua-table th').count()) === 3 &&
+      (await page.locator('.cm-burley-lua-table tbody tr').count()) === 4,
+  )
+  await runLuaCell('local total')
+  check(
+    'Lua markdown output uses the preview pipeline',
+    await waitFor(async () => (await page.locator('.cm-burley-lua-markdown').count()) >= 1),
+  )
+  check(
+    'Lua markdown renders KaTeX',
+    (await page.locator('.cm-burley-lua-markdown .katex').count()) >= 1,
+  )
+  await runLuaCell('vault.list')
+  check(
+    'Lua can list the vault through the bridge',
+    await waitFor(async () =>
+      (await page.locator('.cm-burley-lua-markdown').allInnerTexts()).some((text) => text.includes('notes/todo.md')),
+    ),
+  )
+  await runLuaCell('handled Lua error')
+  check(
+    'Lua errors stay inside the output panel',
+    await waitFor(async () =>
+      (await page.locator('.cm-burley-lua-error').allInnerTexts()).some((text) => text.includes('handled Lua error')),
+    ),
+  )
+  const luaFileAfter = await getFile('notes/lua-cells.md')
+  check('Lua cells do not write output into the note', luaFileAfter.hash === luaFileBefore.hash)
+  const outputsBeforeClear = await page.locator('.cm-burley-lua-output').count()
+  await page.locator('.cm-burley-lua-output').last().locator('.cm-burley-block-btn', { hasText: 'Clear' }).click()
+  await page.waitForTimeout(300)
+  check(
+    'Lua output can be cleared',
+    (await page.locator('.cm-burley-lua-output').count()) === outputsBeforeClear - 1,
+  )
+  await page.screenshot({ path: path.join(here, 'screenshot-lua.png') })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
   // Code blocks: highlighted when displayed, monospace while editing.
   await page.keyboard.press('Control+Shift+O')
   await page.waitForSelector('.palette', { timeout: 5000 })
