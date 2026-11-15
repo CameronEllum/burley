@@ -43,6 +43,7 @@ import { zenFocusExtensions } from './zenFocus'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
+import './plugins/mermaid'
 
 export interface SelectionInfo {
   line: number

@@ -275,6 +275,7 @@
             <li><strong>CodeMirror 6</strong> — editor and live preview</li>
             <li><strong>KaTeX</strong> — math rendering</li>
             <li><strong>Plotly</strong> — charts</li>
+            <li><strong>Mermaid</strong> — diagrams</li>
             <li><strong>highlight.js</strong> — code colouring</li>
             <li><strong>wasmoon</strong> — sandboxed Lua</li>
             <li><strong>marked + DOMPurify</strong> — export and chat Markdown</li>

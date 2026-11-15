@@ -33,8 +33,8 @@ The read-only vault bridge can list and read notes:
 local files = vault.list('notes/')
 local lines = { '### Notes reachable from Lua', '' }
 for i, file in ipairs(files) do
-  if i > 8 then
-    lines[#lines + 1] = '- …and ' .. (#files - 8) .. ' more'
+  if i > 10 then
+    lines[#lines + 1] = '- …and ' .. (#files - 10) .. ' more'
     break
   end
   lines[#lines + 1] = '- `' .. file.path .. '` (' .. file.size .. ' bytes)'

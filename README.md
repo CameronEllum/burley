@@ -93,6 +93,10 @@ the compiled frontend, so deployment is a single executable.
 - **Math and charts offline:** KaTeX for `$...$` / `$$...$$`, plus a plugin
   registry for fenced blocks. ```` ```plotly ```` accepts inline JSON or
   `src: ./data.json`; Plotly is lazily loaded and charts stay interactive.
+- **Mermaid diagrams:** ```` ```mermaid ```` fences render flowcharts, sequence
+  diagrams, gantt charts and the rest of Mermaid inline. The renderer is
+  lazy-loaded, follows the active UI theme, opens in the figure viewer with
+  **⤢**, and exports as inline SVG.
 - **Relative assets:** `![](img/plot.png)` and chart data files resolve against
   the note's folder and are served through `/api/asset`.
 - **Read-only lock:** browse without a caret or accidental edits.
@@ -298,8 +302,23 @@ KaTeX pipeline, `{ table = { headers = {…}, rows = {{…}} } }` renders a tabl
 only when you click Run; a cell that takes longer than 5 s is terminated and the
 VM restarts.
 
-### Tasks, tables, links
-```markdown
+### Mermaid
+
+````markdown
+```mermaid
+flowchart LR
+  A[Draft] --> B{Ready?}
+  B -->|Yes| C[Publish]
+  B -->|No| D[Revise]
+  D --> B
+```
+````
+
+Move the caret into the block to edit the source; the diagram renders again
+when the caret leaves. Diagrams also appear in the figure viewer and are
+embedded as SVG in HTML/PDF exports.
+
+### Tasks, tables, links```markdown
 - [x] Completed
 - [ ] Open
 

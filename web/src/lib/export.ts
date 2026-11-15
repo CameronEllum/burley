@@ -2,6 +2,7 @@
 import { api } from './api'
 import { isExternalRef, resolveRelative } from './paths'
 import { renderMarkdown } from './markdown'
+import { renderMermaidSvg } from './plugins/mermaid'
 
 export interface ExportOptions {
   markdown: string
@@ -151,6 +152,25 @@ async function renderPlotlyBlocks(root: HTMLElement, blocks: string[], notePath:
   }
 }
 
+async function renderMermaidBlocks(root: HTMLElement, blocks: string[]): Promise<void> {
+  for (let index = 0; index < blocks.length; index++) {
+    const placeholder = root.querySelector<HTMLElement>(`[data-burley-export-mermaid="${index}"]`)
+    if (!placeholder) continue
+    try {
+      const svg = await renderMermaidSvg(blocks[index], 'default')
+      const holder = document.createElement('div')
+      holder.className = 'export-mermaid'
+      holder.innerHTML = svg
+      placeholder.replaceWith(holder)
+    } catch (err) {
+      const error = document.createElement('pre')
+      error.className = 'export-error'
+      error.textContent = `Mermaid export failed: ${err instanceof Error ? err.message : String(err)}`
+      placeholder.replaceWith(error)
+    }
+  }
+}
+
 const EXPORT_CSS = `
 @page { margin: 18mm; }
 body { margin: 0; background: #ffffff; color: #26221e; }
@@ -164,6 +184,8 @@ body { margin: 0; background: #ffffff; color: #26221e; }
   line-height: 1.7;
 }
 .burley-export img { max-width: 100%; height: auto; }
+.burley-export .export-mermaid { margin: 1em 0; text-align: center; }
+.burley-export .export-mermaid svg { max-width: 100%; height: auto; }
 .burley-export pre {
   overflow-x: auto;
   padding: 12px 14px;
@@ -193,10 +215,16 @@ body { margin: 0; background: #ffffff; color: #26221e; }
 
 export async function buildExportHtml(options: ExportOptions): Promise<string> {
   const blocks: string[] = []
-  const prepared = options.markdown.replace(/```plotly[^\n]*\n([\s\S]*?)```/g, (_match, body) => {
-    const index = blocks.push(body) - 1
-    return `\n\n<div data-burley-export-plot="${index}"></div>\n\n`
-  })
+  const mermaidBlocks: string[] = []
+  const prepared = options.markdown
+    .replace(/```plotly[^\n]*\n([\s\S]*?)```/g, (_match, body) => {
+      const index = blocks.push(body) - 1
+      return `\n\n<div data-burley-export-plot="${index}"></div>\n\n`
+    })
+    .replace(/```mermaid[^\n]*\n([\s\S]*?)```/g, (_match, body) => {
+      const index = mermaidBlocks.push(body) - 1
+      return `\n\n<div data-burley-export-mermaid="${index}"></div>\n\n`
+    })
 
   const rendered = renderMarkdown(prepared)
   const root = document.createElement('div')
@@ -207,6 +235,7 @@ export async function buildExportHtml(options: ExportOptions): Promise<string> {
   await inlineImages(root, options.path)
   const css = await inlineStyles()
   await renderPlotlyBlocks(root, blocks, options.path)
+  await renderMermaidBlocks(root, mermaidBlocks)
 
   return `<!doctype html>
 <html lang="en">

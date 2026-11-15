@@ -528,7 +528,7 @@ try {
   const slashLabels = await page.locator('.cm-tooltip-autocomplete .cm-completionLabel').allInnerTexts()
   check(
     'slash menu lists block templates',
-    ['plotly', 'math', 'table', 'callout', 'code', 'date', 'lua'].every((label) => slashLabels.includes(label)),
+    ['plotly', 'mermaid', 'math', 'table', 'callout', 'code', 'date', 'lua'].every((label) => slashLabels.includes(label)),
     slashLabels.join(' '),
   )
   await page.keyboard.type('math')
@@ -1524,6 +1524,46 @@ try {
     'unscoped tree shows the root again',
     (await page.locator('.file-row', { hasText: 'welcome' }).count()) >= 1,
   )
+
+  // Mermaid diagrams (issue #2): preview, figure viewer, and HTML export.
+  await page.goto(`${BASE}/?file=notes%2Fmermaid.md`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  check(
+    'Mermaid diagrams render in the live preview',
+    await waitFor(async () => (await page.locator('.burley-mermaid svg').count()) >= 2, 20000),
+  )
+  check(
+    'Mermaid diagrams render without errors',
+    (await page.locator('.burley-mermaid .cm-burley-block-error').count()) === 0,
+  )
+  const mermaidBlock = page.locator('.cm-burley-block[data-lang="mermaid"]').first()
+  await mermaidBlock.scrollIntoViewIfNeeded()
+  await mermaidBlock.hover()
+  await mermaidBlock.locator('.cm-burley-block-expand').click()
+  check(
+    'Mermaid opens in the figure viewer',
+    await waitFor(async () => (await page.locator('.lightbox-mermaid svg').count()) === 1, 15000),
+  )
+  check(
+    'Mermaid diagrams join the figure gallery',
+    (await page.locator('.lightbox-count').innerText()).includes('/ 3'),
+  )
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(250)
+  const mermaidDownloadPromise = page.waitForEvent('download', { timeout: 60000 })
+  await page.locator('button[aria-label="Export note"]').click()
+  await page.locator('.export-item', { hasText: 'Export as HTML' }).click()
+  const mermaidDownload = await mermaidDownloadPromise
+  const mermaidPath = await mermaidDownload.path()
+  const mermaidHtml = mermaidPath ? await fs.readFile(mermaidPath, 'utf8') : ''
+  check(
+    'HTML export embeds Mermaid SVGs',
+    mermaidHtml.includes('export-mermaid') && mermaidHtml.includes('<svg'),
+  )
+  await page.screenshot({ path: path.join(here, 'screenshot-mermaid.png') })
+  await page.goto(`${BASE}/?file=welcome.md`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(500)
 
   // Deep links + browser history.
   const deepPage = await context.newPage()

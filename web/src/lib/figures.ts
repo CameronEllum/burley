@@ -26,7 +26,14 @@ export interface PlotlyFigure {
   caption: string
 }
 
-export type FigureItem = ImageFigure | PlotlyFigure
+export interface MermaidFigure {
+  kind: 'mermaid'
+  from: number
+  code: string
+  caption: string
+}
+
+export type FigureItem = ImageFigure | PlotlyFigure | MermaidFigure
 
 const IMAGE_SYNTAX = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)$/
 
@@ -59,10 +66,14 @@ export function collectFigures(state: EditorState): FigureItem[] {
       const info = node.node.getChild('CodeInfo')
       if (!info) return
       const lang = state.doc.sliceString(info.from, info.to).trim().split(/\s+/)[0].toLowerCase()
-      if (lang !== 'plotly') return
+      if (lang !== 'plotly' && lang !== 'mermaid') return
       const codeNode = node.node.getChild('CodeText')
       const code = codeNode ? state.doc.sliceString(codeNode.from, codeNode.to).replace(/\n$/, '') : ''
-      figures.push({ kind: 'plotly', from: node.from, code, filePath, caption: 'Plotly chart' })
+      if (lang === 'mermaid') {
+        figures.push({ kind: 'mermaid', from: node.from, code, caption: 'Mermaid diagram' })
+      } else {
+        figures.push({ kind: 'plotly', from: node.from, code, filePath, caption: 'Plotly chart' })
+      }
     },
   })
 

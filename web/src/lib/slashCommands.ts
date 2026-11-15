@@ -28,6 +28,7 @@ function isoDate(): string {
 
 const items: SlashItem[] = [
   { label: 'plotly', detail: 'chart', info: 'Insert a ```plotly JSON block' },
+  { label: 'mermaid', detail: 'diagram', info: 'Insert a ```mermaid diagram block' },
   { label: 'math', detail: 'block', info: 'Insert a $$ display-math block' },
   { label: 'table', detail: 'GFM', info: 'Insert a 3×2 table template' },
   { label: 'callout', detail: 'note', info: 'Insert a > [!NOTE] callout' },
@@ -55,6 +56,10 @@ function buildInsertion(label: string): Insertion | null {
     case 'math': {
       const text = '$$\n\n$$'
       return { text, caret: 3 }
+    }
+    case 'mermaid': {
+      const text = `${FENCE}mermaid\nflowchart LR\n  A[Start] --> B{Ready?}\n  B -->|Yes| C[Done]\n  B -->|No| A\n${FENCE}`
+      return { text, caret: text.indexOf('A[Start]') }
     }
     case 'table': {
       const text = '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n|  |  |'

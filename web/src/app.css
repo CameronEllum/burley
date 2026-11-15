@@ -803,6 +803,26 @@ button {
   font-size: 12.5px;
 }
 
+.burley-mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 12px;
+  overflow-x: auto;
+}
+
+.burley-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.burley-mermaid-status {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
 /* Images */
 .cm-burley-image {
   position: relative;

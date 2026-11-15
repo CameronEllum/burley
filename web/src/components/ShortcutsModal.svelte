@@ -19,7 +19,7 @@
       items: [
         ['Ctrl S', 'Save now (autosave is debounced)'],
         ['Escape', 'Close a dialog, or exit the element under the caret'],
-        ['/', 'Slash commands: plotly, math, table, callout, code, date, lua'],
+        ['/', 'Slash commands: plotly, mermaid, math, table, callout, code, date, lua'],
         ['Ctrl B', 'Toggle the file tree'],
         ['Ctrl Shift R', 'Reload the file tree'],
         ['Ctrl / Cmd Click', 'Reveal a rendered link’s Markdown source'],

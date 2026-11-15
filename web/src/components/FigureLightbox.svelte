@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { FigureItem } from '../lib/figures'
   import { loadPlotly, parsePlotlySource } from '../lib/plugins/plotly'
+  import { renderMermaidSvg } from '../lib/plugins/mermaid'
 
   interface Props {
     figures: FigureItem[]
@@ -18,10 +19,15 @@
   let plotlyHost = $state<HTMLDivElement>()
   let plotlyError = $state('')
   let plotly: any = null
+  let mermaidHost = $state<HTMLDivElement>()
+  let mermaidError = $state('')
 
   const figure = $derived(figures[index])
   const caption = $derived(
-    figure ? figure.caption || (figure.kind === 'plotly' ? 'Plotly chart' : 'Figure') : '',
+    figure
+      ? figure.caption ||
+        (figure.kind === 'plotly' ? 'Plotly chart' : figure.kind === 'mermaid' ? 'Mermaid diagram' : 'Figure')
+      : '',
   )
 
   function resetZoom() {
@@ -102,6 +108,36 @@
     index
     resetZoom()
     plotlyError = ''
+    mermaidError = ''
+  })
+
+  $effect(() => {
+    const item = figure
+    const host = mermaidHost
+    if (!item || item.kind !== 'mermaid' || !host) return
+
+    let disposed = false
+    host.innerHTML = ''
+    void (async () => {
+      try {
+        const svg = await renderMermaidSvg(item.code)
+        if (disposed) return
+        host.innerHTML = svg
+        const element = host.querySelector('svg')
+        if (element) {
+          element.style.maxWidth = '100%'
+          element.style.height = 'auto'
+          element.removeAttribute('height')
+        }
+      } catch (err) {
+        if (!disposed) mermaidError = err instanceof Error ? err.message : String(err)
+      }
+    })()
+
+    return () => {
+      disposed = true
+      host.innerHTML = ''
+    }
   })
 
   $effect(() => {
@@ -199,6 +235,9 @@
       {:else if figure?.kind === 'plotly'}
         <div class="lightbox-plotly" bind:this={plotlyHost}></div>
         {#if plotlyError}<p class="lightbox-error">{plotlyError}</p>{/if}
+      {:else if figure?.kind === 'mermaid'}
+        <div class="lightbox-mermaid" bind:this={mermaidHost}></div>
+        {#if mermaidError}<p class="lightbox-error">{mermaidError}</p>{/if}
       {/if}
     </div>
 
@@ -336,6 +375,20 @@
   .lightbox-plotly {
     width: 100%;
     height: 100%;
+  }
+
+  .lightbox-mermaid {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    overflow: auto;
+  }
+
+  .lightbox-mermaid :global(svg) {
+    max-width: 100%;
+    max-height: 100%;
   }
 
   .lightbox-error {
