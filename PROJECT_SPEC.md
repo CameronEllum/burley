@@ -39,6 +39,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 10. **Theme:** Follows the OS light/dark preference by default, with a top-bar **system → light → dark** toggle that overrides it.
 11. **Reading Width:** A top-bar narrow/wide toggle expands the editor measure from `820px` to `1200px` and tightens the gutters; the choice is persisted in `localStorage`.
 12. **Favorites:** Star notes from the top bar or by hovering tree rows. Favorites appear in a collapsible section above the file tree (with their own fuzzy search) and first in an empty `Ctrl+P` query. They live in `.burley/favorites.yaml` in the vault root — YAML, vault-relative, display order preserved — and are exposed through `GET`/`PUT /api/favorites`. Missing files are shown dimmed with a remove button.
+13. **Cross-device settings:** Theme (`system`/`light`/`dark`) and reading width (`wideMode`) are stored in `.burley/settings.yaml` and exposed via `GET`/`PUT /api/settings`. `localStorage` is still used for an instant first paint, then reconciled with the server.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -93,6 +94,7 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 │   │   ├── vault.go             # Vault interface, Entry, FileContent, ConflictError
 │   │   ├── local.go             # LocalVault implementation (atomic writes, path safety)
 │   │   └── favorites.go         # YAML favorites at .burley/favorites.yaml
+│   │   └── settings.go          # YAML settings at .burley/settings.yaml
 │   └── api/
 │       └── handlers.go          # REST handlers (/api/tree, /api/file, /api/search, /api/asset)
 ├── web/                         # Vite + Svelte + TypeScript frontend
@@ -161,6 +163,8 @@ type Vault interface {
 | `GET /api/search` | Content search via `rg` | `?q=eigenvalue` | `200` JSON `[]SearchMatch` (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read the YAML favorite list | none | `200` JSON `{"favorites":["a.md"]}` |
 | `PUT /api/favorites` | Replace the favorite list | JSON `{favorites:[...]}` | `200` canonical list (deduped, validated) |
+| `GET /api/settings` | Read theme/wide-mode settings | none | `200` JSON `{settings, exists}` |
+| `PUT /api/settings` | Save theme/wide-mode settings | JSON `{theme,wideMode}` | `200` JSON `{settings, exists}` |
 | `POST /api/quit` | Gracefully stop the local server (loopback clients only) | none | `200` JSON `{"status":"shutting_down"}` |
 
 ### 5.3 Safety Rules in `LocalVault`
@@ -255,7 +259,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 1. Add a **Read-Only** toggle in the top bar.
 2. Resolve relative image URLs (`![](...)`) to `/api/asset`.
 3. Add the **Quit** button + `POST /api/quit` graceful shutdown and the **port increment** fallback in `createListener`.
-4. Add the **theme switch** (system → light → dark) with OS preference as the default, and the **narrow/wide reading-width** toggle; verify both palettes and widths.
+4. Add the **theme switch** (system → light → dark) with OS preference as the default, and the **narrow/wide reading-width** toggle; verify both palettes and widths. Persist both in `.burley/settings.yaml`.
 5. Cross-compile for EC2 Linux (`GOOS=linux GOARCH=amd64 go build -o burley ./cmd/server`).
 6. Copy binary to EC2, optionally configure a `systemd` user service running `burley --root /path/to/docs`, and connect via:
    ```bash
@@ -282,3 +286,4 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] The narrow/wide toggle expands the reading measure and the choice survives a reload.
 - [ ] Favorites are stored as YAML in `.burley/favorites.yaml`, appear above the tree and at the top of an empty `Ctrl+P`, survive reloads, and flag missing files.
 - [ ] Favorites have their own fuzzy filter and can be reordered.
+- [ ] Theme and wide mode are stored in `.burley/settings.yaml`, survive a reload, and follow the user across browsers.

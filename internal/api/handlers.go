@@ -51,6 +51,8 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/favorites", s.handleGetFavorites)
 	mux.HandleFunc("PUT /api/favorites", s.handlePutFavorites)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("/api/quit", s.handleQuit)
 	mux.HandleFunc("/", s.handleStatic)
 
@@ -299,6 +301,36 @@ func (s *server) handlePutFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites})
+}
+
+// ---------------------------------------------------------------- settings
+
+func (s *server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	settings, exists, err := s.vault.ReadSettings(r.Context())
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "exists": exists})
+}
+
+func (s *server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req vault.Settings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if err := s.vault.WriteSettings(r.Context(), req); err != nil {
+		vaultError(w, err)
+		return
+	}
+	settings, exists, err := s.vault.ReadSettings(r.Context())
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "exists": exists})
 }
 
 // ------------------------------------------------------------- file lifecycle

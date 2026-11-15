@@ -338,8 +338,60 @@ func TestQuitEndpointDisabled(t *testing.T) {
 	}
 }
 
-func TestFavoritesAPI(t *testing.T) {
+func TestSettingsAPI(t *testing.T) {
 	h := newHarness(t)
+
+	resp, data := h.do(t, "GET", "/api/settings", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"exists":false`) {
+		t.Fatalf("default settings = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/settings", map[string]any{"theme": "dark", "wideMode": true})
+	if resp.StatusCode != 200 {
+		t.Fatalf("put settings = %d %s", resp.StatusCode, data)
+	}
+	var payload struct {
+		Settings vault.Settings `json:"settings"`
+		Exists   bool           `json:"exists"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Exists || payload.Settings.Theme != "dark" || !payload.Settings.WideMode {
+		t.Fatalf("saved settings = %+v exists=%v", payload.Settings, payload.Exists)
+	}
+
+	resp, data = h.do(t, "GET", "/api/settings", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get settings = %d %s", resp.StatusCode, data)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Settings.Theme != "dark" || !payload.Settings.WideMode {
+		t.Fatalf("round-trip settings = %+v", payload.Settings)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(h.root, ".burley", "settings.yaml"))
+	if err != nil {
+		t.Fatalf("settings.yaml: %v", err)
+	}
+	if !strings.Contains(string(raw), "wide_mode: true") {
+		t.Fatalf("unexpected settings yaml:\n%s", raw)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/settings", map[string]any{"theme": "neon"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid theme = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/settings", "not-json")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad settings json = %d %s", resp.StatusCode, data)
+	}
+}
+
+func TestFavoritesAPI(t *testing.T) {	h := newHarness(t)
 
 	resp, data := h.do(t, "GET", "/api/favorites", nil)
 	if resp.StatusCode != 200 || !strings.Contains(string(data), `"favorites":[]`) {

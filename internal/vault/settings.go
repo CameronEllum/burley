@@ -1,0 +1,114 @@
+package vault
+
+import (
+	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const settingsName = "settings.yaml"
+
+// Settings are the cross-device UI preferences stored in .burley/settings.yaml.
+type Settings struct {
+	Theme    string `json:"theme"`    // system | light | dark
+	WideMode bool   `json:"wideMode"` // expanded reading measure
+}
+
+func defaultSettings() Settings {
+	return Settings{Theme: "system", WideMode: false}
+}
+
+func (v *LocalVault) settingsPath() string {
+	return filepath.Join(v.root, favoritesDir, settingsName)
+}
+
+// ReadSettings loads .burley/settings.yaml. The bool reports whether the file
+// existed, so the client can migrate local preferences on first run.
+func (v *LocalVault) ReadSettings(ctx context.Context) (Settings, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return defaultSettings(), false, err
+	}
+	data, err := os.ReadFile(v.settingsPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return defaultSettings(), false, nil
+	}
+	if err != nil {
+		return defaultSettings(), false, err
+	}
+	return parseSettingsYAML(string(data)), true, nil
+}
+
+// WriteSettings validates and atomically writes .burley/settings.yaml.
+func (v *LocalVault) WriteSettings(ctx context.Context, settings Settings) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	clean, err := normalizeSettings(settings)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(v.root, favoritesDir), 0o755); err != nil {
+		return err
+	}
+	return writeFileAtomic(v.settingsPath(), []byte(settingsYAML(clean)), 0o644)
+}
+
+func normalizeSettings(settings Settings) (Settings, error) {
+	theme := strings.ToLower(strings.TrimSpace(settings.Theme))
+	if theme == "" {
+		theme = "system"
+	}
+	switch theme {
+	case "system", "light", "dark":
+	default:
+		return Settings{}, ErrInvalidPath
+	}
+	return Settings{Theme: theme, WideMode: settings.WideMode}, nil
+}
+
+func settingsYAML(settings Settings) string {
+	var b strings.Builder
+	b.WriteString("# Burley settings — managed by the app, safe to edit by hand.\n")
+	b.WriteString("# theme: system | light | dark\n")
+	b.WriteString("theme: ")
+	b.WriteString(yamlQuote(settings.Theme))
+	b.WriteString("\nwide_mode: ")
+	if settings.WideMode {
+		b.WriteString("true\n")
+	} else {
+		b.WriteString("false\n")
+	}
+	return b.String()
+}
+
+func parseSettingsYAML(content string) Settings {
+	settings := defaultSettings()
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "theme":
+			theme := strings.ToLower(parseYAMLScalar(value))
+			if theme == "system" || theme == "light" || theme == "dark" {
+				settings.Theme = theme
+			}
+		case "wide_mode", "wide":
+			switch strings.ToLower(parseYAMLScalar(value)) {
+			case "true", "yes", "on", "1":
+				settings.WideMode = true
+			case "false", "no", "off", "0":
+				settings.WideMode = false
+			}
+		}
+	}
+	return settings
+}

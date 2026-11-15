@@ -128,6 +128,23 @@ export const api = {
     })
   },
 
+  async settings(signal?: AbortSignal): Promise<{
+    settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }
+    exists: boolean
+  }> {
+    return request('/api/settings', { signal })
+  },
+
+  async saveSettings(settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }): Promise<{
+    settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }
+    exists: boolean
+  }> {
+    return request('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    })
+  },
+
   async quit(): Promise<{ status: string }> {
     return request<{ status: string }>('/api/quit', { method: 'POST' })
   },

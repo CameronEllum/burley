@@ -53,6 +53,22 @@ async function putFavorites(favorites) {
   return (await res.json()).favorites
 }
 
+async function getSettings() {
+  const res = await fetch(`${BASE}/api/settings`)
+  if (!res.ok) throw new Error(`GET settings: ${res.status}`)
+  return res.json()
+}
+
+async function putSettings(settings) {
+  const res = await fetch(`${BASE}/api/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  if (!res.ok) throw new Error(`PUT settings: ${res.status} ${await res.text()}`)
+  return res.json()
+}
+
 async function waitFor(fn, timeout = 12000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
@@ -67,6 +83,8 @@ const original = {
   crlf: await getFile('notes/crlf-note.md'),
 }
 const originalFavorites = await getFavorites()
+const originalSettings = await getSettings()
+await putSettings({ theme: 'system', wideMode: false })
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
@@ -408,6 +426,36 @@ try {
     `${backToNarrow}px`,
   )
 
+  // Settings live in .burley/settings.yaml and survive a reload.
+  await themeButton.click()
+  await page.waitForTimeout(120)
+  await themeButton.click()
+  await page.waitForTimeout(120)
+  await wideButton.click()
+  await page.waitForTimeout(600)
+  const savedSettings = await getSettings()
+  check(
+    'settings saved to .burley/settings.yaml',
+    savedSettings.exists === true &&
+      savedSettings.settings.theme === 'dark' &&
+      savedSettings.settings.wideMode === true,
+    JSON.stringify(savedSettings),
+  )
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(800)
+  check(
+    'theme restored from server settings',
+    (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
+  )
+  const restoredWide = (await page.locator('.cm-content').boundingBox()).width
+  check('wide mode restored from server settings', restoredWide > 900, `${restoredWide}px`)
+  await putSettings(originalSettings.settings)
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
+
+
   // Favorites: star, fuzzy filter, empty Ctrl+P ordering, persistence, missing files.
   await putFavorites([])
   await page.reload({ waitUntil: 'networkidle' })
@@ -524,6 +572,11 @@ try {
   }
   try {
     await putFavorites(originalFavorites)
+  } catch {
+    /* ignore */
+  }
+  try {
+    await putSettings(originalSettings.settings)
   } catch {
     /* ignore */
   }

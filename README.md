@@ -53,6 +53,9 @@ the compiled frontend, so deployment is a single executable.
   `.burley/favorites.yaml` via `GET`/`PUT /api/favorites` (not in your Markdown
   folder's tracked files). Missing favorites are dimmed with a remove button;
   favorites can be drag-reordered.
+- **Cross-device settings:** theme and reading width are saved in
+  `.burley/settings.yaml` (`GET`/`PUT /api/settings`) so another browser or
+  laptop picks them up.
 - **One-click Quit + port increment:** `POST /api/quit` gracefully stops the
   server. If the preferred port is busy, Burley tries the next 20 ports and then
   an OS-assigned port, logging the URL actually used.
@@ -208,6 +211,8 @@ See [the todo list](./notes/todo.md).
 | `GET /api/search?q=...` | Content search results (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read `.burley/favorites.yaml` |
 | `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
+| `GET /api/settings` | Read `.burley/settings.yaml` (theme, wide mode) |
+| `PUT /api/settings` | Save theme / wide mode |
 | `POST /api/quit` | Graceful shutdown (loopback clients only) |
 
 Writes are atomic: a hidden temp file in the same directory is synced and then

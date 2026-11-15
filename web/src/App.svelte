@@ -165,7 +165,7 @@
 
   async function initialLoad() {
     await refreshTree()
-    await loadFavorites()
+    await Promise.all([loadFavorites(), loadSettings()])
     const stored = localStorage.getItem(LAST_PATH_KEY)
     const target =
       files.find((file) => file.path === stored)?.path ??
@@ -405,6 +405,40 @@
   function toggleWideMode() {
     wideMode = !wideMode
     localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+    void persistSettings()
+  }
+
+  function cycleTheme() {
+    themeMode = nextThemeMode(themeMode)
+    storeThemeMode(themeMode)
+    applyTheme(themeMode)
+    void persistSettings()
+  }
+
+  async function persistSettings() {
+    try {
+      await api.saveSettings({ theme: themeMode, wideMode })
+    } catch (err) {
+      flash(`Could not save settings: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const response = await api.settings()
+      if (response.exists) {
+        themeMode = response.settings.theme
+        wideMode = response.settings.wideMode
+        applyTheme(themeMode)
+        storeThemeMode(themeMode)
+        localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+      } else {
+        // First run on this EC2 host: migrate local browser preferences.
+        await api.saveSettings({ theme: themeMode, wideMode })
+      }
+    } catch (err) {
+      flash(`Could not load settings: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
   }
 
   async function loadFavorites() {
@@ -462,12 +496,6 @@
 
   function jumpToOutline(item: OutlineItem) {
     editor?.scrollToLine(item.line)
-  }
-
-  function cycleTheme() {
-    themeMode = nextThemeMode(themeMode)
-    storeThemeMode(themeMode)
-    applyTheme(themeMode)
   }
 
   function requestQuit() {
