@@ -9,6 +9,8 @@ export interface OutlineItem {
   line: number
   /** Stable key for keyed each-blocks. */
   id: string
+  /** URL-safe, de-duplicated anchor (used by deep links and history). */
+  slug: string
 }
 
 const ATX = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
@@ -24,11 +26,31 @@ function cleanHeadingText(raw: string): string {
     .trim()
 }
 
+/** URL-safe heading anchor, e.g. "Loss curve" → "loss-curve". */
+export function slugifyHeading(text: string): string {
+  const slug = text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'section'
+}
+
 /** Extract headings, skipping anything inside fenced code blocks. */
 export function buildOutline(markdown: string): OutlineItem[] {
   const lines = markdown.split('\n')
   const items: OutlineItem[] = []
+  const slugCounts = new Map<string, number>()
   let fenceChar: string | null = null
+
+  const pushItem = (level: number, text: string, lineIndex: number) => {
+    const base = slugifyHeading(text)
+    const count = slugCounts.get(base) ?? 0
+    slugCounts.set(base, count + 1)
+    const slug = count === 0 ? base : `${base}-${count}`
+    items.push({ level, text, line: lineIndex + 1, id: `${lineIndex + 1}-${text}`, slug })
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]

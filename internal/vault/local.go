@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -473,6 +474,13 @@ type rgMessage struct {
 	} `json:"data"`
 }
 
+// rgNoMatches reports ripgrep's "no matches found" exit status (1). It must not
+// be treated as a failure, otherwise every miss would trigger a full Go scan.
+func rgNoMatches(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+}
+
 func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max int) ([]SearchMatch, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -492,13 +500,18 @@ func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max in
 	cmd := exec.CommandContext(ctx, rg, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	stdout, err := cmd.Output()
-	if err != nil && len(stdout) == 0 {
-		return nil, fmt.Errorf("ripgrep: %w: %s", err, strings.TrimSpace(stderr.String()))
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("ripgrep pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("ripgrep start: %w", err)
 	}
 
 	matches := make([]SearchMatch, 0, max)
-	scanner := bufio.NewScanner(bytes.NewReader(stdout))
+	limitReached := false
+	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8<<20)
 	for scanner.Scan() {
 		var msg rgMessage
@@ -526,8 +539,44 @@ func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max in
 			Snippet: truncate(strings.TrimSpace(line), 240),
 		})
 		if len(matches) >= max {
+			// Stop ripgrep immediately instead of draining the rest of its output.
+			limitReached = true
+			cancel()
 			break
 		}
+	}
+
+	scanErr := scanner.Err()
+	if limitReached {
+		// The context cancellation kills ripgrep; drain the pipe so Wait can
+		// reap the process without blocking on unread buffered output.
+		cancel()
+		_, _ = io.Copy(io.Discard, stdout)
+	}
+	waitErr := cmd.Wait()
+
+	if limitReached {
+		// The process was killed deliberately after collecting enough matches.
+		_ = scanErr
+		return matches, nil
+	}
+	if waitErr != nil {
+		switch {
+		case rgNoMatches(waitErr):
+			// Exit code 1 means "no matches"; this is a successful empty result.
+			return []SearchMatch{}, nil
+		case len(matches) > 0:
+			// Keep whatever was collected before a timeout/partial failure.
+			return matches, nil
+		default:
+			return nil, fmt.Errorf("ripgrep: %w: %s", waitErr, strings.TrimSpace(stderr.String()))
+		}
+	}
+	if scanErr != nil {
+		if len(matches) > 0 {
+			return matches, nil
+		}
+		return nil, fmt.Errorf("ripgrep output: %w", scanErr)
 	}
 	if len(matches) == 0 {
 		return []SearchMatch{}, nil
