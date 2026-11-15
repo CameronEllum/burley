@@ -41,17 +41,25 @@ New-Item -ItemType Directory -Path $dist | Out-Null
 Copy-Item -Recurse (Join-Path $web "dist/*") $dist
 
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
+# Version injected into the binary: nearest git tag (v0.0.2 -> 0.0.2).
+$version = "0.0.0-dev"
+$tag = (& git describe --tags --abbrev=0 2>$null)
+if ($LASTEXITCODE -eq 0 -and $tag) {
+    $version = ($tag.Trim() -replace '^[vV]', '')
+    if (-not $version) { $version = "0.0.0-dev" }
+}
+$ldflags = "-s -w -X main.version=$version"
 Push-Location $repo
 try {
-    go build -trimpath -ldflags "-s -w" -o (Join-Path $bin "burley.exe") ./cmd/server
+    go build -trimpath -ldflags $ldflags -o (Join-Path $bin "burley.exe") ./cmd/server
     if ($Linux) {
         $env:GOOS = "linux"; $env:GOARCH = "amd64"; $env:CGO_ENABLED = "0"
-        go build -trimpath -ldflags "-s -w" -o (Join-Path $bin "burley-linux-amd64") ./cmd/server
+        go build -trimpath -ldflags $ldflags -o (Join-Path $bin "burley-linux-amd64") ./cmd/server
         Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
     }
 
     Write-Host ""
-    Write-Host "Built $bin\burley.exe" -ForegroundColor Green
+    Write-Host "Built $bin\burley.exe (v$version)" -ForegroundColor Green
 
     if ($Run) {
         & (Join-Path $bin "burley.exe") --root $Root --addr $Addr

@@ -98,6 +98,7 @@ const original = {
   welcome: await getFile('welcome.md'),
   crlf: await getFile('notes/crlf-note.md'),
   slash: await getFile('notes/slash-commands.md'),
+  analysis: await getFile('notes/deep/analysis.md'),
 }
 const originalFavorites = await getFavorites()
 const originalSettings = await getSettings()
@@ -107,6 +108,9 @@ await putRecent([])
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
+const serverMeta = await (await fetch(`${BASE}/api/health`)).json()
+const APP_VERSION = serverMeta.version || '0.0.0-dev'
+
 const page = await context.newPage()
 
 // Deterministic release metadata so the status-bar update pill and About tab do
@@ -119,7 +123,7 @@ await page.route('**/api/release**', async (route) => {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
-      current: '0.1.0',
+      current: APP_VERSION,
       latest: 'v9.9.9',
       name: 'Burley 9.9.9',
       url: RELEASE_URL,
@@ -1211,7 +1215,7 @@ try {
   await openSettings('About')
   check(
     'About shows the running version',
-    (await page.locator('.about-version').innerText()).includes('0.1.0'),
+    (await page.locator('.about-version').innerText()).includes(APP_VERSION),
   )
   check(
     'About shows the available release',
@@ -1228,8 +1232,18 @@ try {
     'Report a bug opens a prefilled GitHub issue',
     !!bugHref &&
       bugHref.startsWith('https://github.com/CameronEllum/burley/issues/new?') &&
-      bugHref.includes('0.1.0'),
+      bugHref.includes(APP_VERSION),
     (bugHref ?? '').slice(0, 120),
+  )
+  const featureHref = await page
+    .locator('.about-links a', { hasText: 'Request a feature' })
+    .getAttribute('href')
+  check(
+    'Request a feature opens a prefilled enhancement issue',
+    !!featureHref &&
+      featureHref.startsWith('https://github.com/CameronEllum/burley/issues/new?') &&
+      featureHref.includes('enhancement'),
+    (featureHref ?? '').slice(0, 120),
   )
   check(
     'About credits the open-source stack',
@@ -1579,6 +1593,7 @@ try {
     ['welcome.md', original.welcome],
     ['notes/crlf-note.md', original.crlf],
     ['notes/slash-commands.md', original.slash],
+    ['notes/deep/analysis.md', original.analysis],
   ]) {
     try {
       const current = await getFile(file)

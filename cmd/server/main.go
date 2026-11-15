@@ -29,7 +29,9 @@ import (
 //go:embed all:dist
 var embeddedFrontend embed.FS
 
-const version = "0.1.0"
+// version is injected by release builds via -ldflags "-X main.version=…".
+// Local builds fall back to this dev marker.
+var version = "0.0.0-dev"
 
 // createListener binds preferredAddr, or the next free port (up to 20 attempts)
 // when it is already in use, finally falling back to an OS-assigned port. It

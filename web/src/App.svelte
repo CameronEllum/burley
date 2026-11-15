@@ -1408,9 +1408,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <span class="brand-mark" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
             <rect width="32" height="32" rx="7" fill="#c2410c" />
-            <rect x="6" y="7" width="13" height="4.5" rx="2.25" fill="#fff7ed" />
-            <rect x="12" y="13.75" width="14" height="4.5" rx="2.25" fill="#fff7ed" opacity="0.85" />
-            <rect x="6" y="20.5" width="13" height="4.5" rx="2.25" fill="#fff7ed" />
+            <path d="M2 13.5 Q16 10.5 30 13.5 L30 25.5 Q16 22.5 2 25.5 Z" fill="#fff7ed" opacity="0.16" />
+            <rect x="4.5" y="21" width="8.5" height="4.5" rx="2.25" fill="#fff7ed" />
+            <rect x="11.5" y="16" width="7" height="3.8" rx="1.9" fill="#fff7ed" opacity="0.95" />
+            <rect x="17" y="11.8" width="5.6" height="3.1" rx="1.55" fill="#fff7ed" opacity="0.9" />
+            <rect x="21.5" y="8.4" width="4.2" height="2.4" rx="1.2" fill="#fff7ed" opacity="0.85" />
           </svg>
         </span>
         <span class="brand-name">Burley</span>

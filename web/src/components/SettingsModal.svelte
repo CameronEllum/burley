@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AppSettings, ReleaseInfo } from '../lib/api'
   import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
-  import { bugReportUrl } from '../lib/project'
+  import { bugReportUrl, featureRequestUrl } from '../lib/project'
 
   let {
     settings,
@@ -24,6 +24,7 @@
   } = $props()
 
   const bugUrl = $derived(bugReportUrl(repo, version))
+  const featureUrl = $derived(featureRequestUrl(repo))
   const releasesUrl = $derived(`${repo}/releases`)
 
   let tab = $state<'behaviour' | 'appearance' | 'about'>(
@@ -261,12 +262,13 @@
           <div class="about-links">
             <a href={repo} target="_blank" rel="noopener noreferrer">GitHub repository</a>
             <a href={bugUrl} target="_blank" rel="noopener noreferrer">Report a bug</a>
+            <a href={featureUrl} target="_blank" rel="noopener noreferrer">Request a feature</a>
             <a href={releasesUrl} target="_blank" rel="noopener noreferrer">Releases</a>
           </div>
 
           <h3>Credits</h3>
           <p class="about-credits">
-            Burley is built by Cameron Ellum and stands on excellent open-source work:
+            Burley uses the following open-source work:
           </p>
           <ul class="about-credit-list">
             <li><strong>Svelte 5</strong> — interface</li>

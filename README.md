@@ -105,9 +105,10 @@ the compiled frontend, so deployment is a single executable.
   repository, and the server checks the latest published release (cached, silent
   when offline). A newer release appears as a pill in the status bar linking to
   its notes. Settings → **About** shows the running version, lets you check
-  again, links the repo/releases, lists the open-source credits, and offers a
-  **Report a bug** link prefilled with the version and browser (also available
-  as `>Report a bug` in the palette).
+  again, links the repo/releases, lists the open-source credits, and offers
+  **Report a bug** and **Request a feature** links prefilled with the relevant
+  details (bug reports include the version and browser; also available as
+  `>Report a bug` in the palette).
 - **Figure gallery & lightbox:** the `⤢` button on any image or Plotly chart
   (or Alt-click an image, or a plain click in read-only mode) opens a full-screen
   viewer with every figure in the note, `←`/`→` navigation, wheel zoom, drag to
@@ -179,6 +180,10 @@ Type-check and test:
 go test ./...
 cd web && npm run check
 ```
+
+Builds stamp the nearest git tag into the binary (`-X main.version=…`), so
+`--version`, the update check, and Settings → About all agree with the published
+release (`v0.0.2` → `0.0.2`). Untagged builds report `0.0.0-dev`.
 
 The browser smoke test needs a running server and an installed Chrome/Edge:
 
