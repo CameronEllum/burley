@@ -38,6 +38,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
    - **Automatic port increment:** if the preferred port is busy, try the next 20 ports, then an OS-assigned port; log the URL actually used.
 10. **Theme:** Follows the OS light/dark preference by default, with a top-bar **system → light → dark** toggle that overrides it.
 11. **Reading Width:** A top-bar narrow/wide toggle expands the editor measure from `820px` to `1200px` and tightens the gutters; the choice is persisted in `localStorage`.
+12. **Favorites:** Star notes from the top bar or by hovering tree rows. Favorites appear in a collapsible section above the file tree (with their own fuzzy search) and first in an empty `Ctrl+P` query. They live in `.burley/favorites.yaml` in the vault root — YAML, vault-relative, display order preserved — and are exposed through `GET`/`PUT /api/favorites`. Missing files are shown dimmed with a remove button.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -90,7 +91,8 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 ├── internal/
 │   ├── vault/
 │   │   ├── vault.go             # Vault interface, Entry, FileContent, ConflictError
-│   │   └── local.go             # LocalVault implementation (atomic writes, path safety)
+│   │   ├── local.go             # LocalVault implementation (atomic writes, path safety)
+│   │   └── favorites.go         # YAML favorites at .burley/favorites.yaml
 │   └── api/
 │       └── handlers.go          # REST handlers (/api/tree, /api/file, /api/search, /api/asset)
 ├── web/                         # Vite + Svelte + TypeScript frontend
@@ -157,6 +159,8 @@ type Vault interface {
 | `PUT /api/file` | Save file with conflict check | JSON `{ path, content, expectedHash }` | `200` updated `FileData`, or `409 Conflict` with current server `FileData` |
 | `GET /api/asset` | Serve images / JSON / CSV | `?path=notes/img/fig1.png` | `200` raw bytes with `Content-Type` |
 | `GET /api/search` | Content search via `rg` | `?q=eigenvalue` | `200` JSON `[]SearchMatch` (`path`, `line`, `snippet`) |
+| `GET /api/favorites` | Read the YAML favorite list | none | `200` JSON `{"favorites":["a.md"]}` |
+| `PUT /api/favorites` | Replace the favorite list | JSON `{favorites:[...]}` | `200` canonical list (deduped, validated) |
 | `POST /api/quit` | Gracefully stop the local server (loopback clients only) | none | `200` JSON `{"status":"shutting_down"}` |
 
 ### 5.3 Safety Rules in `LocalVault`
@@ -174,10 +178,11 @@ type Vault interface {
 ## 6. Frontend Design (Svelte + CodeMirror 6)
 
 ### 6.1 UI Layout
-- **Top Bar (compact):** Active file path, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), a **wide/narrow reading-width toggle**, **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
+- **Top Bar (compact):** Active file path, **favorite star**, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), a **wide/narrow reading-width toggle**, **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
 - **Left Sidebar (~20–25% width, collapsible and resizable):**
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
   - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
+  - **Favorites section** above the tree: collapsible, fuzzy-filterable, drag-to-reorder, missing paths dimmed with a remove button. File rows show a hover star; the empty `Ctrl+P` list puts favorites first.
   - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty).
   - **Outline tab:** the open note's headings (H1–H6, indented by level, code fences excluded). Clicking an entry scrolls to that heading; the heading containing the cursor is highlighted.
 - **Main Pane (~75–80% width):** Full-height CodeMirror 6 editor with comfortable max-width reading measure (e.g. `820px` centered) and clean typography.
@@ -275,3 +280,5 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] The Quit button stops the server (loopback-only `POST /api/quit`) and shows the shutdown overlay.
 - [ ] Light/dark theme follows the OS by default and the top-bar toggle overrides it.
 - [ ] The narrow/wide toggle expands the reading measure and the choice survives a reload.
+- [ ] Favorites are stored as YAML in `.burley/favorites.yaml`, appear above the tree and at the top of an empty `Ctrl+P`, survive reloads, and flag missing files.
+- [ ] Favorites have their own fuzzy filter and can be reordered.

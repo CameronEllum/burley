@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import fuzzysort from 'fuzzysort'
   import { api, ConflictError, type Entry, type FileData, type FlatFile } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf } from './lib/paths'
+  import { baseName, dirOf, stripMdExt } from './lib/paths'
   import { buildOutline, type OutlineItem } from './lib/outline'
   import {
     applyTheme,
@@ -24,6 +25,7 @@
   const SIDEBAR_TAB_KEY = 'burley:sidebar-tab'
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
   const WIDE_MODE_KEY = 'burley:wide-mode'
+  const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
 
@@ -48,6 +50,10 @@
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
   let wideMode = $state(false)
+  let favorites = $state<string[]>([])
+  let favoritesOpen = $state(true)
+  let favoritesFilter = $state('')
+  let dragFavoritePath = $state<string | null>(null)
   let treeFilter = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
@@ -84,6 +90,23 @@
     }
     return line
   })
+  const fileByPath = $derived(new Map(files.map((file) => [file.path, file])))
+  const favoriteItems = $derived.by(() =>
+    favorites.map((path) => ({
+      path,
+      name: baseName(path),
+      dir: dirOf(path),
+      exists: fileByPath.has(path),
+    })),
+  )
+  const filteredFavorites = $derived.by(() => {
+    const query = favoritesFilter.trim()
+    if (!query) return favoriteItems
+    return fuzzysort
+      .go(query, favoriteItems, { key: 'path', limit: 40, threshold: -20000 })
+      .map((result) => result.obj)
+  })
+  const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
   const saveLabel = $derived(
     saveState === 'saved'
       ? 'Saved'
@@ -109,6 +132,8 @@
       sidebarWidth = clampSidebarWidth(storedWidth)
     }
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
+    const storedFavoritesOpen = localStorage.getItem(FAVORITES_OPEN_KEY)
+    if (storedFavoritesOpen !== null) favoritesOpen = storedFavoritesOpen === '1'
 
     applyTheme(themeMode)
     const unwatchTheme = watchSystemTheme(() => {
@@ -140,6 +165,7 @@
 
   async function initialLoad() {
     await refreshTree()
+    await loadFavorites()
     const stored = localStorage.getItem(LAST_PATH_KEY)
     const target =
       files.find((file) => file.path === stored)?.path ??
@@ -381,6 +407,59 @@
     localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
   }
 
+  async function loadFavorites() {
+    try {
+      const response = await api.favorites()
+      favorites = response.favorites
+    } catch (err) {
+      flash(err instanceof Error ? err.message : String(err), true)
+    }
+  }
+
+  async function persistFavorites(next: string[]) {
+    const previous = favorites
+    favorites = next
+    try {
+      const response = await api.saveFavorites(next)
+      favorites = response.favorites
+    } catch (err) {
+      favorites = previous
+      flash(err instanceof Error ? err.message : String(err), true)
+    }
+  }
+
+  function toggleFavorite(path: string) {
+    if (!path) return
+    const next = favorites.includes(path)
+      ? favorites.filter((favorite) => favorite !== path)
+      : [...favorites, path]
+    void persistFavorites(next)
+  }
+
+  function toggleFavoritesOpen() {
+    favoritesOpen = !favoritesOpen
+    localStorage.setItem(FAVORITES_OPEN_KEY, favoritesOpen ? '1' : '0')
+  }
+
+  function favoriteDragStart(event: DragEvent, path: string) {
+    dragFavoritePath = path
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', path)
+    }
+  }
+
+  function favoriteDrop(event: DragEvent, targetPath: string) {
+    event.preventDefault()
+    const fromPath = dragFavoritePath
+    dragFavoritePath = null
+    if (!fromPath || fromPath === targetPath) return
+    const next = favorites.filter((path) => path !== fromPath)
+    const targetIndex = next.indexOf(targetPath)
+    next.splice(targetIndex < 0 ? next.length : targetIndex, 0, fromPath)
+    void persistFavorites(next)
+  }
+
   function jumpToOutline(item: OutlineItem) {
     editor?.scrollToLine(item.line)
   }
@@ -505,6 +584,27 @@
       {/if}
     </div>
 
+    {#if currentPath}
+      <button
+        class="icon-btn favorite-star"
+        class:on={currentIsFavorite}
+        title={currentIsFavorite ? 'Remove current note from favorites' : 'Add current note to favorites'}
+        aria-label="Toggle favorite"
+        aria-pressed={currentIsFavorite}
+        onclick={() => toggleFavorite(currentPath)}
+      >
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+          <path
+            d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z"
+            fill={currentIsFavorite ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    {/if}
+
     <span class="grow"></span>
 
     <span class="pill {saveState}" class:inactive={!currentPath} title={saveError || saveLabel}>
@@ -611,6 +711,72 @@
           </button>
         </div>
 
+        <div class="favorites" class:collapsed={!favoritesOpen}>
+          <button class="favorites-head" aria-expanded={favoritesOpen} onclick={toggleFavoritesOpen}>
+            <span class="chevron" class:open={favoritesOpen} aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </span>
+            <svg class="favorites-star-icon" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill="currentColor" /></svg>
+            <span class="favorites-title">Favorites</span>
+            <span class="tab-count">{favorites.length}</span>
+            <span class="grow"></span>
+          </button>
+
+          {#if favoritesOpen}
+            {#if favorites.length === 0}
+              <p class="favorites-empty">Star a note to pin it here.</p>
+            {:else}
+              <div class="favorites-filter-wrap">
+                <input
+                  class="favorites-filter"
+                  placeholder="Search favorites…"
+                  spellcheck="false"
+                  bind:value={favoritesFilter}
+                />
+                {#if favoritesFilter}
+                  <button class="clear-filter" aria-label="Clear favorites filter" onclick={() => (favoritesFilter = '')}>×</button>
+                {/if}
+              </div>
+
+              {#if filteredFavorites.length === 0}
+                <p class="favorites-empty">No favorites match “{favoritesFilter.trim()}”.</p>
+              {:else}
+                <ul class="favorites-list">
+                  {#each filteredFavorites as favorite (favorite.path)}
+                    <li
+                      class="favorite-item"
+                      class:missing={!favorite.exists}
+                      class:dragging={dragFavoritePath === favorite.path}
+                      draggable="true"
+                      ondragstart={(event) => favoriteDragStart(event, favorite.path)}
+                      ondragover={(event) => event.preventDefault()}
+                      ondrop={(event) => favoriteDrop(event, favorite.path)}
+                      ondragend={() => (dragFavoritePath = null)}
+                    >
+                      <button
+                        class="favorite-row"
+                        title={favorite.exists ? favorite.path : `Missing: ${favorite.path}`}
+                        onclick={() => favorite.exists && void openFile(favorite.path)}
+                      >
+                        <span class="favorite-pin" aria-hidden="true">★</span>
+                        <span class="favorite-name">{stripMdExt(favorite.name)}</span>
+                        <span class="favorite-dir">{favorite.dir}</span>
+                        {#if !favorite.exists}<span class="favorite-missing">missing</span>{/if}
+                      </button>
+                      <button
+                        class="favorite-remove"
+                        title={favorite.exists ? 'Remove from favorites' : 'Remove missing favorite'}
+                        aria-label="Remove favorite"
+                        onclick={() => toggleFavorite(favorite.path)}
+                      >×</button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            {/if}
+          {/if}
+        </div>
+
         <div class="tree-scroll">
           {#if loading && files.length === 0}
             <p class="tree-status">Loading…</p>
@@ -621,6 +787,8 @@
               entries={tree}
               selectedPath={currentPath}
               filter={treeFilter}
+              favorites={favorites}
+              ontogglefavorite={(path) => toggleFavorite(path)}
               onselect={(path) => void openFile(path)}
             />
           {/if}
@@ -727,6 +895,7 @@
     <SearchModal
       initialMode={searchMode}
       files={files}
+      favorites={favorites}
       onclose={closeSearch}
       onopen={(path, line) => {
         searchOpen = false
@@ -1179,6 +1348,164 @@
     color: var(--accent);
     border-color: var(--accent);
     background: transparent;
+  }
+
+  .favorite-star {
+    color: var(--text-muted);
+  }
+  .favorite-star.on {
+    color: var(--accent);
+    background: var(--active);
+  }
+
+  .favorites {
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 6px;
+  }
+  .favorites-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 12px 5px;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    cursor: pointer;
+  }
+  .favorites-head:hover {
+    color: var(--text-primary);
+  }
+  .favorites-star-icon {
+    color: var(--accent);
+  }
+  .favorites-head .chevron {
+    display: inline-flex;
+    transition: transform 0.14s ease;
+  }
+  .favorites-head .chevron.open {
+    transform: rotate(90deg);
+  }
+  .favorites-empty {
+    margin: 2px 14px 6px;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .favorites-filter-wrap {
+    position: relative;
+    margin: 2px 10px 4px;
+  }
+  .favorites-filter {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 24px 5px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-app);
+    color: var(--text-primary);
+    outline: none;
+  }
+  .favorites-filter:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--active);
+  }
+  .favorites-list {
+    list-style: none;
+    margin: 0 6px;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .favorite-item {
+    display: flex;
+    align-items: center;
+    position: relative;
+    border-radius: 6px;
+  }
+  .favorite-item:hover {
+    background: var(--hover);
+  }
+  .favorite-item.dragging {
+    opacity: 0.45;
+  }
+  .favorite-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    padding: 4px 24px 4px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .favorite-pin {
+    flex: 0 0 auto;
+    color: var(--accent);
+    font-size: 10px;
+  }
+  .favorite-name {
+    color: var(--text-primary);
+    font-weight: 550;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .favorite-dir {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .favorite-missing {
+    margin-left: auto;
+    color: var(--danger-fg);
+    font-size: 9.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .favorite-item.missing .favorite-name {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+  .favorite-remove {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .favorite-item:hover .favorite-remove,
+  .favorite-item.missing .favorite-remove {
+    opacity: 1;
+  }
+  .favorite-remove:hover {
+    color: var(--danger-fg);
+    background: var(--danger-bg);
   }
   .filter-wrap {
     display: flex;

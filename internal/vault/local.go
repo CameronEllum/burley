@@ -291,33 +291,7 @@ func (v *LocalVault) Write(ctx context.Context, relPath string, content []byte, 
 		perm = info.Mode().Perm()
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(abs), ".burley-tmp-*")
-	if err != nil {
-		return FileData{}, err
-	}
-	tmpName := tmp.Name()
-	cleanup := func() {
-		tmp.Close()
-		os.Remove(tmpName)
-	}
-	if _, err := tmp.Write(content); err != nil {
-		cleanup()
-		return FileData{}, err
-	}
-	if err := tmp.Sync(); err != nil {
-		cleanup()
-		return FileData{}, err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return FileData{}, err
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		os.Remove(tmpName)
-		return FileData{}, err
-	}
-	if err := os.Rename(tmpName, abs); err != nil {
-		os.Remove(tmpName)
+	if err := writeFileAtomic(abs, content, perm); err != nil {
 		return FileData{}, err
 	}
 
@@ -331,6 +305,42 @@ func (v *LocalVault) Write(ctx context.Context, relPath string, content []byte, 
 		ModTime: newInfo.ModTime().UnixMilli(),
 		Hash:    HashBytes(content),
 	}, nil
+}
+
+// writeFileAtomic writes data to a hidden temp file in the target directory,
+// syncs it, then renames it over abs. The temp file never leaves its directory,
+// so the rename is atomic on the same filesystem.
+func writeFileAtomic(abs string, data []byte, perm fs.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(abs), ".burley-tmp-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(name)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Chmod(name, perm); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, abs); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
 }
 
 var assetTypes = map[string]string{

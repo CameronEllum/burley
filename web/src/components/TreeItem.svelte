@@ -8,17 +8,22 @@
     entry,
     selectedPath,
     filter,
+    favorites,
+    ontogglefavorite,
     onselect,
   }: {
     entry: Entry
     selectedPath: string
     filter: string
+    favorites: string[]
+    ontogglefavorite: (path: string) => void
     onselect: (path: string) => void
   } = $props()
 
   let open = $state(false)
   const filtering = $derived(filter.trim().length > 0)
   const containsSelected = $derived(!!selectedPath && selectedPath.startsWith(entry.path + '/'))
+  const isFavorite = $derived(favorites.includes(entry.path))
   $effect(() => {
     if (containsSelected) open = true
   })
@@ -44,13 +49,13 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {favorites} {ontogglefavorite} {onselect} />
         {/each}
       </ul>
     {/if}
   </li>
 {:else}
-  <li>
+  <li class="file-item">
     <button
       class="row file-row"
       class:active={entry.path === selectedPath}
@@ -59,9 +64,23 @@
     >
       <span class="file-dot" aria-hidden="true"></span>
       <span class="label">{stripMdExt(entry.name)}</span>
-      {#if entry.path === selectedPath}
-        <span class="active-bar" aria-hidden="true"></span>
-      {/if}
+    </button>
+    <button
+      class="row-star"
+      class:on={isFavorite}
+      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      onclick={() => ontogglefavorite(entry.path)}
+    >
+      <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+        <path
+          d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z"
+          fill={isFavorite ? 'currentColor' : 'none'}
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linejoin="round"
+        />
+      </svg>
     </button>
   </li>
 {/if}
@@ -140,12 +159,40 @@
   .file-row.active .file-dot {
     background: var(--accent);
   }
-  .active-bar {
+  .file-item {
+    position: relative;
+  }
+  .file-item .file-row {
+    padding-right: 30px;
+  }
+  .row-star {
     position: absolute;
-    right: 6px;
-    width: 3px;
-    height: 12px;
-    border-radius: 2px;
-    background: var(--accent);
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .file-item:hover .row-star,
+  .row-star:focus-visible,
+  .row-star.on {
+    opacity: 1;
+  }
+  .row-star.on {
+    color: var(--accent);
+  }
+  .row-star:hover {
+    background: var(--hover);
+    color: var(--accent);
   }
 </style>

@@ -117,6 +117,17 @@ export const api = {
     return request<SearchMatch[]>(`/api/search?q=${encodeURIComponent(query)}`, { signal })
   },
 
+  async favorites(signal?: AbortSignal): Promise<{ favorites: string[] }> {
+    return request<{ favorites: string[] }>('/api/favorites', { signal })
+  },
+
+  async saveFavorites(favorites: string[]): Promise<{ favorites: string[] }> {
+    return request<{ favorites: string[] }>('/api/favorites', {
+      method: 'PUT',
+      body: JSON.stringify({ favorites }),
+    })
+  },
+
   async quit(): Promise<{ status: string }> {
     return request<{ status: string }>('/api/quit', { method: 'POST' })
   },

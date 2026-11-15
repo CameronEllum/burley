@@ -47,6 +47,12 @@ the compiled frontend, so deployment is a single executable.
   system → light → dark and is remembered.
 - **Narrow/wide reading mode:** one click widens the editor to 1200 px with
   tighter gutters (820 px when narrow); remembered between sessions.
+- **Favorites with YAML storage:** star notes from the top bar or tree rows.
+  They appear above the file tree with their own fuzzy filter, at the top of an
+  empty `Ctrl+P`, survive reloads, and are stored cross-device in
+  `.burley/favorites.yaml` via `GET`/`PUT /api/favorites` (not in your Markdown
+  folder's tracked files). Missing favorites are dimmed with a remove button;
+  favorites can be drag-reordered.
 - **One-click Quit + port increment:** `POST /api/quit` gracefully stops the
   server. If the preferred port is busy, Burley tries the next 20 ports and then
   an OS-assigned port, logging the URL actually used.
@@ -200,6 +206,8 @@ See [the todo list](./notes/todo.md).
 | `PUT /api/file` | `{path, content, expectedHash}`; `409` returns the current file |
 | `GET /api/asset?path=...` | Images / JSON / CSV and other whitelisted assets |
 | `GET /api/search?q=...` | Content search results (`path`, `line`, `snippet`) |
+| `GET /api/favorites` | Read `.burley/favorites.yaml` |
+| `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
 | `POST /api/quit` | Graceful shutdown (loopback clients only) |
 
 Writes are atomic: a hidden temp file in the same directory is synced and then

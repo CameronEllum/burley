@@ -49,6 +49,8 @@ type Vault interface {
 	Read(ctx context.Context, relPath string) (FileData, error)
 	Write(ctx context.Context, relPath string, content []byte, expectedHash string) (FileData, error)
 	ReadAsset(ctx context.Context, relPath string) ([]byte, string, error)
+	ReadFavorites(ctx context.Context) ([]string, error)
+	WriteFavorites(ctx context.Context, paths []string) error
 	SearchContent(ctx context.Context, query string, max int) ([]SearchMatch, error)
 }
 

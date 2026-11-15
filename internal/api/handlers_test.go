@@ -337,3 +337,71 @@ func TestQuitEndpointDisabled(t *testing.T) {
 		t.Fatalf("quit without handler = %d, want 501", rr.Code)
 	}
 }
+
+func TestFavoritesAPI(t *testing.T) {
+	h := newHarness(t)
+
+	resp, data := h.do(t, "GET", "/api/favorites", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"favorites":[]`) {
+		t.Fatalf("empty favorites = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/favorites", map[string]any{
+		"favorites": []string{"welcome.md", "notes/todo.md", "welcome.md"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("put favorites = %d %s", resp.StatusCode, data)
+	}
+	var saved struct {
+		Favorites []string `json:"favorites"`
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Favorites) != 2 || saved.Favorites[0] != "welcome.md" || saved.Favorites[1] != "notes/todo.md" {
+		t.Fatalf("saved favorites = %v", saved.Favorites)
+	}
+
+	resp, data = h.do(t, "GET", "/api/favorites", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get favorites = %d %s", resp.StatusCode, data)
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Favorites) != 2 {
+		t.Fatalf("round-trip favorites = %v", saved.Favorites)
+	}
+
+	// The YAML file is created under .burley/.
+	raw, err := os.ReadFile(filepath.Join(h.root, ".burley", "favorites.yaml"))
+	if err != nil {
+		t.Fatalf("read favorites.yaml: %v", err)
+	}
+	if !strings.Contains(string(raw), `- "welcome.md"`) {
+		t.Fatalf("unexpected yaml:\n%s", raw)
+	}
+
+	// Traversal and hidden paths are rejected.
+	resp, data = h.do(t, "PUT", "/api/favorites", map[string]any{"favorites": []string{"../escape.md"}})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("traversal favorites = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "PUT", "/api/favorites", map[string]any{"favorites": []string{".burley/hidden.md"}})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("hidden favorites = %d %s", resp.StatusCode, data)
+	}
+
+	// Bad JSON is a 400.
+	resp, data = h.do(t, "PUT", "/api/favorites", "not-json")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad favorites json = %d %s", resp.StatusCode, data)
+	}
+
+	// .burley never appears in the tree.
+	h.write(t, "welcome.md", "# Welcome\n")
+	resp, data = h.do(t, "GET", "/api/tree", nil)
+	if resp.StatusCode != 200 || strings.Contains(string(data), ".burley") {
+		t.Fatalf("tree leaked .burley = %d %s", resp.StatusCode, data)
+	}
+}

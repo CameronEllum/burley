@@ -49,6 +49,8 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
 	mux.HandleFunc("GET /api/asset", s.handleAsset)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
+	mux.HandleFunc("GET /api/favorites", s.handleGetFavorites)
+	mux.HandleFunc("PUT /api/favorites", s.handlePutFavorites)
 	mux.HandleFunc("/api/quit", s.handleQuit)
 	mux.HandleFunc("/", s.handleStatic)
 
@@ -260,8 +262,46 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {	q := r.U
 	writeJSON(w, http.StatusOK, matches)
 }
 
-// ------------------------------------------------------------- file lifecycle
+// -------------------------------------------------------------- favorites
 
+func (s *server) handleGetFavorites(w http.ResponseWriter, r *http.Request) {
+	favorites, err := s.vault.ReadFavorites(r.Context())
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	if favorites == nil {
+		favorites = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites})
+}
+
+func (s *server) handlePutFavorites(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Favorites []string `json:"favorites"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	if req.Favorites == nil {
+		req.Favorites = []string{}
+	}
+	if err := s.vault.WriteFavorites(r.Context(), req.Favorites); err != nil {
+		vaultError(w, err)
+		return
+	}
+	// Return the canonical, de-duplicated list.
+	favorites, err := s.vault.ReadFavorites(r.Context())
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites})
+}
+
+// ------------------------------------------------------------- file lifecycle
 // remoteIP extracts the client IP from a request's RemoteAddr.
 func remoteIP(r *http.Request) net.IP {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

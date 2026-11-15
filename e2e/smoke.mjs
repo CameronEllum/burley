@@ -37,6 +37,22 @@ async function putFile(p, content, expectedHash) {
   return res.json()
 }
 
+async function getFavorites() {
+  const res = await fetch(`${BASE}/api/favorites`)
+  if (!res.ok) throw new Error(`GET favorites: ${res.status}`)
+  return (await res.json()).favorites
+}
+
+async function putFavorites(favorites) {
+  const res = await fetch(`${BASE}/api/favorites`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ favorites }),
+  })
+  if (!res.ok) throw new Error(`PUT favorites: ${res.status} ${await res.text()}`)
+  return (await res.json()).favorites
+}
+
 async function waitFor(fn, timeout = 12000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
@@ -50,6 +66,7 @@ const original = {
   welcome: await getFile('welcome.md'),
   crlf: await getFile('notes/crlf-note.md'),
 }
+const originalFavorites = await getFavorites()
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
@@ -391,6 +408,70 @@ try {
     `${backToNarrow}px`,
   )
 
+  // Favorites: star, fuzzy filter, empty Ctrl+P ordering, persistence, missing files.
+  await putFavorites([])
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
+  await page.locator('button[aria-label="Toggle favorite"]').click()
+  await page.waitForTimeout(500)
+  check('starring the active note adds a favorite', (await page.locator('.favorite-item').count()) === 1)
+  check('favorite persisted to YAML API', (await getFavorites()).includes('welcome.md'))
+
+  const todoRow = page.locator('.file-row', { hasText: 'todo' }).first()
+  await todoRow.hover()
+  await todoRow.locator('..').locator('.row-star').click()
+  await page.waitForTimeout(500)
+  check('tree hover star adds another favorite', (await page.locator('.favorite-item').count()) === 2)
+  const twoFavorites = await getFavorites()
+  check(
+    'favorites keep insertion order',
+    twoFavorites.length === 2 && twoFavorites[0] === 'welcome.md',
+    twoFavorites.join(', '),
+  )
+
+  await page.locator('.favorites-filter').fill('wel')
+  await page.waitForTimeout(300)
+  const filteredFavoriteText = await page.locator('.favorite-item').first().innerText()
+  check('favorites fuzzy filter works', (await page.locator('.favorite-item').count()) === 1 && filteredFavoriteText.includes('welcome'))
+  await page.locator('.favorites-filter').fill('')
+  await page.waitForTimeout(200)
+
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.search-modal', { timeout: 5000 })
+  const pinnedResults = await page.locator('.search-item .pin').count()
+  const firstSearchResult = await page.locator('.search-item').first().innerText()
+  check('empty Ctrl+P lists favorites first', pinnedResults >= 2 && firstSearchResult.includes('welcome'), firstSearchResult.replace(/\s+/g, ' '))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  await page.screenshot({ path: path.join(here, 'screenshot-favorites.png') })
+
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(800)
+  check('favorites survive a reload', (await page.locator('.favorite-item').count()) === 2)
+
+  const welcomeFavorite = page.locator('.favorite-item', { hasText: 'welcome' }).first()
+  await welcomeFavorite.hover()
+  await welcomeFavorite.locator('.favorite-remove').click()
+  await page.waitForTimeout(500)
+  check('removing a favorite updates the list', (await page.locator('.favorite-item').count()) === 1)
+
+  await putFavorites(['welcome.md', 'notes/ghost.md'])
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
+  check('missing favorites are shown dimmed', (await page.locator('.favorite-item.missing').count()) === 1)
+  await page.locator('.favorite-item.missing .favorite-remove').click()
+  await page.waitForTimeout(500)
+  check('missing favorite can be removed', (await page.locator('.favorite-item.missing').count()) === 0)
+
+  await putFavorites(originalFavorites)
+
+
   // Visual snapshot (light).
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(2500)
@@ -440,6 +521,11 @@ try {
     } catch {
       /* ignore */
     }
+  }
+  try {
+    await putFavorites(originalFavorites)
+  } catch {
+    /* ignore */
   }
   await browser.close()
 }

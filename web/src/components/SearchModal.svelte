@@ -7,11 +7,13 @@
   let {
     initialMode = 'files',
     files,
+    favorites = [],
     onclose,
     onopen,
   }: {
     initialMode?: 'files' | 'content'
     files: FlatFile[]
+    favorites?: string[]
     onclose: () => void
     onopen: (path: string, line?: number) => void
   } = $props()
@@ -28,12 +30,22 @@
   let contentLoading = $state(false)
   let contentError = $state('')
 
+  const favoriteSet = $derived(new Set(favorites))
   const fileResults = $derived.by(() => {
     const q = query.trim()
-    if (!q) return files.slice(0, 60).map((file) => ({ file, score: 0 }))
+    if (!q) {
+      const pinned = favorites
+        .map((path) => files.find((file) => file.path === path))
+        .filter((file): file is FlatFile => !!file)
+      const pinnedPaths = new Set(pinned.map((file) => file.path))
+      const rest = files.filter((file) => !pinnedPaths.has(file.path))
+      return [...pinned, ...rest]
+        .slice(0, 60)
+        .map((file) => ({ file, score: 0, pinned: favoriteSet.has(file.path) }))
+    }
     return fuzzysort
       .go(q, files, { key: 'path', limit: 60, threshold: -50000 })
-      .map((result) => ({ file: result.obj, score: result.score }))
+      .map((result) => ({ file: result.obj, score: result.score, pinned: favoriteSet.has(result.obj.path) }))
   })
 
   const resultCount = $derived(mode === 'files' ? fileResults.length : contentResults.length)
@@ -174,6 +186,9 @@
                   onmouseenter={() => (active = index)}
                   onclick={() => choose(index)}
                 >
+                  {#if result.pinned}
+                    <span class="pin" title="Favorite" aria-label="Favorite">★</span>
+                  {/if}
                   <span class="file-name">{stripMdExt(result.file.name)}</span>
                   {#if dirOf(result.file.path)}
                     <span class="file-dir">{dirOf(result.file.path)}</span>
@@ -329,6 +344,11 @@
     color: var(--text-primary);
     font-size: 13.5px;
     font-weight: 550;
+  }
+  .pin {
+    color: var(--accent);
+    font-size: 11px;
+    line-height: 1;
   }
   .file-dir {
     color: var(--text-muted);
