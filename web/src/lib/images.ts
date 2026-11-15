@@ -11,6 +11,7 @@ import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
+import { openFigureAt } from './figures'
 
 const IMAGE_SYNTAX = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)$/
 
@@ -45,6 +46,8 @@ class ImageWidget extends WidgetType {
   constructor(
     readonly info: ImageInfo,
     readonly editPos: number,
+    readonly figureFrom: number,
+    readonly readOnly: boolean,
   ) {
     super()
   }
@@ -54,7 +57,9 @@ class ImageWidget extends WidgetType {
       other.info.url === this.info.url &&
       other.info.alt === this.info.alt &&
       other.info.title === this.info.title &&
-      other.info.width === this.info.width
+      other.info.width === this.info.width &&
+      other.figureFrom === this.figureFrom &&
+      other.readOnly === this.readOnly
     )
   }
 
@@ -80,7 +85,27 @@ class ImageWidget extends WidgetType {
       caption.textContent = this.info.alt
       wrap.appendChild(caption)
     }
+
+    const expand = document.createElement('button')
+    expand.type = 'button'
+    expand.className = 'cm-burley-image-expand'
+    expand.textContent = '⤢'
+    expand.title = 'Open figure full-screen'
+    expand.addEventListener('mousedown', (event) => event.stopPropagation())
+    expand.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openFigureAt(this.figureFrom)
+    })
+    wrap.appendChild(expand)
+
     wrap.addEventListener('mousedown', (event) => {
+      if (event.altKey || this.readOnly) {
+        event.preventDefault()
+        event.stopPropagation()
+        openFigureAt(this.figureFrom)
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       const view = getActiveView()
@@ -113,7 +138,9 @@ function buildImageDecorations(state: EditorState): DecorationSet {
       const info = resolveInfo(currentFile, src, match[1] ?? '', match[4] ?? '')
       if (!info) return
       decorations.push(
-        Decoration.replace({ widget: new ImageWidget(info, node.from + 2) }).range(node.from, node.to),
+        Decoration.replace({
+          widget: new ImageWidget(info, node.from + 2, node.from, readOnly),
+        }).range(node.from, node.to),
       )
     },
   })

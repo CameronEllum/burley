@@ -17,10 +17,12 @@
  * bundle.
  */
 import { errorBox, registerBlockRenderer, type BlockContext, type BlockRenderer } from '../blockPlugins'
+import { assetUrlFor } from '../blockPlugins'
+import { openFigureAt } from '../figures'
 
 let plotlyPromise: Promise<any> | null = null
 
-function loadPlotly(): Promise<any> {
+export function loadPlotly(): Promise<any> {
   if (!plotlyPromise) {
     plotlyPromise = import('plotly.js-dist-min').then((mod: any) => mod.default ?? mod)
   }
@@ -39,15 +41,20 @@ function stripQuotes(value: string): string {
 }
 
 async function parseSpec(ctx: BlockContext): Promise<any> {
-  const body = ctx.code.trim()
+  return parsePlotlySource(ctx.code, ctx.filePath)
+}
+
+/** Parse a Plotly block body (inline JSON or a relative `src:` file). */
+export async function parsePlotlySource(code: string, filePath: string): Promise<any> {
+  const body = code.trim()
   if (!body) throw new Error('empty plotly block')
 
   const looksLikeJson = body.startsWith('{') || body.startsWith('[')
   const srcMatch = /^(?:src|file)\s*:\s*(.+)$/im.exec(body)
   if (srcMatch && !looksLikeJson) {
     const ref = stripQuotes(srcMatch[1])
-    const url = ctx.assetUrl(ref)
-    if (!url) throw new Error(`cannot resolve data file "${ref}" relative to ${ctx.filePath || 'the vault root'}`)
+    const url = assetUrlFor(filePath, ref)
+    if (!url) throw new Error(`cannot resolve data file "${ref}" relative to ${filePath || 'the vault root'}`)
     const res = await fetch(url)
     if (!res.ok) {
       throw new Error(`failed to load "${ref}" (HTTP ${res.status})`)
@@ -180,6 +187,10 @@ const plotlyRenderer: BlockRenderer = {
 
   destroy(root) {
     ;(root as any).__dispose?.()
+  },
+
+  expand(ctx) {
+    openFigureAt(ctx.from)
   },
 }
 

@@ -36,6 +36,8 @@ export interface BlockRenderer {
   render(ctx: BlockContext): HTMLElement
   /** Optional cleanup hook (e.g. disposing a Plotly chart). */
   destroy?(root: HTMLElement): void
+  /** Optional: open the block full-screen in the figure lightbox. */
+  expand?(ctx: BlockContext): void
 }
 
 const renderers = new Map<string, BlockRenderer>()
@@ -147,6 +149,21 @@ class BlockWidget extends WidgetType {
     const spacer = document.createElement('span')
     spacer.className = 'cm-burley-block-spacer'
     head.appendChild(spacer)
+
+    if (this.renderer.expand) {
+      const expand = document.createElement('button')
+      expand.type = 'button'
+      expand.className = 'cm-burley-block-btn cm-burley-block-expand'
+      expand.textContent = '⤢'
+      expand.title = 'Open this figure full-screen'
+      expand.addEventListener('mousedown', (e) => e.stopPropagation())
+      expand.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        this.renderer.expand?.(this.ctx)
+      })
+      head.appendChild(expand)
+    }
 
     const edit = document.createElement('button')
     edit.type = 'button'
