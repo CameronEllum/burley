@@ -1852,9 +1852,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           title={`Burley ${releaseInfo.latest} is available — view release notes`}
         >↑ {releaseInfo.latest}</a>
       {/if}
-      {#if format.eol === '\r\n'}
-        <span class="status-item" title="This note uses CRLF line endings">CRLF</span>
-      {/if}
       <span class="status-item">{words} words</span>
       <span class="status-item">Ln {cursor.line}, Col {cursor.column}</span>
       {#if readOnly}<span class="status-item lock">Read-only</span>{/if}

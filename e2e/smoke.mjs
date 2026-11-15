@@ -189,8 +189,8 @@ try {
   )
   check('release check ran on load', releaseChecks >= 1, `${releaseChecks} checks`)
   check(
-    'LF indicator is gone from the status bar',
-    !/\bLF\b/.test(await page.locator('.status-right').innerText()),
+    'no line-ending indicator in the status bar',
+    !/\b(LF|CRLF)\b/.test(await page.locator('.status-right').innerText()),
     await page.locator('.status-right').innerText(),
   )
   const sidebarBox = await page.locator('.sidebar').boundingBox()
@@ -933,10 +933,6 @@ try {
       crlfFile.content.includes('\r\nZ') &&
       !crlfFile.content.replace(/\r\n/g, '').includes('\n'),
     JSON.stringify(crlfFile.content.slice(-10)),
-  )
-  check(
-    'CRLF notes still show the line-ending indicator',
-    (await page.locator('.status-right').innerText()).includes('CRLF'),
   )
   await putFile('notes/crlf-note.md', original.crlf.content, crlfFile.hash)
 

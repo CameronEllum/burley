@@ -67,8 +67,8 @@ the compiled frontend, so deployment is a single executable.
 - **Links:** a plain click opens a link; **Ctrl/Cmd-click** reveals its Markdown
   source for editing.
 - **Status bar:** the full file path and last-modified time live at the bottom,
-  along with CRLF (only when a note uses it), word count, caret position, and an
-  update pill when a newer release exists (the top bar stays uncluttered).
+  along with word count, caret position, and an update pill when a newer release
+  exists (the top bar stays uncluttered).
 - **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior,
   spellcheck) and Appearance (mode, light theme, dark theme, width, Markdown
   style: Default / GitHub / Academic / Compact) tabs. Stored in
