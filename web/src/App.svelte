@@ -5,6 +5,7 @@
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, stripMdExt } from './lib/paths'
+  import type { PaletteCommand } from './lib/palette'
   import { buildOutline, type OutlineItem } from './lib/outline'
   import {
     applyTheme,
@@ -52,14 +53,15 @@
   let wideMode = $state(false)
   let favorites = $state<string[]>([])
   let favoritesOpen = $state(true)
-  let favoritesFilter = $state('')
   let dragFavoritePath = $state<string | null>(null)
   let treeFilter = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let cursor = $state<SelectionInfo>({ line: 1, column: 1, selectedChars: 0 })
 
   let searchOpen = $state(false)
-  let searchMode = $state<'files' | 'content'>('files')
+  let searchInitial = $state('')
+  let restoreEditorFocus = false
+  let recent = $state<string[]>([])
 
   let conflictData = $state<FileData | null>(null)
   let conflictOpen = $state(false)
@@ -100,13 +102,52 @@
     })),
   )
   const filteredFavorites = $derived.by(() => {
-    const query = favoritesFilter.trim()
+    const query = treeFilter.trim()
     if (!query) return favoriteItems
     return fuzzysort
       .go(query, favoriteItems, { key: 'path', limit: 40, threshold: -20000 })
       .map((result) => result.obj)
   })
+  const showFavorites = $derived(!treeFilter.trim() || filteredFavorites.length > 0)
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
+  const paletteCommands = $derived<PaletteCommand[]>([
+    {
+      id: 'toggle-readonly',
+      label: readOnly ? 'Turn off Read-Only mode' : 'Turn on Read-Only mode',
+      keywords: 'lock browse editing',
+      run: () => void toggleReadOnly(),
+    },
+    {
+      id: 'toggle-sidebar',
+      label: sidebarOpen ? 'Hide sidebar' : 'Show sidebar',
+      keywords: 'tree panel files',
+      run: toggleSidebar,
+    },
+    {
+      id: 'toggle-favorite',
+      label: currentIsFavorite ? 'Remove current file from favorites' : 'Add current file to favorites',
+      keywords: 'star pin bookmark',
+      run: () => toggleFavorite(currentPath),
+    },
+    {
+      id: 'refresh-tree',
+      label: 'Refresh file tree',
+      keywords: 'reload files rescan',
+      run: () => void refreshTree(),
+    },
+    {
+      id: 'toggle-wide',
+      label: wideMode ? 'Use narrow reading width' : 'Use wide reading width',
+      keywords: 'layout margins measure',
+      run: toggleWideMode,
+    },
+    {
+      id: 'cycle-theme',
+      label: `Change theme (currently ${themeMode})`,
+      keywords: 'dark light system appearance',
+      run: cycleTheme,
+    },
+  ])
   const saveLabel = $derived(
     saveState === 'saved'
       ? 'Saved'
@@ -151,10 +192,12 @@
     })
 
     window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('keydown', paletteShortcut, true)
     void initialLoad()
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('keydown', paletteShortcut, true)
       unwatchTheme()
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
@@ -166,6 +209,7 @@
   async function initialLoad() {
     await refreshTree()
     await Promise.all([loadFavorites(), loadSettings()])
+    loadRecent()
     const stored = localStorage.getItem(LAST_PATH_KEY)
     const target =
       files.find((file) => file.path === stored)?.path ??
@@ -205,6 +249,7 @@
     editor?.setDoc(data.path, decoded.text)
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0 }
+    rememberRecent(data.path)
     if (line) {
       setTimeout(() => editor?.scrollToLine(line), 0)
     }
@@ -450,6 +495,36 @@
     }
   }
 
+  function recentStorageKey(): string {
+    return root ? `burley:recent:${root}` : ''
+  }
+
+  function loadRecent() {
+    const key = recentStorageKey()
+    if (!key) return
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        recent = parsed.filter((value): value is string => typeof value === 'string').slice(0, 10)
+      }
+    } catch {
+      /* ignore corrupt localStorage */
+    }
+  }
+
+  function rememberRecent(path: string) {
+    const key = recentStorageKey()
+    if (!key || !path) return
+    recent = [path, ...recent.filter((entry) => entry !== path)].slice(0, 10)
+    try {
+      localStorage.setItem(key, JSON.stringify(recent))
+    } catch {
+      /* ignore quota errors */
+    }
+  }
+
   async function persistFavorites(next: string[]) {
     const previous = favorites
     favorites = next
@@ -523,14 +598,38 @@
     }
   }
 
-  function openSearch(mode: 'files' | 'content') {
-    searchMode = mode
+  function openSearch(initial = '') {
+    restoreEditorFocus = !!editor?.view.hasFocus
+    searchInitial = initial
     searchOpen = true
   }
 
   function closeSearch() {
     searchOpen = false
-    editor?.focus()
+    if (restoreEditorFocus) {
+      requestAnimationFrame(() => editor?.focus())
+    }
+  }
+
+  function paletteShortcut(event: KeyboardEvent) {
+    if (event.key === 'F1') {
+      event.preventDefault()
+      openSearch('')
+      return
+    }
+    const mod = event.ctrlKey || event.metaKey
+    if (!mod) return
+    const key = event.key.toLowerCase()
+    if (key === 'p' && !event.shiftKey) {
+      event.preventDefault()
+      openSearch('')
+    } else if (key === 'f' && event.shiftKey) {
+      event.preventDefault()
+      openSearch('?')
+    } else if (key === 'o' && event.shiftKey) {
+      event.preventDefault()
+      openSearch('@')
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -542,13 +641,7 @@
     const mod = event.ctrlKey || event.metaKey
     if (!mod) return
     const key = event.key.toLowerCase()
-    if (key === 'p' && !event.shiftKey) {
-      event.preventDefault()
-      openSearch('files')
-    } else if (key === 'f' && event.shiftKey) {
-      event.preventDefault()
-      openSearch('content')
-    } else if (key === 's') {
+    if (key === 's') {
       event.preventDefault()
       if (saveState === 'conflict') conflictOpen = true
       else void saveNow()
@@ -641,11 +734,10 @@
     </span>
 
     <div class="toolbar">
-      <button class="icon-btn" title="Quick open (Ctrl+P)" aria-label="Quick open" onclick={() => openSearch('files')}>
-        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-      </button>
-      <button class="icon-btn" title="Search content (Ctrl+Shift+F)" aria-label="Search content" onclick={() => openSearch('content')}>
-        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 5h14M3 10h9M3 15h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+      <button class="search-trigger" title="Quick open (Ctrl+P / F1)" onclick={() => openSearch('')}>
+        <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        <span class="search-trigger-label">Search files…</span>
+        <kbd>Ctrl P</kbd>
       </button>
       <button
         class="icon-btn"
@@ -724,7 +816,13 @@
       {#if sidebarTab === 'files'}
         <div class="filter-wrap">
           <div class="filter-input-wrap">
-            <input class="tree-filter" placeholder="Filter notes…" spellcheck="false" bind:value={treeFilter} />
+            <input
+              class="tree-filter"
+              placeholder="Filter notes…"
+              title="Filter favorites and notes"
+              spellcheck="false"
+              bind:value={treeFilter}
+            />
             {#if treeFilter}
               <button class="clear-filter" aria-label="Clear filter" onclick={() => (treeFilter = '')}>×</button>
             {/if}
@@ -739,35 +837,23 @@
           </button>
         </div>
 
-        <div class="favorites" class:collapsed={!favoritesOpen}>
-          <button class="favorites-head" aria-expanded={favoritesOpen} onclick={toggleFavoritesOpen}>
-            <span class="chevron" class:open={favoritesOpen} aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            </span>
-            <svg class="favorites-star-icon" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill="currentColor" /></svg>
-            <span class="favorites-title">Favorites</span>
-            <span class="tab-count">{favorites.length}</span>
-            <span class="grow"></span>
-          </button>
+        {#if showFavorites}
+          <div class="favorites" class:collapsed={!favoritesOpen}>
+            <button class="favorites-head" aria-expanded={favoritesOpen} onclick={toggleFavoritesOpen}>
+              <span class="chevron" class:open={favoritesOpen} aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </span>
+              <svg class="favorites-star-icon" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill="currentColor" /></svg>
+              <span class="favorites-title">Favorites</span>
+              <span class="tab-count">{filteredFavorites.length}</span>
+              <span class="grow"></span>
+            </button>
 
-          {#if favoritesOpen}
-            {#if favorites.length === 0}
-              <p class="favorites-empty">Star a note to pin it here.</p>
-            {:else}
-              <div class="favorites-filter-wrap">
-                <input
-                  class="favorites-filter"
-                  placeholder="Search favorites…"
-                  spellcheck="false"
-                  bind:value={favoritesFilter}
-                />
-                {#if favoritesFilter}
-                  <button class="clear-filter" aria-label="Clear favorites filter" onclick={() => (favoritesFilter = '')}>×</button>
-                {/if}
-              </div>
-
-              {#if filteredFavorites.length === 0}
-                <p class="favorites-empty">No favorites match “{favoritesFilter.trim()}”.</p>
+            {#if favoritesOpen}
+              {#if favorites.length === 0}
+                <p class="favorites-empty">Star a note to pin it here.</p>
+              {:else if filteredFavorites.length === 0}
+                <p class="favorites-empty">No favorites match “{treeFilter.trim()}”.</p>
               {:else}
                 <ul class="favorites-list">
                   {#each filteredFavorites as favorite (favorite.path)}
@@ -802,8 +888,8 @@
                 </ul>
               {/if}
             {/if}
-          {/if}
-        </div>
+          </div>
+        {/if}
 
         <div class="tree-scroll">
           {#if loading && files.length === 0}
@@ -893,7 +979,7 @@
               {/if}
             </p>
             <div class="empty-actions">
-              <button class="primary" onclick={() => openSearch('files')}>Open a note</button>
+              <button class="primary" onclick={() => openSearch('')}>Open a note</button>
               <button class="secondary" onclick={() => void refreshTree()}>Reload folder</button>
             </div>
             {#if root}<code class="root-path">{root}</code>{/if}
@@ -919,18 +1005,23 @@
 </div>
 
 {#if searchOpen}
-  {#key searchMode}
-    <SearchModal
-      initialMode={searchMode}
-      files={files}
-      favorites={favorites}
-      onclose={closeSearch}
-      onopen={(path, line) => {
-        searchOpen = false
-        void openFile(path, line)
-      }}
-    />
-  {/key}
+  <SearchModal
+    initialQuery={searchInitial}
+    files={files}
+    favorites={favorites}
+    recent={recent}
+    headings={outline}
+    commands={paletteCommands}
+    onclose={closeSearch}
+    onopen={(path, line) => {
+      closeSearch()
+      void openFile(path, line)
+    }}
+    onheading={(line) => {
+      closeSearch()
+      editor?.scrollToLine(line)
+    }}
+  />
 {/if}
 
 {#if conflictOpen && conflictData}
@@ -1109,6 +1200,41 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 30px;
+    padding: 0 9px;
+    margin-right: 4px;
+    border-radius: 7px;
+    border: 1px solid var(--border-soft);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 550;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .search-trigger:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .search-trigger kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    border: 1px solid var(--border-soft);
+    background: var(--panel);
+    color: var(--text-muted);
+  }
+  @media (max-width: 1100px) {
+    .search-trigger-label {
+      display: none;
+    }
   }
   .icon-btn {
     display: grid;
@@ -1390,6 +1516,7 @@
     flex: 0 0 auto;
     border-bottom: 1px solid var(--border-soft);
     padding-bottom: 6px;
+    margin-bottom: 2px;
   }
   .favorites-head {
     display: flex;
@@ -1425,26 +1552,6 @@
     color: var(--text-muted);
     font-size: 11.5px;
     line-height: 1.45;
-  }
-  .favorites-filter-wrap {
-    position: relative;
-    margin: 2px 10px 4px;
-  }
-  .favorites-filter {
-    width: 100%;
-    box-sizing: border-box;
-    font: inherit;
-    font-size: 12px;
-    padding: 5px 24px 5px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-soft);
-    background: var(--bg-app);
-    color: var(--text-primary);
-    outline: none;
-  }
-  .favorites-filter:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--active);
   }
   .favorites-list {
     list-style: none;

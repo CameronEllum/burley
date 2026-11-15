@@ -18,9 +18,10 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 ### Functional Requirements
 1. **Remote EC2 File Access:** Read, browse, and edit `.md` files stored in folders on an EC2 server (via a lightweight Go server on EC2 accessed over an SSH tunnel, or via SFTP from a local client).
 2. **Left-Pane File Tree & Outline:** Collapsible directory tree of `.md` files (and optional assets) docked in the **left** sidebar, with a Typora-style **Files | Outline** tab bar at the top so each panel gets full height. The Outline tab lists the current note's headings and jumps to them. The sidebar divider is draggable (220–560 px, persisted; arrow keys adjust, double-click resets).
-3. **Fast Fuzzy Search:**
-   - Instant (`< 5 ms`) fuzzy filename/path quick-switcher (`Ctrl+P` / `Cmd+P`).
-   - Fast full-text content search across the folder (`Ctrl+Shift+F` / `Cmd+Shift+F`).
+3. **Quick-Open Palette (`Ctrl+P` / `F1`):**
+   - Single palette for files, headings, commands, and content. Empty query shows favorites first, a divider, then recent files (last 8) or the first 10 notes. Typing fuzzy-matches full paths and highlights matched characters; the no-match row offers "Search inside file contents".
+   - Prefix modes: `@` current-note headings, `>` commands (read-only, sidebar, favorite, refresh, width, theme), `?` full-text search (120 ms debounce + `AbortController`). `Ctrl+Shift+O` opens `@`, `Ctrl+Shift+F` opens `?`.
+   - Keyboard: `↑`/`↓` or `Ctrl+N`/`Ctrl+J`/`Ctrl+K`, `Enter` to open, `Ctrl+Enter` to open a file in a new tab, `Esc`/backdrop to close and restore editor focus. Recent files are stored in `localStorage` per vault; stale paths are filtered against `/api/tree`.
 4. **Live-Preview Markdown Rendering & Editing:**
    - Headings, emphasis, lists, task checkboxes, links, blockquotes, tables, and code blocks rendered inline.
    - Bullets and ordered-list numbers stay visible while unfocused (nested bullets use •/◦/▪).
@@ -38,7 +39,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
    - **Automatic port increment:** if the preferred port is busy, try the next 20 ports, then an OS-assigned port; log the URL actually used.
 10. **Theme:** Follows the OS light/dark preference by default, with a top-bar **system → light → dark** toggle that overrides it.
 11. **Reading Width:** A top-bar narrow/wide toggle expands the editor measure from `820px` to `1200px` and tightens the gutters; the choice is persisted in `localStorage`.
-12. **Favorites:** Star notes from the top bar or by hovering tree rows. Favorites appear in a collapsible section above the file tree (with their own fuzzy search) and first in an empty `Ctrl+P` query. They live in `.burley/favorites.yaml` in the vault root — YAML, vault-relative, display order preserved — and are exposed through `GET`/`PUT /api/favorites`. Missing files are shown dimmed with a remove button.
+12. **Favorites:** Star notes from the top bar or by hovering tree rows. Favorites appear in a collapsible section above the file tree, are filtered by the single **Filter notes…** box (which also filters the tree), and come first in an empty `Ctrl+P` query. They live in `.burley/favorites.yaml` in the vault root — YAML, vault-relative, display order preserved — and are exposed through `GET`/`PUT /api/favorites`. Missing files are shown dimmed with a remove button. A thin divider separates the pinned section from the folder tree.
 13. **Cross-device settings:** Theme (`system`/`light`/`dark`) and reading width (`wideMode`) are stored in `.burley/settings.yaml` and exposed via `GET`/`PUT /api/settings`. `localStorage` is still used for an instant first paint, then reconciled with the server.
 
 ### Non-Functional Requirements
@@ -182,11 +183,11 @@ type Vault interface {
 ## 6. Frontend Design (Svelte + CodeMirror 6)
 
 ### 6.1 UI Layout
-- **Top Bar (compact):** Active file path, **favorite star**, save status pill (`Saved` / `Saving...` / `Conflict`), Search buttons (`Ctrl+P`, `Ctrl+Shift+F`), a **wide/narrow reading-width toggle**, **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
+- **Top Bar (compact):** Active file path, **favorite star**, save status pill (`Saved` / `Saving...` / `Conflict`), a compact **Search files… Ctrl+P** trigger, a **wide/narrow reading-width toggle**, **Read-Only** toggle, theme toggle (system → light → dark), sidebar toggle, and a **Quit** button (red power icon) that stops the local server after confirmation.
 - **Left Sidebar (~20–25% width, collapsible and resizable):**
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
   - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
-  - **Favorites section** above the tree: collapsible, fuzzy-filterable, drag-to-reorder, missing paths dimmed with a remove button. File rows show a hover star; the empty `Ctrl+P` list puts favorites first.
+  - **Favorites section** above the tree: collapsible, drag-to-reorder, missing paths dimmed with a remove button. The single **Filter notes…** box filters favorites and the tree together; the section header hides when no favorite matches. A thin divider separates it from the folder tree. File rows show a hover star; the empty `Ctrl+P` list puts favorites first.
   - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty).
   - **Outline tab:** the open note's headings (H1–H6, indented by level, code fences excluded). Clicking an entry scrolls to that heading; the heading containing the cursor is highlighted.
 - **Main Pane (~75–80% width):** Full-height CodeMirror 6 editor with comfortable max-width reading measure (e.g. `820px` centered) and clean typography.
@@ -213,9 +214,13 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
    - Render into a container `<div>` with a subtle hover `"Edit"` button that moves the CM6 cursor to `node.from` to reveal source.
    - *(If opening untrusted `.md` files later, render inside `<iframe sandbox="allow-scripts">` communicating via `postMessage` + `ResizeObserver` height sync.)*
 
-### 6.4 Fuzzy Search (`SearchModal.svelte`)
-- **Mode 1 — Files (`Ctrl+P`):** Uses `fuzzysort` in-memory over the flat list of `.md` paths already fetched by `/api/tree`. Instantaneous (`0 ms` network latency).
-- **Mode 2 — Content (`Ctrl+Shift+F`):** Debounced (`100 ms`) calls to `GET /api/search?q=...` using an `AbortController` so stale responses are discarded.
+### 6.4 Quick-Open Palette (`SearchModal.svelte`)
+- **Triggers:** `Ctrl+P`/`Cmd+P` and `F1` open an empty palette with `preventDefault()` captured on `window` (so Print/Help never open, even with CodeMirror focused). The compact top-bar **Search files…** button opens it too; `Ctrl+Shift+O` opens `@`, `Ctrl+Shift+F` opens `?`.
+- **Files (no prefix):** empty query → favorites (in order) + thin divider + recent files (max 8, deduped, else first 10); typing → `fuzzysort` over full relative paths, matched characters highlighted, favorites first, others capped at 50. No matches → fallback row that switches to `?query`.
+- **`@` headings:** fuzzy-filters headings from the active document; Enter moves the cursor there.
+- **`>` commands:** fuzzy-filters registered actions (read-only, sidebar, star current file, refresh tree, wide/narrow, theme).
+- **`?` content:** debounced `120 ms` calls to `GET /api/search?q=...` with an `AbortController`; rows show file, line, and snippet.
+- **Interaction:** flat `selectedIndex` (divider excluded), wrapping arrows and `Ctrl+N/J/K`, `Enter`, `Ctrl+Enter` new tab, hover/click, `scrollIntoView`, reset-to-top on filter changes; `Esc`/backdrop close and restore CodeMirror focus. Recents live in `localStorage` under `burley:recent:<root>`.
 
 ---
 
@@ -277,6 +282,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Math (`$...$`, `$$...$$`) and ```` ```plotly ```` blocks render offline with zero external CDN requests.
 - [ ] Saving a file preserves original line endings and leaves untouched Markdown formatting unchanged.
 - [ ] Bullets and ordered-list numbers remain visible in live preview while the cursor is elsewhere.
+- [ ] `Ctrl+P`/`F1` open the palette; `@`, `>`, and `?` modes work; empty query shows favorites then recents; no-match offers content search; `Ctrl+Enter` opens a new tab.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.
@@ -285,5 +291,5 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Light/dark theme follows the OS by default and the top-bar toggle overrides it.
 - [ ] The narrow/wide toggle expands the reading measure and the choice survives a reload.
 - [ ] Favorites are stored as YAML in `.burley/favorites.yaml`, appear above the tree and at the top of an empty `Ctrl+P`, survive reloads, and flag missing files.
-- [ ] Favorites have their own fuzzy filter and can be reordered.
+- [ ] The single Filter notes box filters favorites and the tree, hiding the Favorites header when nothing matches; a divider separates them.
 - [ ] Theme and wide mode are stored in `.burley/settings.yaml`, survive a reload, and follow the user across browsers.

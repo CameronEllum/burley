@@ -29,9 +29,10 @@ the compiled frontend, so deployment is a single executable.
 - **Conflict detection:** saves send the last seen SHA-256. If the file changed
   on disk, the API returns `409` with the server copy and the UI asks whether to
   keep yours, take theirs, or decide later.
-- **Left file tree + fast search:** collapsible tree with filter, `Ctrl+P` fuzzy
-  filename jump (fuzzysort), and `Ctrl+Shift+F` full-text search (ripgrep with a
-  pure-Go fallback).
+- **Left file tree + quick-open palette:** collapsible tree with filter; `Ctrl+P`
+  or `F1` opens a search palette with favorites, recents, `@` heading jumps,
+  `>` commands, and `?` full-text search. Recent files and stale-path cleanup
+  are handled locally.
 - **Files | Outline tabs:** Typora-style tabs at the top of the left sidebar;
   the outline lists the note's headings (indented, code fences excluded) and
   clicking one jumps to it.
@@ -48,11 +49,11 @@ the compiled frontend, so deployment is a single executable.
 - **Narrow/wide reading mode:** one click widens the editor to 1200 px with
   tighter gutters (820 px when narrow); remembered between sessions.
 - **Favorites with YAML storage:** star notes from the top bar or tree rows.
-  They appear above the file tree with their own fuzzy filter, at the top of an
-  empty `Ctrl+P`, survive reloads, and are stored cross-device in
-  `.burley/favorites.yaml` via `GET`/`PUT /api/favorites` (not in your Markdown
-  folder's tracked files). Missing favorites are dimmed with a remove button;
-  favorites can be drag-reordered.
+  They appear above the file tree, are filtered by the same **Filter notes…**
+  box as the tree, sit at the top of an empty `Ctrl+P`, survive reloads, and are
+  stored cross-device in `.burley/favorites.yaml` via `GET`/`PUT /api/favorites`
+  (not in your Markdown folder's tracked files). Missing favorites are dimmed
+  with a remove button; favorites can be drag-reordered.
 - **Cross-device settings:** theme and reading width are saved in
   `.burley/settings.yaml` (`GET`/`PUT /api/settings`) so another browser or
   laptop picks them up.
@@ -139,8 +140,10 @@ mode, light/dark themes and the quit confirmation. Screenshots are written to
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+P` / `Cmd+P` | Fuzzy quick-open by filename |
-| `Ctrl+Shift+F` / `Cmd+Shift+F` | Full-text content search |
+| `Ctrl+P` / `Cmd+P` / `F1` | Quick-open palette (favorites, recents, files) |
+| `Ctrl+Shift+O` | Palette in `@` heading mode |
+| `Ctrl+Shift+F` | Palette in `?` content-search mode |
+| `Ctrl+Enter` | Open the highlighted file in a new tab |
 | `Ctrl+S` / `Cmd+S` | Save now (autosave runs 1.5 s after typing stops) |
 | `Ctrl+B` / `Cmd+B` | Toggle the file tree |
 | `Ctrl+Shift+R` | Reload the folder tree |

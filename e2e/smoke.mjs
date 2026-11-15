@@ -253,7 +253,9 @@ try {
   // Content search.
   await page.keyboard.press('Control+Shift+F')
   await page.waitForSelector('.search-modal', { timeout: 5000 })
-  await page.locator('.search-input').fill('plotly')
+  const contentPrefix = await page.locator('.palette-input').inputValue()
+  check('Ctrl+Shift+F prefills content mode', contentPrefix.startsWith('?'))
+  await page.locator('.palette-input').fill('?plotly')
   const gotResults = await waitFor(async () => (await page.locator('.content-item').count()) >= 2, 8000)
   check('content search returns matches', gotResults)
   await page.keyboard.press('Enter')
@@ -263,6 +265,60 @@ try {
     (await page.locator('.crumb-file').innerText()).length > 0,
     await page.locator('.crumb-file').innerText(),
   )
+
+  // F1 opens an empty palette; @ headings; > commands; no-match fallback.
+  await page.keyboard.press('F1')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  check('F1 opens the palette', (await page.locator('.palette-input').inputValue()) === '')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+
+  await page.keyboard.press('Control+Shift+O')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  const headingPrefix = await page.locator('.palette-input').inputValue()
+  check('Ctrl+Shift+O prefills heading mode', headingPrefix.startsWith('@'))
+  await page.locator('.palette-input').fill('@math')
+  await page.waitForTimeout(300)
+  const headingRow = await page.locator('.search-item').first().innerText()
+  const headingLineHint = await page.locator('.search-item .item-hint').first().innerText()
+  const headingLine = Number(headingLineHint.replace(/\D+/g, ''))
+  check('heading mode filters current-note headings', headingRow.toLowerCase().includes('math'), headingRow.replace(/\s+/g, ' '))
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(500)
+  check(
+    'heading mode jumps to the heading',
+    headingLine > 0 && (await page.locator('.statusbar').innerText()).includes(`Ln ${headingLine},`),
+  )
+
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  await page.locator('.palette-input').fill('>sidebar')
+  await page.waitForTimeout(300)
+  const commandRow = await page.locator('.search-item').first().innerText()
+  check('command mode finds sidebar action', commandRow.toLowerCase().includes('sidebar'), commandRow.replace(/\s+/g, ' '))
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  check('command mode executes the action', (await page.locator('.sidebar.closed').count()) === 1)
+  await page.keyboard.press('Control+b')
+  await page.waitForTimeout(200)
+
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  await page.locator('.palette-input').fill('zzzznotafile')
+  await page.waitForTimeout(300)
+  check(
+    'no matches shows the content-search fallback',
+    (await page.locator('.palette-message').innerText()).includes('No matching files') &&
+      (await page.locator('.search-item').last().innerText()).includes('Search inside file contents'),
+  )
+  await page.locator('.search-item').last().click()
+  await page.waitForTimeout(300)
+  check(
+    'fallback switches to content mode',
+    (await page.locator('.palette-input').inputValue()).startsWith('?zzzznotafile'),
+  )
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
 
   // Read-only lock.
   await page.locator('.toggle-btn').click()
@@ -481,11 +537,22 @@ try {
     twoFavorites.join(', '),
   )
 
-  await page.locator('.favorites-filter').fill('wel')
+  const favoritesDivider = await page
+    .locator('.favorites')
+    .evaluate((el) => getComputedStyle(el).borderBottomWidth)
+  check('divider separates favorites from the tree', favoritesDivider === '1px', favoritesDivider)
+
+  await page.locator('.tree-filter').fill('wel')
   await page.waitForTimeout(300)
   const filteredFavoriteText = await page.locator('.favorite-item').first().innerText()
-  check('favorites fuzzy filter works', (await page.locator('.favorite-item').count()) === 1 && filteredFavoriteText.includes('welcome'))
-  await page.locator('.favorites-filter').fill('')
+  check(
+    'filter box filters favorites',
+    (await page.locator('.favorite-item').count()) === 1 && filteredFavoriteText.includes('welcome'),
+  )
+  await page.locator('.tree-filter').fill('zzz-no-such-note')
+  await page.waitForTimeout(300)
+  check('favorites section hides when nothing matches', (await page.locator('.favorites').count()) === 0)
+  await page.locator('.tree-filter').fill('')
   await page.waitForTimeout(200)
 
   await page.keyboard.press('Control+p')
@@ -493,6 +560,12 @@ try {
   const pinnedResults = await page.locator('.search-item .pin').count()
   const firstSearchResult = await page.locator('.search-item').first().innerText()
   check('empty Ctrl+P lists favorites first', pinnedResults >= 2 && firstSearchResult.includes('welcome'), firstSearchResult.replace(/\s+/g, ' '))
+  check('palette divides favorites from other files', (await page.locator('.palette-divider').count()) === 1)
+  const recentHints = await page.locator('.palette-item .item-hint', { hasText: 'Recent' }).count()
+  check('recent files appear below favorites', recentHints >= 1, `${recentHints} recent`)
+  await page.locator('.palette-input').fill('wel')
+  await page.waitForTimeout(300)
+  check('matched filename characters are highlighted', (await page.locator('.palette-item mark').count()) >= 1)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
   await page.screenshot({ path: path.join(here, 'screenshot-favorites.png') })
