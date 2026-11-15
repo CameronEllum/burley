@@ -212,6 +212,12 @@ class TableWidget extends WidgetType {
       })
       textSpan.addEventListener('keydown', (event) => {
         if (this.readOnly) return
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          commitCurrent()
+          getActiveView()?.focus()
+          return
+        }
         const lastColumn = this.table.alignments.length - 1
         if (event.key === 'Tab') {
           event.preventDefault()

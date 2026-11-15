@@ -101,7 +101,7 @@ const original = {
 const originalFavorites = await getFavorites()
 const originalSettings = await getSettings()
 const originalRecent = await getRecent()
-await putSettings({ theme: 'system', wideMode: false })
+await putSettings({ theme: 'system', wideMode: false, markdownStyle: 'default', autoSave: true, ctrlClickLink: 'toggle' })
 await putRecent([])
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -198,6 +198,17 @@ try {
 
   const katexCount = await page.locator('.katex').count()
   check('KaTeX formulas rendered', katexCount >= 4, `${katexCount} formulas`)
+  const mathWidgetCount = await page.locator('.cm-burley-math-inline').count()
+  await page.locator('.cm-burley-math-inline').first().click()
+  await page.waitForTimeout(300)
+  const revealedMath = await page.locator('.cm-burley-math-inline').count()
+  check('clicking inline math reveals its source', revealedMath < mathWidgetCount, `${mathWidgetCount} -> ${revealedMath}`)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check(
+    'Escape exits inline math editing',
+    (await page.locator('.cm-burley-math-inline').count()) > revealedMath,
+  )
   check('task checkboxes rendered', (await page.locator('.cm-burley-task input[type="checkbox"]').count()) >= 3)
   const headingDecoration = await page
     .locator('.cm-header-1')
@@ -292,6 +303,8 @@ try {
   check('table renders as an editable widget', (await page.locator('.cm-burley-table-widget').count()) === 1)
   const firstCell = page.locator('.cm-burley-table-widget tbody [data-cell]').first()
   await firstCell.click()
+  const cellCaret = await firstCell.evaluate((el) => getComputedStyle(el).caretColor)
+  check('table cells show an editing caret', cellCaret !== 'rgba(0, 0, 0, 0)', cellCaret)
   check(
     'table stays interactive with the cursor inside',
     (await page.locator('.cm-burley-table-widget').count()) === 1,
@@ -574,33 +587,36 @@ try {
   const sidebarReset = (await page.locator('.sidebar').boundingBox()).width
   check('double-click resets sidebar width', Math.abs(sidebarReset - 302) <= 2, `${sidebarReset}px`)
 
-  // Theme: follows the OS by default and cycles system → light → dark.
-  const themeButton = page.locator('button[aria-label^="Theme:"]')
-  check('theme defaults to follow system', (await themeButton.getAttribute('aria-label'))?.includes('follow system'))
+  // Theme and reading width live in the settings page.
+  const openSettings = async (tab) => {
+    await page.locator('button[aria-label="Open settings"]').click()
+    await page.waitForSelector('.settings-modal', { timeout: 5000 })
+    await page.locator('.settings-tab', { hasText: tab }).click()
+    await page.waitForTimeout(150)
+  }
+  const closeSettings = async () => {
+    await page.locator('.settings-modal .secondary').click()
+    await page.waitForTimeout(200)
+  }
+  await openSettings('Appearance')
   check(
-    'theme resolved from the OS',
-    ['light', 'dark'].includes(await page.evaluate(() => document.documentElement.dataset.theme ?? '')),
+    'theme defaults to follow system',
+    (await page.locator('.settings-modal .theme-segments .segment.active').innerText()).trim() === 'System',
   )
-  await themeButton.click()
-  await page.waitForTimeout(150)
+  await page.locator('.settings-modal .segment', { hasText: 'Light' }).click()
+  await page.waitForTimeout(200)
   check('theme switches to light', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light')
-  await themeButton.click()
-  await page.waitForTimeout(150)
+  await page.locator('.settings-modal .segment', { hasText: 'Dark' }).click()
+  await page.waitForTimeout(200)
   check('theme switches to dark', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark')
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
   check('dark palette applied', darkBackground === 'rgb(23, 20, 15)', darkBackground)
-  await themeButton.click()
+  await page.locator('.settings-modal .segment', { hasText: 'System' }).click()
   await page.waitForTimeout(150)
-  check(
-    'theme cycles back to system',
-    (await themeButton.getAttribute('aria-label'))?.includes('follow system'),
-  )
 
-  // Narrow / wide reading width.
   const contentEl = page.locator('.cm-content')
   const narrowContentWidth = (await contentEl.boundingBox()).width
-  const wideButton = page.locator('button[aria-label="Toggle wide reading mode"]')
-  await wideButton.click()
+  await page.locator('.settings-modal .segment', { hasText: 'Wide' }).click()
   await page.waitForTimeout(350)
   const wideContentWidth = (await contentEl.boundingBox()).width
   check(
@@ -613,7 +629,7 @@ try {
     (await page.evaluate(() => localStorage.getItem('burley:wide-mode'))) === '1',
   )
   await page.screenshot({ path: path.join(here, 'screenshot-wide.png') })
-  await wideButton.click()
+  await page.locator('.settings-modal .segment', { hasText: 'Narrow' }).click()
   await page.waitForTimeout(350)
   const backToNarrow = (await contentEl.boundingBox()).width
   check(
@@ -622,12 +638,30 @@ try {
     `${backToNarrow}px`,
   )
 
-  // Settings live in .burley/settings.yaml and survive a reload.
-  await themeButton.click()
-  await page.waitForTimeout(120)
-  await themeButton.click()
-  await page.waitForTimeout(120)
-  await wideButton.click()
+  // Markdown styles apply to the editor.
+  await page.locator('.settings-modal .style-card', { hasText: 'GitHub' }).click()
+  await page.waitForTimeout(250)
+  check(
+    'markdown style is applied to the editor',
+    (await page.locator('.editor-host').getAttribute('data-md-style')) === 'github',
+  )
+  const githubHeadingBorder = await page
+    .locator('.cm-line:has(.cm-header-1)')
+    .first()
+    .evaluate((el) => getComputedStyle(el).borderBottomWidth)
+  check('GitHub style underlines H1', githubHeadingBorder === '1px', githubHeadingBorder)
+  await page.locator('.settings-modal .style-card', { hasText: 'Academic' }).click()
+  await page.waitForTimeout(250)
+  const academicFont = await contentEl.evaluate((el) => getComputedStyle(el).fontFamily)
+  check('Academic style uses a serif face', academicFont.toLowerCase().includes('georgia'), academicFont)
+  await page.locator('.settings-modal .style-card', { hasText: 'Default' }).click()
+  await page.waitForTimeout(200)
+  await closeSettings()
+
+  // Settings persist to .burley/settings.yaml and reload from the server.
+  await openSettings('Appearance')
+  await page.locator('.settings-modal .segment', { hasText: 'Dark' }).click()
+  await page.locator('.settings-modal .segment', { hasText: 'Wide' }).click()
   await page.waitForTimeout(600)
   const savedSettings = await getSettings()
   check(
@@ -637,6 +671,7 @@ try {
       savedSettings.settings.wideMode === true,
     JSON.stringify(savedSettings),
   )
+  await closeSettings()
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForSelector('.cm-content', { timeout: 15000 })
   await page.waitForTimeout(800)
@@ -650,6 +685,23 @@ try {
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForSelector('.cm-content', { timeout: 15000 })
   await page.waitForTimeout(700)
+
+  // Raw Markdown source mode.
+  const rawButton = page.locator('button[aria-label="Toggle raw Markdown"]')
+  await rawButton.click()
+  await page.waitForTimeout(300)
+  check('raw mode adds the source class', (await page.locator('.editor-host.raw').count()) === 1)
+  check('raw mode disables live-preview widgets', (await page.locator('.cm-burley-block').count()) === 0)
+  const rawFont = await page
+    .locator('.cm-content')
+    .evaluate((el) => getComputedStyle(el).fontFamily)
+  check('raw mode uses monospace', rawFont.toLowerCase().includes('mono'), rawFont)
+  await rawButton.click()
+  await page.waitForTimeout(300)
+  check(
+    'raw mode toggles back to live preview',
+    (await page.locator('.editor-host.raw').count()) === 0,
+  )
 
 
   // Favorites: star, fuzzy filter, empty Ctrl+P ordering, persistence, missing files.

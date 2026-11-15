@@ -31,6 +31,7 @@ import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
+import { escapeElementKeymap } from './escape'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -51,6 +52,7 @@ export interface EditorController {
   readonly view: EditorView
   setDoc(path: string, content: string): void
   setReadOnly(readOnly: boolean): void
+  setRawMode(raw: boolean): void
   getContent(): string
   focus(): void
   scrollToLine(line: number, column?: number): void
@@ -119,6 +121,7 @@ const burleyTheme = EditorView.theme({
 })
 
 const readOnlyCompartment = new Compartment()
+const previewCompartment = new Compartment()
 
 function readOnlyExtensions(value: boolean): Extension {
   return [EditorState.readOnly.of(value), EditorView.editable.of(!value), readOnlyFacet.of(value)]
@@ -137,7 +140,25 @@ const readOnlySelectionGuard = EditorState.transactionFilter.of((tr) => {
   return tr
 })
 
-function markdownExtensions(readOnly: boolean): Extension[] {
+function previewExtensions(): Extension[] {
+  return [
+    collapseOnSelectionFacet.of(true),
+    mouseSelectingField,
+    livePreviewPlugin,
+    markdownStylePlugin,
+    tableEditorField(),
+    blockPluginField(),
+    imagePreviewField,
+    linkPreviewField,
+    inlineMathPlugin,
+    blockMathField,
+    taskCheckboxField,
+    blockquoteStyler,
+    listMarkerStyler,
+  ]
+}
+
+function markdownExtensions(readOnly: boolean, rawMode: boolean): Extension[] {
   return [
     history(),
     drawSelection(),
@@ -150,22 +171,11 @@ function markdownExtensions(readOnly: boolean): Extension[] {
       extensions: [Table, TaskList],
     }),
     syntaxHighlighting(burleyHighlightStyle, { fallback: true }),
-    collapseOnSelectionFacet.of(true),
-    mouseSelectingField,
-    livePreviewPlugin,
-    markdownStylePlugin,
     editorTheme,
     burleyTheme,
-    tableEditorField(),
-    blockPluginField(),
-    imagePreviewField,
-    linkPreviewField,
-    inlineMathPlugin,
-    blockMathField,
-    taskCheckboxField,
-    blockquoteStyler,
-    listMarkerStyler,
+    previewCompartment.of(rawMode ? [] : previewExtensions()),
     readOnlySelectionGuard,
+    escapeElementKeymap,
     readOnlyCompartment.of(readOnlyExtensions(readOnly)),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
   ]
@@ -178,6 +188,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
 
   let currentPath = ''
   let readOnly = false
+  let rawMode = false
 
   const listener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
@@ -198,7 +209,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   })
 
   const extensionsFor = (path: string): Extension[] => [
-    ...markdownExtensions(readOnly),
+    ...markdownExtensions(readOnly, rawMode),
     listener,
     filePathFacet.of(path),
   ]
@@ -267,6 +278,14 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
           scroller.scrollLeft = left
         })
       }
+    },
+
+    setRawMode(value: boolean) {
+      if (rawMode === value) return
+      rawMode = value
+      view.dispatch({
+        effects: previewCompartment.reconfigure(value ? [] : previewExtensions()),
+      })
     },
 
     getContent() {

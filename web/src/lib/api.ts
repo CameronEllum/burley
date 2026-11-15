@@ -39,6 +39,14 @@ export interface SearchMatch {
   snippet: string
 }
 
+export interface AppSettings {
+  theme: 'system' | 'light' | 'dark'
+  wideMode: boolean
+  markdownStyle: 'default' | 'github' | 'academic' | 'compact'
+  autoSave: boolean
+  ctrlClickLink: 'toggle' | 'open'
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -133,17 +141,11 @@ export const api = {
     })
   },
 
-  async settings(signal?: AbortSignal): Promise<{
-    settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }
-    exists: boolean
-  }> {
+  async settings(signal?: AbortSignal): Promise<{ settings: AppSettings; exists: boolean }> {
     return request('/api/settings', { signal })
   },
 
-  async saveSettings(settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }): Promise<{
-    settings: { theme: 'system' | 'light' | 'dark'; wideMode: boolean }
-    exists: boolean
-  }> {
+  async saveSettings(settings: AppSettings): Promise<{ settings: AppSettings; exists: boolean }> {
     return request('/api/settings', {
       method: 'PUT',
       body: JSON.stringify(settings),

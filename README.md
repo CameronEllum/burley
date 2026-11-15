@@ -43,6 +43,11 @@ the compiled frontend, so deployment is a single executable.
   source for editing.
 - **Status bar:** the full file path and last-modified time live at the bottom
   (the top bar stays uncluttered).
+- **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior)
+  and Appearance (theme, width, Markdown style: Default / GitHub / Academic /
+  Compact) tabs. Stored in `.burley/settings.yaml`.
+- **Raw mode:** `</>` toggles source view without losing cursor, scroll or undo;
+  `Escape` exits the element under the caret.
 - **Right-click delete:** a file tree context menu offers Delete, confirmed in a
   native HTML dialog; the tree, editor, and favorites update immediately.
 - **Deep links & history:** the open file and heading live in the URL

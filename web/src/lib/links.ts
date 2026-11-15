@@ -18,10 +18,16 @@ const LINK_SYNTAX = /^\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+["']([^"']*)
 const MD_FILE = /\.(md|markdown|mdown|mkd)$/i
 
 let openPathHandler: ((path: string) => void) | null = null
+let linkClickBehavior: 'toggle' | 'open' = 'toggle'
 
 /** Registered by the editor so `.md` links can navigate inside Burley. */
 export function setLinkOpenHandler(handler: ((path: string) => void) | null): void {
   openPathHandler = handler
+}
+
+/** Ctrl/Cmd-click either reveals source ("toggle") or behaves like a click. */
+export function setLinkClickBehavior(behavior: 'toggle' | 'open'): void {
+  linkClickBehavior = behavior
 }
 
 class LinkWidget extends WidgetType {
@@ -51,7 +57,7 @@ class LinkWidget extends WidgetType {
     anchor.title = `${this.internalPath || this.title || this.url} — Ctrl/Cmd-click to edit`
 
     anchor.addEventListener('click', (event) => {
-      if (event.ctrlKey || event.metaKey) {
+      if ((event.ctrlKey || event.metaKey) && linkClickBehavior === 'toggle') {
         event.preventDefault()
         event.stopPropagation()
         const view = getActiveView()

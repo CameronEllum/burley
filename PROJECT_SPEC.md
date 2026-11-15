@@ -47,6 +47,9 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 14. **Recents:** The last 10 opened files are stored most-recent-first in `.burley/recent.yaml` via `GET`/`PUT /api/recent`, powering the palette's recent group across devices.
 15. **Delete with confirmation:** Right-click a file in the left tree for a context menu with **Delete**. Deletion asks for confirmation in a native HTML `<dialog>`, permanently removes the note through `DELETE /api/file`, refreshes the tree, clears the editor if the open note was deleted, and removes it from favorites.
 16. **URL deep links & history:** The open file and active heading are mirrored in the URL (`?file=notes/run1.md#loss-curve`). Opening a file pushes a history entry, the heading hash updates as the cursor moves, and Back/Forward restore both the file and heading. Deep links are bookmarkable and survive reloads.
+17. **Settings page:** A gear button opens a two-tab dialog. **Behaviour:** auto-save on/off and Ctrl/Cmd-click on links (toggle Markdown vs open). **Appearance:** theme (system/light/dark), reading width (narrow/wide) and Markdown style (`Default`, `GitHub`, `Academic`, `Compact`). Everything is stored in `.burley/settings.yaml`.
+18. **Raw Markdown mode:** A `</>` top-bar toggle (and palette command) disables the live-preview extensions inside a CodeMirror compartment, keeping the same document, cursor, scroll and undo history. Raw mode uses a monospace source font.
+19. **Escape exits elements:** Pressing `Escape` with the caret inside math, a link, inline code, a fenced block, table or heading moves the caret out so the rendered element returns.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -301,6 +304,8 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Deep links (`?file=…#heading`) open the right file/heading; opening files pushes history and Back/Forward restore both.
 - [ ] Code blocks are highlighted when displayed and monospace while editing.
 - [ ] Table cells are editable in place; add/remove row and column controls work and only the table range changes.
+- [ ] Settings persist theme, width, Markdown style, auto-save and link behavior in `.burley/settings.yaml`.
+- [ ] Raw mode toggles preview off/on without losing cursor, scroll or undo history; Escape exits rendered elements.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

@@ -13,12 +13,21 @@ const settingsName = "settings.yaml"
 
 // Settings are the cross-device UI preferences stored in .burley/settings.yaml.
 type Settings struct {
-	Theme    string `json:"theme"`    // system | light | dark
-	WideMode bool   `json:"wideMode"` // expanded reading measure
+	Theme         string `json:"theme"`         // system | light | dark
+	WideMode      bool   `json:"wideMode"`      // expanded reading measure
+	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
+	AutoSave      bool   `json:"autoSave"`
+	CtrlClickLink string `json:"ctrlClickLink"` // toggle | open
 }
 
 func defaultSettings() Settings {
-	return Settings{Theme: "system", WideMode: false}
+	return Settings{
+		Theme:         "system",
+		WideMode:      false,
+		MarkdownStyle: "default",
+		AutoSave:      true,
+		CtrlClickLink: "toggle",
+	}
 }
 
 func (v *LocalVault) settingsPath() string {
@@ -66,21 +75,51 @@ func normalizeSettings(settings Settings) (Settings, error) {
 	default:
 		return Settings{}, ErrInvalidPath
 	}
-	return Settings{Theme: theme, WideMode: settings.WideMode}, nil
+
+	style := strings.ToLower(strings.TrimSpace(settings.MarkdownStyle))
+	if style == "" {
+		style = "default"
+	}
+	switch style {
+	case "default", "github", "academic", "compact":
+	default:
+		return Settings{}, ErrInvalidPath
+	}
+
+	ctrlClick := strings.ToLower(strings.TrimSpace(settings.CtrlClickLink))
+	if ctrlClick == "" {
+		ctrlClick = "toggle"
+	}
+	switch ctrlClick {
+	case "toggle", "open":
+	default:
+		return Settings{}, ErrInvalidPath
+	}
+
+	return Settings{
+		Theme:         theme,
+		WideMode:      settings.WideMode,
+		MarkdownStyle: style,
+		AutoSave:      settings.AutoSave,
+		CtrlClickLink: ctrlClick,
+	}, nil
 }
 
 func settingsYAML(settings Settings) string {
 	var b strings.Builder
 	b.WriteString("# Burley settings — managed by the app, safe to edit by hand.\n")
-	b.WriteString("# theme: system | light | dark\n")
+	b.WriteString("# theme: system | light | dark; markdown_style: default | github | academic | compact\n")
 	b.WriteString("theme: ")
 	b.WriteString(yamlQuote(settings.Theme))
 	b.WriteString("\nwide_mode: ")
-	if settings.WideMode {
-		b.WriteString("true\n")
-	} else {
-		b.WriteString("false\n")
-	}
+	b.WriteString(boolYAML(settings.WideMode))
+	b.WriteString("\nmarkdown_style: ")
+	b.WriteString(yamlQuote(settings.MarkdownStyle))
+	b.WriteString("\nauto_save: ")
+	b.WriteString(boolYAML(settings.AutoSave))
+	b.WriteString("\nctrl_click_link: ")
+	b.WriteString(yamlQuote(settings.CtrlClickLink))
+	b.WriteByte('\n')
 	return b.String()
 }
 
@@ -95,20 +134,50 @@ func parseSettingsYAML(content string) Settings {
 		if !ok {
 			continue
 		}
+		parsed := parseYAMLScalar(value)
 		switch strings.ToLower(strings.TrimSpace(key)) {
 		case "theme":
-			theme := strings.ToLower(parseYAMLScalar(value))
+			theme := strings.ToLower(parsed)
 			if theme == "system" || theme == "light" || theme == "dark" {
 				settings.Theme = theme
 			}
 		case "wide_mode", "wide":
-			switch strings.ToLower(parseYAMLScalar(value)) {
-			case "true", "yes", "on", "1":
-				settings.WideMode = true
-			case "false", "no", "off", "0":
-				settings.WideMode = false
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.WideMode = parsedBool
+			}
+		case "markdown_style", "style":
+			style := strings.ToLower(parsed)
+			switch style {
+			case "default", "github", "academic", "compact":
+				settings.MarkdownStyle = style
+			}
+		case "auto_save", "autosave":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.AutoSave = parsedBool
+			}
+		case "ctrl_click_link", "ctrl_click":
+			behavior := strings.ToLower(parsed)
+			if behavior == "toggle" || behavior == "open" {
+				settings.CtrlClickLink = behavior
 			}
 		}
 	}
 	return settings
+}
+
+func parseYAMLBool(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "yes", "on", "1":
+		return true, true
+	case "false", "no", "off", "0":
+		return false, true
+	}
+	return false, false
+}
+
+func boolYAML(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, type Entry, type FileData, type FlatFile } from './lib/api'
+  import { api, ConflictError, type AppSettings, type Entry, type FileData, type FlatFile } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
+  import { setLinkClickBehavior } from './lib/links'
+  import SettingsModal from './components/SettingsModal.svelte'
   import { buildOutline, type OutlineItem } from './lib/outline'
   import {
     applyTheme,
@@ -27,6 +29,7 @@
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
   const WIDE_MODE_KEY = 'burley:wide-mode'
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
+  const RAW_MODE_KEY = 'burley:raw-mode'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
 
@@ -51,6 +54,11 @@
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
   let wideMode = $state(false)
+  let markdownStyle = $state<AppSettings['markdownStyle']>('default')
+  let autoSave = $state(true)
+  let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
+  let rawMode = $state(false)
+  let settingsOpen = $state(false)
   let favorites = $state<string[]>([])
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
@@ -169,6 +177,26 @@
       keywords: 'dark light system appearance',
       run: cycleTheme,
     },
+    {
+      id: 'toggle-raw',
+      label: rawMode ? 'Show live preview' : 'Show raw Markdown',
+      keywords: 'source editor',
+      run: toggleRawMode,
+    },
+    {
+      id: 'markdown-style',
+      label: `Change Markdown style (currently ${markdownStyle})`,
+      keywords: 'github academic compact typography',
+      run: cycleMarkdownStyle,
+    },
+    {
+      id: 'settings',
+      label: 'Open settings',
+      keywords: 'preferences behaviour appearance',
+      run: () => {
+        settingsOpen = true
+      },
+    },
   ])
   const saveLabel = $derived(
     saveState === 'saved'
@@ -181,9 +209,6 @@
             ? 'Conflict'
             : 'Save failed',
   )
-  const themeLabel = $derived(
-    themeMode === 'system' ? 'Theme: follow system' : themeMode === 'light' ? 'Theme: light' : 'Theme: dark',
-  )
 
   onMount(() => {
     const storedSidebar = localStorage.getItem(SIDEBAR_KEY)
@@ -195,6 +220,7 @@
       sidebarWidth = clampSidebarWidth(storedWidth)
     }
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
+    rawMode = localStorage.getItem(RAW_MODE_KEY) === '1'
     const storedFavoritesOpen = localStorage.getItem(FAVORITES_OPEN_KEY)
     if (storedFavoritesOpen !== null) favoritesOpen = storedFavoritesOpen === '1'
 
@@ -212,6 +238,7 @@
         void openFile(path)
       },
     })
+    editor.setRawMode(rawMode)
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', paletteShortcut, true)
@@ -383,7 +410,7 @@
 
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer)
-    if (saveState === 'conflict' || readOnly) return
+    if (saveState === 'conflict' || readOnly || !autoSave) return
     saveTimer = setTimeout(() => {
       saveTimer = null
       void saveNow()
@@ -553,10 +580,55 @@
 
   async function persistSettings() {
     try {
-      await api.saveSettings({ theme: themeMode, wideMode })
+      await api.saveSettings({
+        theme: themeMode,
+        wideMode,
+        markdownStyle,
+        autoSave,
+        ctrlClickLink,
+      })
     } catch (err) {
       flash(`Could not save settings: ${err instanceof Error ? err.message : String(err)}`, true)
     }
+  }
+
+  function updateSetting(patch: Partial<AppSettings>) {
+    if (patch.theme) {
+      themeMode = patch.theme
+      storeThemeMode(themeMode)
+      applyTheme(themeMode)
+    }
+    if (patch.wideMode !== undefined) {
+      wideMode = patch.wideMode
+      localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+    }
+    if (patch.markdownStyle) markdownStyle = patch.markdownStyle
+    if (patch.ctrlClickLink) {
+      ctrlClickLink = patch.ctrlClickLink
+      setLinkClickBehavior(ctrlClickLink)
+    }
+    if (patch.autoSave !== undefined) {
+      autoSave = patch.autoSave
+      if (!autoSave && saveTimer) {
+        clearTimeout(saveTimer)
+        saveTimer = null
+      } else if (autoSave && dirty) {
+        scheduleSave()
+      }
+    }
+    void persistSettings()
+  }
+
+  function toggleRawMode() {
+    rawMode = !rawMode
+    localStorage.setItem(RAW_MODE_KEY, rawMode ? '1' : '0')
+    editor?.setRawMode(rawMode)
+  }
+
+  function cycleMarkdownStyle() {
+    const order: AppSettings['markdownStyle'][] = ['default', 'github', 'academic', 'compact']
+    const index = order.indexOf(markdownStyle)
+    updateSetting({ markdownStyle: order[(index + 1) % order.length] })
   }
 
   async function loadSettings() {
@@ -565,12 +637,22 @@
       if (response.exists) {
         themeMode = response.settings.theme
         wideMode = response.settings.wideMode
+        markdownStyle = response.settings.markdownStyle
+        autoSave = response.settings.autoSave
+        ctrlClickLink = response.settings.ctrlClickLink
         applyTheme(themeMode)
         storeThemeMode(themeMode)
         localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+        setLinkClickBehavior(ctrlClickLink)
       } else {
         // First run on this EC2 host: migrate local browser preferences.
-        await api.saveSettings({ theme: themeMode, wideMode })
+        await api.saveSettings({
+          theme: themeMode,
+          wideMode,
+          markdownStyle,
+          autoSave,
+          ctrlClickLink,
+        })
       }
     } catch (err) {
       flash(`Could not load settings: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -788,6 +870,11 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && settingsOpen) {
+      event.preventDefault()
+      settingsOpen = false
+      return
+    }
     if (event.key === 'Escape' && quitOpen) {
       event.preventDefault()
       quitOpen = false
@@ -852,7 +939,18 @@
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand" title="Burley">
-        <span class="brand-mark">B</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="25" height="25">
+            <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M16 2.5 21.2 14H10.8Z" />
+              <path d="M11 14h10v14H11z" />
+              <circle cx="16" cy="19.2" r="2.6" />
+              <path d="M16 17.6v1.6l1 .8" />
+              <path d="M14 28v-3a2 2 0 0 1 4 0v3" />
+              <path d="M10.8 14 8.8 11M21.2 14l2-3" />
+            </g>
+          </svg>
+        </span>
         <span class="brand-name">Burley</span>
       </div>
 
@@ -895,33 +993,17 @@
 
     <div class="toolbar">
       <button
-        class="icon-btn"
-        class:on={themeMode !== 'system'}
-        title={`${themeLabel} — click to change`}
-        aria-label={themeLabel}
-        onclick={cycleTheme}
+        class="icon-btn raw-btn"
+        class:on={rawMode}
+        title={rawMode ? 'Show live preview' : 'Show raw Markdown'}
+        aria-label="Toggle raw Markdown"
+        aria-pressed={rawMode}
+        onclick={toggleRawMode}
       >
-        {#if themeMode === 'system'}
-          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><rect x="2.8" y="4" width="14.4" height="9.6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 16.2h5.2M10 13.6v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        {:else if themeMode === 'light'}
-          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10 2.2v1.6M10 16.2v1.6M2.2 10h1.6M16.2 10h1.6M4.5 4.5l1.1 1.1M14.4 14.4l1.1 1.1M15.5 4.5l-1.1 1.1M5.6 14.4l-1.1 1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        {:else}
-          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M15.8 12.4A6.4 6.4 0 0 1 7.6 4.2a6.4 6.4 0 1 0 8.2 8.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
-        {/if}
+        <span class="raw-glyph" aria-hidden="true">&lt;/&gt;</span>
       </button>
-      <button
-        class="icon-btn wide-btn"
-        class:on={wideMode}
-        title={wideMode ? 'Switch to narrow reading width' : 'Switch to wide reading width'}
-        aria-label="Toggle wide reading mode"
-        aria-pressed={wideMode}
-        onclick={toggleWideMode}
-      >
-        {#if wideMode}
-          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M8 12l-4 4M4 12v4h4M12 8l4-4M12 4h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        {:else}
-          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M12 8l4-4M12 4h4v4M8 12l-4 4M8 16H4v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        {/if}
+      <button class="icon-btn" aria-label="Open settings" title="Settings" onclick={() => (settingsOpen = true)}>
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10 2.6v2M10 15.4v2M2.6 10h2M15.4 10h2M4.8 4.8l1.4 1.4M13.8 13.8l1.4 1.4M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
       </button>
       <button class="toggle-btn" class:on={readOnly} title="Toggle read-only mode" onclick={toggleReadOnly}>
         {#if readOnly}
@@ -1117,6 +1199,8 @@
       <div
         class="editor-host"
         class:wide={wideMode}
+        class:raw={rawMode}
+        data-md-style={markdownStyle}
         bind:this={editorHost}
         style={`--editor-measure: ${wideMode ? '1200px' : '820px'}; --editor-gutter: ${wideMode ? '28px' : '48px'}`}
       ></div>
@@ -1250,6 +1334,14 @@
   </div>
 </dialog>
 
+{#if settingsOpen}
+  <SettingsModal
+    settings={{ theme: themeMode, wideMode, markdownStyle, autoSave, ctrlClickLink }}
+    onchange={updateSetting}
+    onclose={() => (settingsOpen = false)}
+  />
+{/if}
+
 {#if quitOpen}
   <div class="modal-backdrop" role="presentation">
     <div class="modal quit-modal" role="dialog" aria-modal="true" aria-labelledby="quit-title">
@@ -1311,14 +1403,10 @@
   .brand-mark {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
-    background: var(--accent);
-    color: #fff;
-    font-weight: 700;
-    font-size: 14px;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+    width: 26px;
+    height: 26px;
+    color: var(--accent);
+    flex: 0 0 auto;
   }
   .brand-name {
     font-weight: 650;
@@ -1465,6 +1553,12 @@
   .icon-btn.on {
     color: var(--accent);
     background: var(--active);
+  }
+  .raw-glyph {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: -0.04em;
   }
   .icon-btn.small {
     width: 24px;
