@@ -306,6 +306,60 @@ try {
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(600)
 
+  // YAML frontmatter: folded into a properties card, expandable in place.
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.search-modal', { timeout: 5000 })
+  await page.locator('.search-input').fill('properties-demo')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(800)
+  check('frontmatter note opened', (await page.locator('.crumb-file').innerText()).includes('properties-demo'))
+  check('frontmatter folds into a properties card', (await page.locator('.cm-burley-frontmatter').count()) === 1)
+  check(
+    'frontmatter card counts properties',
+    (await page.locator('.cm-burley-frontmatter-count').innerText()).includes('8'),
+    await page.locator('.cm-burley-frontmatter-count').innerText(),
+  )
+  const tagLabels = await page.locator('.cm-burley-fm-tag').allInnerTexts()
+  check(
+    'frontmatter tags render as chips',
+    tagLabels.length === 3 && tagLabels.every((tag) => tag.startsWith('#')),
+    tagLabels.join(' '),
+  )
+  const aliasChips = await page.locator('.cm-burley-fm-chip').allInnerTexts()
+  check(
+    'frontmatter sequences render as values',
+    aliasChips.includes('properties') && aliasChips.includes('Grace'),
+    aliasChips.join(' '),
+  )
+  check(
+    'nested frontmatter maps render',
+    (await page.locator('.cm-burley-fm-subkey', { hasText: 'team' }).count()) === 1,
+  )
+  check(
+    'URL properties become links',
+    (await page.locator('.cm-burley-fm-link').first().getAttribute('href')) === 'https://example.com/burley',
+  )
+  check(
+    'raw YAML is hidden while the card shows',
+    (await page.locator('.cm-burley-frontmatter-source').count()) === 0,
+  )
+  await page.locator('.cm-burley-fm-row', { hasText: 'title' }).first().click()
+  await page.waitForTimeout(400)
+  check('clicking a property reveals raw YAML', (await page.locator('.cm-burley-frontmatter-source').count()) >= 2)
+  check('the card folds away while editing YAML', (await page.locator('.cm-burley-frontmatter').count()) === 0)
+  const yamlFont = await page
+    .locator('.cm-burley-frontmatter-source')
+    .first()
+    .evaluate((el) => getComputedStyle(el).fontFamily)
+  check('raw YAML uses monospace', yamlFont.toLowerCase().includes('mono'), yamlFont)
+  await page.locator('.cm-line').last().click()
+  await page.waitForTimeout(400)
+  check('leaving the block folds the card back', (await page.locator('.cm-burley-frontmatter').count()) === 1)
+  await page.screenshot({ path: path.join(here, 'screenshot-frontmatter.png') })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
   // Code blocks: highlighted when displayed, monospace while editing.
   await page.keyboard.press('Control+Shift+O')
   await page.waitForSelector('.palette', { timeout: 5000 })

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -337,11 +338,44 @@ func writeFileAtomic(abs string, data []byte, perm fs.FileMode) error {
 		os.Remove(name)
 		return err
 	}
-	if err := os.Rename(name, abs); err != nil {
+	if err := renameWithRetry(name, abs); err != nil {
 		os.Remove(name)
 		return err
 	}
 	return nil
+}
+
+// renameWithRetry retries a rename on Windows, where a virus scanner or a
+// concurrent reader can briefly hold the destination and fail it with
+// "Access is denied" (EPERM).
+func renameWithRetry(from, to string) error {
+	var err error
+	for attempt := 0; attempt < 8; attempt++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		if !isRetryableRename(err) {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 15 * time.Millisecond)
+	}
+	return err
+}
+
+func isRetryableRename(err error) bool {
+	if errors.Is(err, fs.ErrPermission) {
+		return true
+	}
+	// Windows sharing violations: ERROR_ACCESS_DENIED (5), ERROR_SHARING_VIOLATION
+	// (32) and ERROR_LOCK_VIOLATION (33).
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch uintptr(errno) {
+		case 5, 32, 33:
+			return true
+		}
+	}
+	return false
 }
 
 // Delete permanently removes a Markdown file from the vault.

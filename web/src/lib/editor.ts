@@ -31,6 +31,7 @@ import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
+import { frontmatterField } from './frontmatter'
 import { escapeElementKeymap } from './escape'
 import { spellcheckExclusions } from './spellcheck'
 import { resolveRelative } from './paths'
@@ -159,6 +160,7 @@ function previewExtensions(): Extension[] {
   return [
     collapseOnSelectionFacet.of(true),
     mouseSelectingField,
+    frontmatterField(),
     livePreviewPlugin,
     markdownStylePlugin,
     tableEditorField(),

@@ -303,6 +303,158 @@ button {
   background: var(--panel);
 }
 
+/* ------------------------------------------------- YAML frontmatter card */
+
+.cm-burley-frontmatter {
+  display: flex;
+  flex-direction: column;
+  margin: 10px 0 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.cm-burley-frontmatter-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cm-burley-frontmatter-count {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.cm-burley-frontmatter-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.cm-burley-fm-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.cm-burley-fm-row:hover {
+  background: var(--hover);
+}
+
+.cm-burley-fm-key {
+  flex: 0 0 118px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.cm-burley-fm-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.cm-burley-fm-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.cm-burley-fm-chips,
+.cm-burley-fm-tags {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cm-burley-fm-chip,
+.cm-burley-fm-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.cm-burley-fm-tag {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  font-weight: 600;
+}
+
+.cm-burley-fm-map {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cm-burley-fm-map-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.cm-burley-fm-subkey {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.cm-burley-fm-link {
+  flex: 1;
+  min-width: 0;
+  color: hsl(var(--md-link));
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.cm-burley-fm-raw {
+  margin: 4px 6px 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-x: auto;
+}
+
+.cm-burley-frontmatter-source {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--panel);
+}
+
+
 /* highlight.js token colors */
 .cm-burley-code .hljs-keyword,
 .cm-burley-code .hljs-selector-tag,
