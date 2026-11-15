@@ -159,6 +159,11 @@ func parseYAMLScalar(s string) string {
 // parseFavoritesYAML understands the small subset of YAML Burley writes
 // (a `favorites:` block list of scalars), plus hand-edited inline [] lists.
 func parseFavoritesYAML(content string) []string {
+	return parsePathListYAML(content, "favorites")
+}
+
+// parsePathListYAML reads a single block list of vault-relative path scalars.
+func parsePathListYAML(content, listKey string) []string {
 	out := []string{}
 	inList := false
 	seen := map[string]struct{}{}
@@ -170,8 +175,8 @@ func parseFavoritesYAML(content string) []string {
 		}
 
 		if !inList {
-			key, value, ok := strings.Cut(line, ":")
-			if !ok || strings.TrimSpace(key) != "favorites" {
+			field, value, ok := strings.Cut(line, ":")
+			if !ok || strings.TrimSpace(field) != listKey {
 				continue
 			}
 			rest := strings.TrimSpace(value)
@@ -180,7 +185,7 @@ func parseFavoritesYAML(content string) []string {
 			}
 			if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
 				for _, part := range strings.Split(strings.Trim(rest, "[]"), ",") {
-					addFavorite(&out, seen, parseYAMLScalar(part))
+					addPath(&out, seen, parseYAMLScalar(part))
 				}
 				return out
 			}
@@ -194,13 +199,13 @@ func parseFavoritesYAML(content string) []string {
 		if !strings.HasPrefix(line, "-") {
 			break
 		}
-		addFavorite(&out, seen, parseYAMLScalar(strings.TrimSpace(strings.TrimPrefix(line, "-"))))
+		addPath(&out, seen, parseYAMLScalar(strings.TrimSpace(strings.TrimPrefix(line, "-"))))
 	}
 
 	return out
 }
 
-func addFavorite(out *[]string, seen map[string]struct{}, value string) {
+func addPath(out *[]string, seen map[string]struct{}, value string) {
 	if value == "" {
 		return
 	}

@@ -29,10 +29,14 @@ the compiled frontend, so deployment is a single executable.
 - **Conflict detection:** saves send the last seen SHA-256. If the file changed
   on disk, the API returns `409` with the server copy and the UI asks whether to
   keep yours, take theirs, or decide later.
-- **Left file tree + quick-open palette:** collapsible tree with filter; `Ctrl+P`
-  or `F1` opens a search palette with favorites, recents, `@` heading jumps,
-  `>` commands, and `?` full-text search. Recent files and stale-path cleanup
-  are handled locally.
+- **Left file tree + quick-open palette:** collapsible tree with filter; a wide,
+  centered quick-open box (`Ctrl+P` / `F1`) opens a palette with favorites,
+  recents, `@` heading jumps, `>` commands, and `?` full-text search. Recents are
+  stored in `.burley/recent.yaml` and stale paths are filtered against the tree.
+- **Links:** a plain click opens a link; **Ctrl/Cmd-click** reveals its Markdown
+  source for editing.
+- **Status bar:** the full file path and last-modified time live at the bottom
+  (the top bar stays uncluttered).
 - **Files | Outline tabs:** Typora-style tabs at the top of the left sidebar;
   the outline lists the note's headings (indented, code fences excluded) and
   clicking one jumps to it.
@@ -143,6 +147,7 @@ mode, light/dark themes and the quit confirmation. Screenshots are written to
 | `Ctrl+P` / `Cmd+P` / `F1` | Quick-open palette (favorites, recents, files) |
 | `Ctrl+Shift+O` | Palette in `@` heading mode |
 | `Ctrl+Shift+F` | Palette in `?` content-search mode |
+| `Ctrl+Click` / `Cmd+Click` | Reveal a rendered link's Markdown source |
 | `Ctrl+Enter` | Open the highlighted file in a new tab |
 | `Ctrl+S` / `Cmd+S` | Save now (autosave runs 1.5 s after typing stops) |
 | `Ctrl+B` / `Cmd+B` | Toggle the file tree |
@@ -216,6 +221,8 @@ See [the todo list](./notes/todo.md).
 | `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
 | `GET /api/settings` | Read `.burley/settings.yaml` (theme, wide mode) |
 | `PUT /api/settings` | Save theme / wide mode |
+| `GET /api/recent` | Read `.burley/recent.yaml` (last 10 files) |
+| `PUT /api/recent` | Save the recent list |
 | `POST /api/quit` | Graceful shutdown (loopback clients only) |
 
 Writes are atomic: a hidden temp file in the same directory is synced and then

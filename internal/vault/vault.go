@@ -53,6 +53,8 @@ type Vault interface {
 	WriteFavorites(ctx context.Context, paths []string) error
 	ReadSettings(ctx context.Context) (Settings, bool, error)
 	WriteSettings(ctx context.Context, settings Settings) error
+	ReadRecent(ctx context.Context) ([]string, error)
+	WriteRecent(ctx context.Context, paths []string) error
 	SearchContent(ctx context.Context, query string, max int) ([]SearchMatch, error)
 }
 

@@ -8,6 +8,9 @@
 
   let {
     initialQuery = '',
+    anchorLeft = 0,
+    anchorTop = 0,
+    anchorWidth = 0,
     files,
     favorites = [],
     recent = [],
@@ -18,6 +21,9 @@
     onheading,
   }: {
     initialQuery?: string
+    anchorLeft?: number
+    anchorTop?: number
+    anchorWidth?: number
     files: FlatFile[]
     favorites?: string[]
     recent?: string[]
@@ -281,7 +287,13 @@
     if (event.target === event.currentTarget) onclose()
   }}
 >
-  <div class="modal search-modal palette" role="dialog" aria-modal="true" aria-label="Quick open">
+  <div
+    class="modal search-modal palette"
+    style={`left: ${anchorLeft}px; top: ${anchorTop}px; width: ${anchorWidth || 'min(640px, 92vw)'}${anchorWidth ? 'px' : ''};`}
+    role="dialog"
+    aria-modal="true"
+    aria-label="Quick open"
+  >
     <div class="palette-input-row">
       <svg class="palette-search-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
       <input
@@ -411,12 +423,11 @@
 
 <style>
   .palette {
-    width: min(640px, 92vw);
-    margin-top: 12vh;
-    align-self: flex-start;
+    position: fixed;
+    margin: 0;
     display: flex;
     flex-direction: column;
-    max-height: 60vh;
+    max-height: min(60vh, calc(100vh - 90px));
     overflow: hidden;
   }
   .palette-input-row {

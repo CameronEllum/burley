@@ -145,6 +145,17 @@ export const api = {
     })
   },
 
+  async recent(signal?: AbortSignal): Promise<{ recent: string[] }> {
+    return request<{ recent: string[] }>('/api/recent', { signal })
+  },
+
+  async saveRecent(recent: string[]): Promise<{ recent: string[] }> {
+    return request<{ recent: string[] }>('/api/recent', {
+      method: 'PUT',
+      body: JSON.stringify({ recent }),
+    })
+  },
+
   async quit(): Promise<{ status: string }> {
     return request<{ status: string }>('/api/quit', { method: 'POST' })
   },

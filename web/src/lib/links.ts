@@ -48,18 +48,31 @@ class LinkWidget extends WidgetType {
     const anchor = document.createElement('a')
     anchor.className = 'cm-burley-link'
     anchor.textContent = this.label || this.url || 'link'
-    if (this.internalPath) {
-      anchor.href = '#'
-      anchor.title = this.internalPath
-      anchor.classList.add('cm-burley-link-internal')
-      anchor.addEventListener('click', (event) => {
+    anchor.title = `${this.internalPath || this.title || this.url} — Ctrl/Cmd-click to edit`
+
+    anchor.addEventListener('click', (event) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        const view = getActiveView()
+        if (!view) return
+        const pos = Math.min(this.editPos, view.state.doc.length)
+        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+        view.focus()
+        return
+      }
+      if (this.internalPath) {
         event.preventDefault()
         event.stopPropagation()
         if (openPathHandler && this.internalPath) openPathHandler(this.internalPath)
-      })
+      }
+    })
+
+    if (this.internalPath) {
+      anchor.href = '#'
+      anchor.classList.add('cm-burley-link-internal')
     } else if (this.url) {
       anchor.href = this.url
-      anchor.title = this.title || this.url
       anchor.target = '_blank'
       anchor.rel = 'noopener noreferrer'
     } else {

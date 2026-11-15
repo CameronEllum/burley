@@ -69,6 +69,22 @@ async function putSettings(settings) {
   return res.json()
 }
 
+async function getRecent() {
+  const res = await fetch(`${BASE}/api/recent`)
+  if (!res.ok) throw new Error(`GET recent: ${res.status}`)
+  return (await res.json()).recent
+}
+
+async function putRecent(recent) {
+  const res = await fetch(`${BASE}/api/recent`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recent }),
+  })
+  if (!res.ok) throw new Error(`PUT recent: ${res.status} ${await res.text()}`)
+  return (await res.json()).recent
+}
+
 async function waitFor(fn, timeout = 12000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
@@ -84,7 +100,9 @@ const original = {
 }
 const originalFavorites = await getFavorites()
 const originalSettings = await getSettings()
+const originalRecent = await getRecent()
 await putSettings({ theme: 'system', wideMode: false })
+await putRecent([])
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
@@ -109,6 +127,23 @@ try {
 
   check('page title is Burley', (await page.title()) === 'Burley')
   check('editor mounted', (await page.locator('.cm-content').count()) === 1)
+  check('top bar no longer shows the file path', (await page.locator('.path-crumb').count()) === 0)
+  const statusFile = await page.locator('.status-file').innerText()
+  check(
+    'status bar shows the full file path',
+    statusFile.includes('demo-vault') && statusFile.includes('welcome.md'),
+    statusFile,
+  )
+  check(
+    'status bar shows the modification time',
+    (await page.locator('.status-modified').innerText()).includes('modified'),
+  )
+  const searchBox = await page.locator('.search-trigger').boundingBox()
+  check(
+    'quick box is wide and centered',
+    searchBox.width > 400 && Math.abs(searchBox.x + searchBox.width / 2 - 720) < 10,
+    `${searchBox.width}px at ${Math.round(searchBox.x)}`,
+  )
   const sidebarBox = await page.locator('.sidebar').boundingBox()
   const editorBox = await page.locator('.editor-pane').boundingBox()
   check('file tree is on the left', !!sidebarBox && !!editorBox && sidebarBox.x < editorBox.x)
@@ -120,9 +155,26 @@ try {
   // Open the welcome note from the sidebar.
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(800)
-  check('welcome note active', (await page.locator('.crumb-file').innerText()).includes('welcome'))
+  check('welcome note active', (await page.locator('.status-file').innerText()).includes('welcome.md'))
   check('headings rendered', (await page.locator('.cm-header-1').count()) >= 1)
   check('inline formatting rendered', (await page.locator('.cm-strong').count()) >= 1)
+
+  // Link editing: Ctrl-click reveals source, plain click navigates.
+  const internalLinkCount = await page.locator('.cm-burley-link-internal').count()
+  await page.locator('.cm-burley-link-internal').first().click({ modifiers: ['Control'] })
+  await page.waitForTimeout(400)
+  check(
+    'Ctrl-click makes a link editable',
+    (await page.locator('.status-file').innerText()).includes('welcome.md') &&
+      (await page.locator('.cm-burley-link-internal').count()) < internalLinkCount,
+  )
+  await page.locator('.cm-line').first().click()
+  await page.waitForTimeout(300)
+  await page.locator('.cm-burley-link-internal').first().click()
+  await page.waitForTimeout(700)
+  check('plain click opens an internal link', (await page.locator('.status-file').innerText()).includes('todo.md'))
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
 
   const katexCount = await page.locator('.katex').count()
   check('KaTeX formulas rendered', katexCount >= 4, `${katexCount} formulas`)
@@ -242,6 +294,18 @@ try {
   // Quick open (fuzzy filename search).
   await page.keyboard.press('Control+p')
   await page.waitForSelector('.search-modal', { timeout: 5000 })
+  const paletteBox = await page.locator('.palette').boundingBox()
+  check(
+    'palette opens directly under the quick box',
+    Math.abs(paletteBox.x - searchBox.x) < 6 &&
+      Math.abs(paletteBox.y - (searchBox.y + searchBox.height + 6)) < 4,
+    `palette ${Math.round(paletteBox.x)},${Math.round(paletteBox.y)}`,
+  )
+  check(
+    'palette matches the quick-box width',
+    Math.abs(paletteBox.width - searchBox.width) < 6,
+    `${Math.round(paletteBox.width)}px`,
+  )
   await page.locator('.search-input').fill('todo')
   await page.waitForTimeout(250)
   const firstResult = await page.locator('.search-item').first().innerText()
@@ -563,6 +627,14 @@ try {
   check('palette divides favorites from other files', (await page.locator('.palette-divider').count()) === 1)
   const recentHints = await page.locator('.palette-item .item-hint', { hasText: 'Recent' }).count()
   check('recent files appear below favorites', recentHints >= 1, `${recentHints} recent`)
+  const serverRecent = await getRecent()
+  check('recents stored in .burley/recent.yaml', serverRecent.length > 0, serverRecent.join(', '))
+  const recentYaml = await fs.readFile(path.join(vault, '.burley', 'recent.yaml'), 'utf8')
+  check(
+    'recent.yaml is a YAML list',
+    recentYaml.includes('recent:') && recentYaml.includes('- "'),
+    recentYaml.split('\n').slice(0, 3).join(' | '),
+  )
   await page.locator('.palette-input').fill('wel')
   await page.waitForTimeout(300)
   check('matched filename characters are highlighted', (await page.locator('.palette-item mark').count()) >= 1)
@@ -650,6 +722,11 @@ try {
   }
   try {
     await putSettings(originalSettings.settings)
+  } catch {
+    /* ignore */
+  }
+  try {
+    await putRecent(originalRecent)
   } catch {
     /* ignore */
   }

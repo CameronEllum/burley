@@ -338,8 +338,49 @@ func TestQuitEndpointDisabled(t *testing.T) {
 	}
 }
 
-func TestSettingsAPI(t *testing.T) {
+func TestRecentAPI(t *testing.T) {
 	h := newHarness(t)
+
+	resp, data := h.do(t, "GET", "/api/recent", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"recent":[]`) {
+		t.Fatalf("empty recent = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/recent", map[string]any{
+		"recent": []string{"welcome.md", "notes/todo.md", "welcome.md"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("put recent = %d %s", resp.StatusCode, data)
+	}
+	var payload struct {
+		Recent []string `json:"recent"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Recent) != 2 || payload.Recent[0] != "welcome.md" {
+		t.Fatalf("recent = %v", payload.Recent)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(h.root, ".burley", "recent.yaml"))
+	if err != nil {
+		t.Fatalf("recent.yaml: %v", err)
+	}
+	if !strings.Contains(string(raw), `- "welcome.md"`) {
+		t.Fatalf("unexpected recent yaml:\n%s", raw)
+	}
+
+	resp, data = h.do(t, "PUT", "/api/recent", map[string]any{"recent": []string{"../escape.md"}})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("traversal recent = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "PUT", "/api/recent", "not-json")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad recent json = %d %s", resp.StatusCode, data)
+	}
+}
+
+func TestSettingsAPI(t *testing.T) {	h := newHarness(t)
 
 	resp, data := h.do(t, "GET", "/api/settings", nil)
 	if resp.StatusCode != 200 || !strings.Contains(string(data), `"exists":false`) {

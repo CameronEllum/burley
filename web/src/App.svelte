@@ -60,8 +60,11 @@
 
   let searchOpen = $state(false)
   let searchInitial = $state('')
+  let searchTriggerEl = $state<HTMLButtonElement | null>(null)
+  let paletteAnchor = $state({ left: 0, top: 0, width: 0 })
   let restoreEditorFocus = false
   let recent = $state<string[]>([])
+  let recentSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   let conflictData = $state<FileData | null>(null)
   let conflictOpen = $state(false)
@@ -80,8 +83,16 @@
   let toastTimer: ReturnType<typeof setTimeout> | null = null
 
   const words = $derived(countWords(content))
-  const fileLabel = $derived(currentPath ? baseName(currentPath) : '')
-  const dirLabel = $derived(currentPath ? dirOf(currentPath) : '')
+  const absolutePath = $derived.by(() => {
+    if (!currentPath) return ''
+    const separator = root.includes('\\') ? '\\' : '/'
+    return `${root.replace(/[\\/]+$/, '')}${separator}${currentPath.split('/').join(separator)}`
+  })
+  const modifiedLabel = $derived(
+    modTime
+      ? new Date(modTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+      : '',
+  )
   const eolLabel = $derived(format.eol === '\r\n' ? 'CRLF' : 'LF')
   const outline = $derived(buildOutline(content))
   const activeHeadingLine = $derived.by(() => {
@@ -193,14 +204,20 @@
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', paletteShortcut, true)
+    const onResize = () => {
+      if (searchOpen) updatePaletteAnchor()
+    }
+    window.addEventListener('resize', onResize)
     void initialLoad()
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('keydown', paletteShortcut, true)
+      window.removeEventListener('resize', onResize)
       unwatchTheme()
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
+      if (recentSaveTimer) clearTimeout(recentSaveTimer)
       editor?.destroy()
       editor = null
     }
@@ -208,8 +225,7 @@
 
   async function initialLoad() {
     await refreshTree()
-    await Promise.all([loadFavorites(), loadSettings()])
-    loadRecent()
+    await Promise.all([loadFavorites(), loadSettings(), loadRecent()])
     const stored = localStorage.getItem(LAST_PATH_KEY)
     const target =
       files.find((file) => file.path === stored)?.path ??
@@ -495,36 +511,26 @@
     }
   }
 
-  function recentStorageKey(): string {
-    return root ? `burley:recent:${root}` : ''
-  }
-
-  function loadRecent() {
-    const key = recentStorageKey()
-    if (!key) return
+  async function loadRecent() {
     try {
-      const raw = localStorage.getItem(key)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        recent = parsed.filter((value): value is string => typeof value === 'string').slice(0, 10)
-      }
-    } catch {
-      /* ignore corrupt localStorage */
+      const response = await api.recent()
+      recent = response.recent.slice(0, 10)
+    } catch (err) {
+      flash(`Could not load recent files: ${err instanceof Error ? err.message : String(err)}`, true)
     }
   }
 
   function rememberRecent(path: string) {
-    const key = recentStorageKey()
-    if (!key || !path) return
+    if (!path) return
     recent = [path, ...recent.filter((entry) => entry !== path)].slice(0, 10)
-    try {
-      localStorage.setItem(key, JSON.stringify(recent))
-    } catch {
-      /* ignore quota errors */
-    }
+    if (recentSaveTimer) clearTimeout(recentSaveTimer)
+    recentSaveTimer = setTimeout(() => {
+      recentSaveTimer = null
+      void api.saveRecent(recent).catch((err) => {
+        flash(`Could not save recent files: ${err instanceof Error ? err.message : String(err)}`, true)
+      })
+    }, 250)
   }
-
   async function persistFavorites(next: string[]) {
     const previous = favorites
     favorites = next
@@ -598,7 +604,19 @@
     }
   }
 
+  function updatePaletteAnchor() {
+    const rect = searchTriggerEl?.getBoundingClientRect()
+    if (!rect) return
+    const width = Math.min(Math.max(rect.width, 360), window.innerWidth - 24)
+    const left = Math.min(
+      Math.max(12, rect.left + rect.width / 2 - width / 2),
+      window.innerWidth - width - 12,
+    )
+    paletteAnchor = { left, top: rect.bottom + 6, width }
+  }
+
   function openSearch(initial = '') {
+    updatePaletteAnchor()
     restoreEditorFocus = !!editor?.view.hasFocus
     searchInitial = initial
     searchOpen = true
@@ -690,55 +708,51 @@
 
 <div class="app-shell">
   <header class="topbar">
-    <div class="brand" title="Burley">
-      <span class="brand-mark">B</span>
-      <span class="brand-name">Burley</span>
-    </div>
+    <div class="topbar-left">
+      <div class="brand" title="Burley">
+        <span class="brand-mark">B</span>
+        <span class="brand-name">Burley</span>
+      </div>
 
-    <div class="path-crumb">
+      <span class="pill {saveState}" class:inactive={!currentPath} title={saveError || saveLabel}>
+        <span class="pill-dot"></span>
+        {currentPath ? saveLabel : 'Ready'}
+      </span>
+
       {#if currentPath}
-        {#if dirLabel}<span class="crumb-dir">{dirLabel}/</span>{/if}
-        <span class="crumb-file">{fileLabel}</span>
-        {#if modTime}<span class="crumb-time">{new Date(modTime).toLocaleTimeString()}</span>{/if}
-      {:else}
-        <span class="crumb-file muted">No note open</span>
+        <button
+          class="icon-btn favorite-star"
+          class:on={currentIsFavorite}
+          title={currentIsFavorite ? 'Remove current note from favorites' : 'Add current note to favorites'}
+          aria-label="Toggle favorite"
+          aria-pressed={currentIsFavorite}
+          onclick={() => toggleFavorite(currentPath)}
+        >
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+            <path
+              d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z"
+              fill={currentIsFavorite ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
       {/if}
     </div>
 
-    {#if currentPath}
-      <button
-        class="icon-btn favorite-star"
-        class:on={currentIsFavorite}
-        title={currentIsFavorite ? 'Remove current note from favorites' : 'Add current note to favorites'}
-        aria-label="Toggle favorite"
-        aria-pressed={currentIsFavorite}
-        onclick={() => toggleFavorite(currentPath)}
-      >
-        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
-          <path
-            d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z"
-            fill={currentIsFavorite ? 'currentColor' : 'none'}
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
-    {/if}
-
-    <span class="grow"></span>
-
-    <span class="pill {saveState}" class:inactive={!currentPath} title={saveError || saveLabel}>
-      <span class="pill-dot"></span>
-      {currentPath ? saveLabel : 'Ready'}
-    </span>
+    <button
+      class="search-trigger"
+      bind:this={searchTriggerEl}
+      title="Quick open (Ctrl+P / F1)"
+      onclick={() => openSearch('')}
+    >
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+      <span class="search-trigger-label">Search files…</span>
+      <kbd>Ctrl P</kbd>
+    </button>
 
     <div class="toolbar">
-      <button class="search-trigger" title="Quick open (Ctrl+P / F1)" onclick={() => openSearch('')}>
-        <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-        <span class="search-trigger-label">Search files…</span>
-        <kbd>Ctrl P</kbd>
-      </button>
       <button
         class="icon-btn"
         class:on={themeMode !== 'system'}
@@ -994,8 +1008,12 @@
   </main>
 
   <footer class="statusbar">
-    <span class="status-item root" title={root}>{root || '—'}</span>
-    <span class="grow"></span>
+    <span class="status-item status-file crumb-file" title={absolutePath || root}>
+      {absolutePath || root || '—'}
+    </span>
+    {#if modifiedLabel}
+      <span class="status-item status-modified">modified {modifiedLabel}</span>
+    {/if}
     {#if saveError}<span class="status-item error">{saveError}</span>{/if}
     <span class="status-item" title="Line endings preserved on save">{eolLabel}</span>
     <span class="status-item">{words} words</span>
@@ -1007,6 +1025,9 @@
 {#if searchOpen}
   <SearchModal
     initialQuery={searchInitial}
+    anchorLeft={paletteAnchor.left}
+    anchorTop={paletteAnchor.top}
+    anchorWidth={paletteAnchor.width}
     files={files}
     favorites={favorites}
     recent={recent}
@@ -1078,12 +1099,19 @@
   }
 
   .topbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 560px) minmax(0, 1fr);
     align-items: center;
     gap: 14px;
     padding: 0 14px 0 18px;
     border-bottom: 1px solid var(--border-soft);
     background: var(--bg-chrome);
+  }
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
   }
   .brand {
     display: flex;
@@ -1107,36 +1135,6 @@
     font-weight: 650;
     letter-spacing: -0.01em;
     font-size: 14.5px;
-  }
-  .path-crumb {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-    min-width: 0;
-    font-size: 12.5px;
-    padding-left: 10px;
-    border-left: 1px solid var(--border-soft);
-  }
-  .crumb-dir {
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .crumb-file {
-    color: var(--text-primary);
-    font-weight: 550;
-    white-space: nowrap;
-  }
-  .crumb-file.muted {
-    color: var(--text-muted);
-    font-weight: 400;
-  }
-  .crumb-time {
-    color: var(--text-muted);
-    font-size: 11px;
-    margin-left: 8px;
-    font-variant-numeric: tabular-nums;
   }
   .grow {
     flex: 1;
@@ -1200,32 +1198,47 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    justify-self: end;
   }
   .search-trigger {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 7px;
-    height: 30px;
-    padding: 0 9px;
-    margin-right: 4px;
-    border-radius: 7px;
+    gap: 8px;
+    width: 100%;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 8px;
     border: 1px solid var(--border-soft);
-    background: transparent;
+    background: var(--bg-app);
     color: var(--text-muted);
     font: inherit;
-    font-size: 12px;
-    font-weight: 550;
-    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: text;
     white-space: nowrap;
+    justify-self: center;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .search-trigger:hover {
-    background: var(--hover);
+    border-color: var(--border-strong);
     color: var(--text-primary);
   }
+  .search-trigger:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--active);
+  }
+  .search-trigger-label {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .search-trigger kbd {
+    flex: 0 0 auto;
     font-family: var(--font-mono);
     font-size: 10px;
-    padding: 1px 4px;
+    padding: 1px 5px;
     border-radius: 4px;
     border: 1px solid var(--border-soft);
     background: var(--panel);
@@ -1233,6 +1246,25 @@
   }
   @media (max-width: 1100px) {
     .search-trigger-label {
+      display: none;
+    }
+    .toggle-btn span {
+      display: none;
+    }
+    .toggle-btn {
+      width: 30px;
+      padding: 0;
+      justify-content: center;
+    }
+  }
+  @media (max-width: 820px) {
+    .topbar {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      padding: 0 8px;
+    }
+    .brand-name,
+    .pill {
       display: none;
     }
   }
@@ -1773,12 +1805,18 @@
   .status-item {
     white-space: nowrap;
   }
-  .status-item.root {
+  .status-item.status-file {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 46ch;
     font-family: var(--font-mono);
     font-size: 10.5px;
+    color: var(--text-primary);
+  }
+  .status-item.status-modified {
+    font-size: 10.5px;
+    flex: 0 0 auto;
   }
   .status-item.error {
     color: var(--danger-fg);
