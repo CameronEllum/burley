@@ -118,7 +118,12 @@ page.on('console', (msg) => {
   consoleErrors.push(msg.text())
 })
 page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`))
-page.on('requestfailed', (req) => requestFailures.push(`${req.url()} :: ${req.failure()?.errorText}`))
+page.on('requestfailed', (req) => {
+  const failure = req.failure()?.errorText ?? ''
+  // Reloads during the test abort in-flight requests; that is expected.
+  if (failure.includes('ERR_ABORTED')) return
+  requestFailures.push(`${req.url()} :: ${failure}`)
+})
 
 try {
   await page.goto(`${BASE}/`, { waitUntil: 'networkidle' })
@@ -244,6 +249,60 @@ try {
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(600)
 
+  // Code blocks: highlighted when displayed, monospace while editing.
+  await page.keyboard.press('Control+Shift+O')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  await page.locator('.palette-input').fill('@code')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(700)
+  check(
+    'displayed code blocks are syntax highlighted',
+    (await page.locator('.cm-burley-code .hljs-keyword').count()) >= 1,
+  )
+  const goBlock = page.locator('.cm-burley-block[data-lang="go"]').first()
+  await goBlock.locator('.cm-burley-block-btn', { hasText: 'Edit' }).click()
+  await page.waitForTimeout(400)
+  const sourceFont = await page
+    .locator('.cm-burley-source-code')
+    .first()
+    .evaluate((el) => getComputedStyle(el).fontFamily)
+  check('raw code source uses monospace', sourceFont.toLowerCase().includes('mono'), sourceFont)
+  await page.locator('.cm-line').first().click()
+  await page.waitForTimeout(300)
+
+  // Editable tables: cell edits and structural changes write back to Markdown.
+  await page.keyboard.press('Control+Shift+O')
+  await page.waitForSelector('.palette', { timeout: 5000 })
+  await page.locator('.palette-input').fill('@tables')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(700)
+  check('table renders as an editable widget', (await page.locator('.cm-burley-table-widget').count()) === 1)
+  const firstCell = page.locator('.cm-burley-table-widget tbody [data-cell]').first()
+  await firstCell.click()
+  check(
+    'table stays interactive with the cursor inside',
+    (await page.locator('.cm-burley-table-widget').count()) === 1,
+  )
+  await firstCell.fill('Edited cell')
+  await page.locator('.cm-line').first().click()
+  await page.waitForTimeout(400)
+  await page.keyboard.press('Control+s')
+  await page.waitForTimeout(700)
+  const editedTable = await getFile('welcome.md')
+  check('table cell edit writes back to Markdown', editedTable.content.includes('Edited cell'))
+  const rowsBefore = await page.locator('.cm-burley-table-widget tbody tr').count()
+  await page.locator('.cm-burley-table-widget .cm-burley-table-btn', { hasText: '+ Row' }).click()
+  await page.waitForTimeout(800)
+  const rowsAfter = await page.locator('.cm-burley-table-widget tbody tr').count()
+  check('table add-row button inserts a row', rowsAfter === rowsBefore + 1, `${rowsBefore} -> ${rowsAfter}`)
+  const afterTable = await getFile('welcome.md')
+  await putFile('welcome.md', original.welcome.content, afterTable.hash)
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
+
   // CodeMirror virtualizes the viewport, so walk the note to exercise every
   // widget type (plotly, code block, image chart) as it scrolls into view.
   const scroller = page.locator('.cm-scroller')
@@ -257,6 +316,7 @@ try {
     if ((await page.locator('.cm-burley-block[data-lang="plotly"]').count()) > 0) seen.plotly = true
     if ((await page.locator('.cm-burley-block[data-lang="go"]').count()) > 0) seen.go = true
     if ((await page.locator('.cm-table-widget table').count()) > 0) seen.table = true
+    if ((await page.locator('.cm-burley-table-widget table').count()) > 0) seen.table = true
     if ((await page.locator('.plotly .main-svg').count()) > 0) seen.chart = true
     if ((await page.locator('.cm-burley-image img').count()) > 0) {
       const ok = await page

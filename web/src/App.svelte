@@ -891,7 +891,6 @@
     >
       <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M12.4 12.4L16.5 16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
       <span class="search-trigger-label">Search files…</span>
-      <kbd>Ctrl P</kbd>
     </button>
 
     <div class="toolbar">

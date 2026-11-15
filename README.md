@@ -23,6 +23,12 @@ the compiled frontend, so deployment is a single executable.
   headings, emphasis, links, blockquotes, GFM tables and task checkboxes render
   inline; raw Markdown appears only when the cursor enters an element. List
   markers stay visible as bullets (•/◦/▪) and numbers instead of disappearing.
+- **Editable tables:** click a cell to edit it (Tab/Shift+Tab, arrows, Enter),
+  hover for + row / + column controls, cycle column alignment, and add/remove
+  rows or columns. Only the table range is rewritten, so the rest of the note is
+  untouched.
+- **Highlighted code blocks:** fenced code renders with highlight.js colors;
+  editing the raw fence switches to a monospace source style.
 - **Lossless saves:** the plain-text buffer is edited directly, files are written
   atomically (temp file + rename), and the original line endings (LF/CRLF), BOM
   and trailing newline are preserved.

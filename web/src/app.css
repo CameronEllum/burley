@@ -297,6 +297,71 @@ button {
   color: var(--text-primary);
 }
 
+.cm-burley-source-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--panel);
+}
+
+/* highlight.js token colors */
+.cm-burley-code .hljs-keyword,
+.cm-burley-code .hljs-selector-tag,
+.cm-burley-code .hljs-literal,
+.cm-burley-code .hljs-built_in,
+.cm-burley-code .hljs-type {
+  color: var(--syntax-keyword);
+}
+.cm-burley-code .hljs-string,
+.cm-burley-code .hljs-regexp,
+.cm-burley-code .hljs-char.escape_ {
+  color: var(--syntax-string);
+}
+.cm-burley-code .hljs-number {
+  color: var(--syntax-number);
+}
+.cm-burley-code .hljs-comment,
+.cm-burley-code .hljs-quote,
+.cm-burley-code .hljs-doctag {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+.cm-burley-code .hljs-title,
+.cm-burley-code .hljs-title.function_,
+.cm-burley-code .hljs-section,
+.cm-burley-code .hljs-name {
+  color: var(--syntax-function);
+}
+.cm-burley-code .hljs-title.class_,
+.cm-burley-code .hljs-class {
+  color: var(--syntax-type);
+}
+.cm-burley-code .hljs-attr,
+.cm-burley-code .hljs-attribute,
+.cm-burley-code .hljs-property,
+.cm-burley-code .hljs-variable,
+.cm-burley-code .hljs-template-variable {
+  color: var(--syntax-property);
+}
+.cm-burley-code .hljs-meta,
+.cm-burley-code .hljs-symbol,
+.cm-burley-code .hljs-bullet {
+  color: var(--text-muted);
+}
+.cm-burley-code .hljs-addition {
+  color: var(--ok-fg);
+  background: var(--ok-bg);
+}
+.cm-burley-code .hljs-deletion {
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+}
+.cm-burley-code .hljs-emphasis {
+  font-style: italic;
+}
+.cm-burley-code .hljs-strong {
+  font-weight: 700;
+}
+
 .cm-burley-block-error {
   display: flex;
   flex-direction: column;
@@ -399,6 +464,124 @@ button {
 }
 .cm-table-widget table {
   font-size: 0.94em;
+}
+
+/* Editable tables */
+.cm-burley-table-widget {
+  margin: 10px 0 16px;
+}
+.cm-burley-table-widget table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.94em;
+}
+.cm-burley-table-widget th,
+.cm-burley-table-widget td {
+  border: 1px solid var(--border-soft);
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.cm-burley-table-widget th {
+  position: relative;
+  padding-right: 26px;
+  background: var(--panel);
+  font-weight: 600;
+}
+.cm-burley-table-cell {
+  display: inline-block;
+  min-width: 1ch;
+  padding: 1px 2px;
+  border-radius: 3px;
+  outline: none;
+}
+.cm-burley-table-cell:focus {
+  background: var(--active);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.cm-burley-table-align {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 3px;
+  cursor: pointer;
+  opacity: 0;
+}
+.cm-burley-table-widget th:hover .cm-burley-table-align,
+.cm-burley-table-align:focus {
+  opacity: 1;
+}
+.cm-burley-table-align:hover {
+  color: var(--accent);
+  background: var(--hover);
+}
+.cm-burley-table-tools {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cm-burley-table-widget:hover .cm-burley-table-tools {
+  opacity: 1;
+}
+.cm-burley-table-btn {
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.cm-burley-table-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.cm-burley-table-edge-row,
+.cm-burley-table-edge-col {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-app);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+}
+.cm-burley-table-edge-row {
+  left: 50%;
+  bottom: -11px;
+  transform: translateX(-50%);
+}
+.cm-burley-table-edge-col {
+  right: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.cm-burley-table-widget:hover .cm-burley-table-edge-row,
+.cm-burley-table-widget:hover .cm-burley-table-edge-col {
+  opacity: 1;
+}
+.cm-burley-table-edge-row:hover,
+.cm-burley-table-edge-col:hover {
+  background: var(--active);
 }
 
 /* Checkbox / task list polish */

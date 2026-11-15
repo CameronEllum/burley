@@ -1,8 +1,6 @@
 # Feature Tour
 
-A compact reference note for checking that Burley's live preview handles the
-formats you actually write. Open it in **Read-Only** mode to see everything
-rendered at once, or click into any element to reveal its Markdown source.
+A compact reference note for checking that Burley's live preview handles the formats you actually write. Open it in **Read-Only** mode to see everything rendered at once, or click into any element to reveal its Markdown source.
 
 ## Text and emphasis
 

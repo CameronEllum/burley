@@ -24,6 +24,8 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
    - Keyboard: `↑`/`↓` or `Ctrl+N`/`Ctrl+J`/`Ctrl+K`, `Enter` to open, `Ctrl+Enter` to open a file in a new tab, `Esc`/backdrop to close and restore editor focus. Recent files are stored in `.burley/recent.yaml` (max 10) via `GET`/`PUT /api/recent`; stale paths are filtered against `/api/tree`.
 4. **Live-Preview Markdown Rendering & Editing:**
    - Headings, emphasis, lists, task checkboxes, links, blockquotes, tables, and code blocks rendered inline.
+   - Fenced code blocks are syntax-highlighted with highlight.js when displayed and switch to a monospace source font while editing.
+   - Tables are editable in place: contenteditable cells, Tab/Shift+Tab and arrow navigation, add/remove rows and columns, and per-column alignment; serialization rewrites only the table range.
    - Bullets and ordered-list numbers stay visible while unfocused (nested bullets use •/◦/▪).
    - Rendered links open on click; **Ctrl/Cmd-click** places the caret inside the link source so it can be edited.
    - Optional one-click **Read-Only / Lock** mode (`EditorView.editable.of(false)`) to browse without revealing syntax on click.
@@ -297,6 +299,8 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Ctrl/Cmd-click on a rendered link reveals its Markdown source; a plain click still opens it.
 - [ ] Right-clicking a file offers Delete, the confirmation is an HTML `<dialog>`, and cancel keeps the file.
 - [ ] Deep links (`?file=…#heading`) open the right file/heading; opening files pushes history and Back/Forward restore both.
+- [ ] Code blocks are highlighted when displayed and monospace while editing.
+- [ ] Table cells are editable in place; add/remove row and column controls work and only the table range changes.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

@@ -10,6 +10,7 @@ import { StateField, type EditorState, type Extension, type Range } from '@codem
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
+import hljs from 'highlight.js/lib/common'
 import { filePathFacet, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
@@ -73,7 +74,18 @@ export const genericCodeRenderer: BlockRenderer = {
     pre.className = 'cm-burley-code'
     const code = document.createElement('code')
     if (ctx.lang) code.className = `language-${ctx.lang}`
-    code.textContent = ctx.code
+    try {
+      if (ctx.lang && hljs.getLanguage(ctx.lang)) {
+        code.innerHTML = hljs.highlight(ctx.code, {
+          language: ctx.lang,
+          ignoreIllegals: true,
+        }).value
+      } else {
+        code.textContent = ctx.code
+      }
+    } catch {
+      code.textContent = ctx.code
+    }
     pre.appendChild(code)
     return pre
   },
@@ -232,7 +244,12 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
       const renderer = renderers.get(lang) ?? genericCodeRenderer
 
       if (!readOnly && selectionTouches(state, node.from, node.to)) {
-        // Reveal the raw source for editing.
+        // Reveal the raw source for editing, in a monospace font.
+        for (let pos = node.from; pos <= node.to; ) {
+          const line = state.doc.lineAt(pos)
+          decorations.push(Decoration.line({ class: 'cm-burley-source-code' }).range(line.from))
+          pos = line.to + 1
+        }
         return
       }
 

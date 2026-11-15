@@ -21,7 +21,6 @@ import {
   markdownStylePlugin,
   mouseSelectingField,
   setMouseSelecting,
-  tableField,
 } from 'codemirror-live-markdown'
 import { filePathFacet, readOnlyFacet } from './cm'
 import { blockPluginField } from './blockPlugins'
@@ -31,6 +30,7 @@ import { linkPreviewField, setLinkOpenHandler } from './links'
 import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
+import { tableEditorField } from './tables'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -156,7 +156,7 @@ function markdownExtensions(readOnly: boolean): Extension[] {
     markdownStylePlugin,
     editorTheme,
     burleyTheme,
-    tableField,
+    tableEditorField(),
     blockPluginField(),
     imagePreviewField,
     linkPreviewField,
