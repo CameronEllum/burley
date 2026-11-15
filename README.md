@@ -284,33 +284,6 @@ See [the todo list](./notes/todo.md).
 
 ---
 
-## HTTP API
-
-| Method & path | Purpose |
-| --- | --- |
-| `GET /api/health` | Status, vault root, ripgrep availability |
-| `GET /api/tree` | Nested `tree` plus flat `files` list |
-| `GET /api/file?path=...` | File content, `modTime`, SHA-256 `hash` |
-| `PUT /api/file` | `{path, content, expectedHash}`; `409` returns the current file |
-| `DELETE /api/file` | Permanently delete a Markdown note (`?path=...`) |
-| `GET /api/asset?path=...` | Images / JSON / CSV and other whitelisted assets |
-| `POST /api/asset?path=<note>` | Upload an image (multipart `file`); stored in `<note>_assets/` |
-| `GET /api/search?q=...` | Content search results (`path`, `line`, `snippet`) |
-| `GET /api/favorites` | Read `.burley/favorites.yaml` |
-| `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
-| `GET /api/settings` | Read `.burley/settings.yaml` (theme, wide mode) |
-| `PUT /api/settings` | Save theme / wide mode |
-| `GET /api/agents` | Detect installed CLI agents |
-| `POST /api/agent/chat` | Stream an agent reply over SSE |
-| `GET /api/recent` | Read `.burley/recent.yaml` (last 10 files) |
-| `PUT /api/recent` | Save the recent list |
-| `POST /api/quit` | Graceful shutdown (loopback clients only) |
-
-Writes are atomic: a hidden temp file in the same directory is synced and then
-renamed over the target, with the original permissions preserved.
-
----
-
 ## Security notes
 
 - Binds to `127.0.0.1` by default; remote access is gated by SSH.
@@ -324,22 +297,3 @@ renamed over the target, with the original permissions preserved.
 - The frontend ships with a strict CSP; all assets (KaTeX fonts, Plotly) are
   bundled, so notes make no CDN requests.
 - `/api/quit` is loopback-only.
-
----
-
-## Project layout
-
-```text
-cmd/server/          CLI, embedded frontend, port fallback, graceful shutdown
-internal/vault/      Vault interface + LocalVault (atomic writes, path safety)
-internal/api/        REST handlers, static serving, quit endpoint
-web/                 Svelte 5 + Vite + TypeScript frontend
-  src/lib/           editor, math, images, links, tasks, frontmatter, lua cells, spellcheck, outline, block plugins, theme
-  src/components/    FileTree, SearchModal, ConflictModal
-e2e/                 Playwright smoke test
-demo-vault/          Sample notes, images and Plotly data
-deploy/              systemd unit
-scripts/             Windows build script
-```
-
-The specification lives in [`PROJECT_SPEC.md`](PROJECT_SPEC.md).
