@@ -7,6 +7,7 @@
  *  - Burley's own math, image, link and fenced-block widget layers
  */
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
+import { autocompletion } from '@codemirror/autocomplete'
 import { EditorView, drawSelection, dropCursor, keymap, tooltips } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -37,6 +38,7 @@ import { luaCellsField, setLuaCellRunHandler } from './luaCells'
 import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
 import { spellcheckExclusions } from './spellcheck'
+import { slashCommands } from './slashCommands'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -184,6 +186,7 @@ function previewExtensions(): Extension[] {
 function markdownExtensions(readOnly: boolean, rawMode: boolean, spellcheck: boolean): Extension[] {
   return [
     history(),
+    autocompletion({ override: [slashCommands], icons: false }),
     drawSelection(),
     dropCursor(),
     bracketMatching(),

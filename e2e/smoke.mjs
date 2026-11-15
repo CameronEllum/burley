@@ -97,6 +97,7 @@ async function waitFor(fn, timeout = 12000) {
 const original = {
   welcome: await getFile('welcome.md'),
   crlf: await getFile('notes/crlf-note.md'),
+  slash: await getFile('notes/slash-commands.md'),
 }
 const originalFavorites = await getFavorites()
 const originalSettings = await getSettings()
@@ -459,6 +460,68 @@ try {
     (await page.locator('.cm-burley-lua-output').count()) === outputsBeforeClear - 1,
   )
   await page.screenshot({ path: path.join(here, 'screenshot-lua.png') })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
+  // Slash commands: type "/" on a blank line, filter, and insert a template.
+  await page.keyboard.press('Control+p')
+  await page.waitForSelector('.search-modal', { timeout: 5000 })
+  await page.locator('.search-input').fill('slash-commands')
+  await page.waitForTimeout(250)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(800)
+  check('slash-command note opened', (await page.locator('.crumb-file').innerText()).includes('slash-commands'))
+  await page.locator('.cm-line').last().click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('/')
+  check(
+    'typing / opens the slash-command popup',
+    await waitFor(async () => (await page.locator('.cm-tooltip-autocomplete').count()) === 1),
+  )
+  const slashLabels = await page.locator('.cm-tooltip-autocomplete .cm-completionLabel').allInnerTexts()
+  check(
+    'slash menu lists block templates',
+    ['plotly', 'math', 'table', 'callout', 'code', 'date', 'lua'].every((label) => slashLabels.includes(label)),
+    slashLabels.join(' '),
+  )
+  await page.keyboard.type('math')
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await page.keyboard.type('E = mc^2')
+  check(
+    'typing in an inserted math block shows the live preview',
+    await waitFor(async () => (await page.locator('.cm-burley-math-tooltip .katex').count()) >= 1),
+  )
+  await page.keyboard.press('Control+s')
+  await page.waitForTimeout(500)
+  const slashMath = await getFile('notes/slash-commands.md')
+  check(
+    'slash insertion writes the block to the note',
+    slashMath.content.includes('$$\nE = mc^2\n$$'),
+    slashMath.content.slice(-80),
+  )
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(120)
+  }
+  await page.keyboard.press('Control+End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('/date')
+  await page.waitForTimeout(300)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Control+s')
+  await page.waitForTimeout(500)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const slashDate = await getFile('notes/slash-commands.md')
+  check('selecting /date inserts today’s date', slashDate.content.includes(today), today)
+  await page.screenshot({ path: path.join(here, 'screenshot-slash.png') })
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('Control+z')
+    await page.waitForTimeout(120)
+  }
   await page.locator('.file-row', { hasText: 'welcome' }).click()
   await page.waitForTimeout(600)
 
@@ -1230,6 +1293,7 @@ try {
   for (const [file, data] of [
     ['welcome.md', original.welcome],
     ['notes/crlf-note.md', original.crlf],
+    ['notes/slash-commands.md', original.slash],
   ]) {
     try {
       const current = await getFile(file)
