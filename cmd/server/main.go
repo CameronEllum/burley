@@ -106,6 +106,7 @@ func main() {
 	handler := api.New(v, dist, api.Options{
 		Root:             v.Root(),
 		RipgrepAvailable: rgErr == nil,
+		Version:          version,
 		Logger:           logger,
 		OnQuit:           quit,
 	})

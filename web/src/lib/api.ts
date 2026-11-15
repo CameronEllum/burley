@@ -50,8 +50,27 @@ export interface AppSettings {
   spellCheck: boolean
 }
 
-export interface AgentInfo {
-  id: string
+export interface AppMeta {
+  status: string
+  root: string
+  ripgrep: boolean
+  version: string
+  repo: string
+}
+
+export interface ReleaseInfo {
+  current: string
+  latest?: string
+  name?: string
+  url?: string
+  publishedAt?: string
+  updateAvailable: boolean
+  checkedAt?: string
+  error?: string
+  repo: string
+}
+
+export interface AgentInfo {  id: string
   name: string
   path: string
   available: boolean
@@ -210,8 +229,12 @@ export const api = {
     return request<{ status: string }>('/api/quit', { method: 'POST' })
   },
 
-  async health(): Promise<{ status: string; root: string; ripgrep: boolean; version: string }> {
+  async health(): Promise<AppMeta> {
     return request('/api/health')
+  },
+
+  async release(refresh = false): Promise<ReleaseInfo> {
+    return request(`/api/release${refresh ? '?refresh=1' : ''}`)
   },
 
   assetUrl(path: string): string {

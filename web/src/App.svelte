@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, streamAgentChat, type AgentInfo, type AppSettings, type Entry, type FileData, type FlatFile } from './lib/api'
+  import { api, ConflictError, streamAgentChat, type AgentInfo, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, stripMdExt } from './lib/paths'
@@ -9,6 +9,7 @@
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
 import { setFigureOpenHandler, type FigureItem } from './lib/figures'
+import { bugReportUrl, openExternal, REPO_URL } from './lib/project'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
@@ -80,6 +81,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let figureOpen = $state(false)
   let figureItems = $state<FigureItem[]>([])
   let figureIndex = $state(0)
+  let appVersion = $state('')
+  let repoUrl = $state(REPO_URL)
+  let releaseInfo = $state<ReleaseInfo | null>(null)
+  let checkingRelease = $state(false)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
   let agents = $state<AgentInfo[]>([])
@@ -148,7 +153,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       ? new Date(modTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
       : '',
   )
-  const eolLabel = $derived(format.eol === '\r\n' ? 'CRLF' : 'LF')
   const outline = $derived(buildOutline(content))
   const activeHeading = $derived.by<OutlineItem | null>(() => {
     let current: OutlineItem | null = null
@@ -243,6 +247,12 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         restartLuaVM()
         flash('Lua VM restarted')
       },
+    },
+    {
+      id: 'report-bug',
+      label: 'Report a bug on GitHub',
+      keywords: 'issue problem github feedback help',
+      run: () => openExternal(bugReportUrl(repoUrl, appVersion, currentPath)),
     },
     {
       id: 'markdown-style',
@@ -361,6 +371,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     window.addEventListener('resize', onResize)
     window.addEventListener('popstate', onPopState)
     void initialLoad()
+    void loadMeta()
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -817,6 +828,43 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     } catch (err) {
       flash(`Could not load settings: ${err instanceof Error ? err.message : String(err)}`, true)
     }
+  }
+
+  async function loadReleaseInfo(refresh: boolean) {
+    if (refresh) checkingRelease = true
+    try {
+      const info = await api.release(refresh)
+      releaseInfo = info
+      if (info.current) appVersion = info.current
+      if (info.repo) repoUrl = info.repo
+      if (refresh) {
+        flash(
+          info.updateAvailable
+            ? `Burley ${info.latest} is available`
+            : info.error
+              ? 'Could not check for updates right now'
+              : 'Burley is up to date',
+          !!info.error,
+        )
+      }
+    } catch (err) {
+      if (refresh) {
+        flash(`Could not check for updates: ${err instanceof Error ? err.message : String(err)}`, true)
+      }
+    } finally {
+      if (refresh) checkingRelease = false
+    }
+  }
+
+  async function loadMeta() {
+    try {
+      const meta = await api.health()
+      if (meta.version) appVersion = meta.version
+      if (meta.repo) repoUrl = meta.repo
+    } catch {
+      /* health is best-effort */
+    }
+    void loadReleaseInfo(false)
   }
 
   async function loadFavorites() {
@@ -1356,7 +1404,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   {/if}
   <header class="topbar">
     <div class="topbar-left">
-      <div class="brand" title="Burley">
+      <a class="brand" href={repoUrl} target="_blank" rel="noopener noreferrer" title="Burley on GitHub">
         <span class="brand-mark" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
             <rect width="32" height="32" rx="7" fill="#c2410c" />
@@ -1366,7 +1414,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           </svg>
         </span>
         <span class="brand-name">Burley</span>
-      </div>
+      </a>
 
       <span class="pill {saveState}" class:inactive={!currentPath} title={saveError || saveLabel}>
         <span class="pill-dot"></span>
@@ -1795,7 +1843,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     </div>
     {#if saveError}<span class="status-item error">{saveError}</span>{/if}
     <div class="status-right">
-      <span class="status-item" title="Line endings preserved on save">{eolLabel}</span>
+      {#if releaseInfo?.updateAvailable && releaseInfo.url}
+        <a
+          class="status-item status-update"
+          href={releaseInfo.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Burley ${releaseInfo.latest} is available — view release notes`}
+        >↑ {releaseInfo.latest}</a>
+      {/if}
+      {#if format.eol === '\r\n'}
+        <span class="status-item" title="This note uses CRLF line endings">CRLF</span>
+      {/if}
       <span class="status-item">{words} words</span>
       <span class="status-item">Ln {cursor.line}, Col {cursor.column}</span>
       {#if readOnly}<span class="status-item lock">Read-only</span>{/if}
@@ -1978,6 +2037,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 {#if settingsOpen}
   <SettingsModal
     settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck }}
+    version={appVersion}
+    repo={repoUrl}
+    release={releaseInfo}
+    checkingRelease={checkingRelease}
+    oncheck={() => void loadReleaseInfo(true)}
     onchange={updateSetting}
     onclose={() => (settingsOpen = false)}
   />
@@ -2106,6 +2170,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     align-items: center;
     gap: 8px;
     flex: 0 0 auto;
+    text-decoration: none;
+    color: inherit;
+    border-radius: 6px;
+  }
+  .brand:hover .brand-name {
+    color: var(--accent);
+  }
+  .brand:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .brand-mark {
     display: grid;
@@ -3116,6 +3190,21 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   .status-item.lock {
     color: var(--accent);
     font-weight: 600;
+  }
+  .status-update {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+    line-height: 1.8;
+  }
+  .status-update:hover {
+    background: var(--active);
   }
 
   .toast {

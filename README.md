@@ -66,8 +66,9 @@ the compiled frontend, so deployment is a single executable.
   stored in `.burley/recent.yaml` and stale paths are filtered against the tree.
 - **Links:** a plain click opens a link; **Ctrl/Cmd-click** reveals its Markdown
   source for editing.
-- **Status bar:** the full file path and last-modified time live at the bottom
-  (the top bar stays uncluttered).
+- **Status bar:** the full file path and last-modified time live at the bottom,
+  along with CRLF (only when a note uses it), word count, caret position, and an
+  update pill when a newer release exists (the top bar stays uncluttered).
 - **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior,
   spellcheck) and Appearance (mode, light theme, dark theme, width, Markdown
   style: Default / GitHub / Academic / Compact) tabs. Stored in
@@ -100,6 +101,13 @@ the compiled frontend, so deployment is a single executable.
   Appearance; the top-bar sun / moon / monitor button cycles follow-system →
   light → dark. Palettes are stored in `.burley/settings.yaml` and apply to the
   chrome, sidebar, dialogs and editor surfaces (Markdown styles stay separate).
+- **GitHub integration & updates:** the Burley icon/name links to the GitHub
+  repository, and the server checks the latest published release (cached, silent
+  when offline). A newer release appears as a pill in the status bar linking to
+  its notes. Settings → **About** shows the running version, lets you check
+  again, links the repo/releases, lists the open-source credits, and offers a
+  **Report a bug** link prefilled with the version and browser (also available
+  as `>Report a bug` in the palette).
 - **Figure gallery & lightbox:** the `⤢` button on any image or Plotly chart
   (or Alt-click an image, or a plain click in read-only mode) opens a full-screen
   viewer with every figure in the note, `←`/`→` navigation, wheel zoom, drag to

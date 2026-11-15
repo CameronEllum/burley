@@ -109,6 +109,28 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
 const page = await context.newPage()
 
+// Deterministic release metadata so the status-bar update pill and About tab do
+// not depend on GitHub being reachable from CI.
+const RELEASE_URL = 'https://github.com/CameronEllum/burley/releases/tag/v9.9.9'
+let releaseChecks = 0
+await page.route('**/api/release**', async (route) => {
+  releaseChecks++
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      current: '0.1.0',
+      latest: 'v9.9.9',
+      name: 'Burley 9.9.9',
+      url: RELEASE_URL,
+      publishedAt: '2026-12-01T00:00:00Z',
+      updateAvailable: true,
+      checkedAt: '2026-12-02T00:00:00Z',
+      repo: 'https://github.com/CameronEllum/burley',
+    }),
+  })
+})
+
 const consoleErrors = []
 const requestFailures = []
 page.on('console', (msg) => {
@@ -150,6 +172,27 @@ try {
     searchBox.width > 400 && Math.abs(searchBox.x + searchBox.width / 2 - 720) < 10,
     `${searchBox.width}px at ${Math.round(searchBox.x)}`,
   )
+  const brandLink = page.locator('a.brand')
+  check(
+    'brand links to the GitHub repository',
+    (await brandLink.getAttribute('href')) === 'https://github.com/CameronEllum/burley' &&
+      (await brandLink.getAttribute('target')) === '_blank',
+  )
+  await page.waitForSelector('.status-update', { timeout: 5000 })
+  check(
+    'status bar announces a new release',
+    (await page.locator('.status-update').innerText()).includes('v9.9.9'),
+  )
+  check(
+    'release pill links to the release notes',
+    (await page.locator('.status-update').getAttribute('href')) === RELEASE_URL,
+  )
+  check('release check ran on load', releaseChecks >= 1, `${releaseChecks} checks`)
+  check(
+    'LF indicator is gone from the status bar',
+    !/\bLF\b/.test(await page.locator('.status-right').innerText()),
+    await page.locator('.status-right').innerText(),
+  )
   const sidebarBox = await page.locator('.sidebar').boundingBox()
   const editorBox = await page.locator('.editor-pane').boundingBox()
   check('file tree is on the left', !!sidebarBox && !!editorBox && sidebarBox.x < editorBox.x)
@@ -162,7 +205,6 @@ try {
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
   check('Escape closes the shortcuts dialog', (await page.locator('.shortcuts-modal').count()) === 0)
-  await page.locator('.brand').click()
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
@@ -892,6 +934,10 @@ try {
       !crlfFile.content.replace(/\r\n/g, '').includes('\n'),
     JSON.stringify(crlfFile.content.slice(-10)),
   )
+  check(
+    'CRLF notes still show the line-ending indicator',
+    (await page.locator('.status-right').innerText()).includes('CRLF'),
+  )
   await putFile('notes/crlf-note.md', original.crlf.content, crlfFile.hash)
 
   // Conflict detection: edit on disk, then type in the browser.
@@ -1164,6 +1210,40 @@ try {
     'theme button returns to follow-system',
     (await themeButton.getAttribute('aria-label')) === 'Theme: system',
   )
+
+  // About tab: version, update status, links and credits.
+  await openSettings('About')
+  check(
+    'About shows the running version',
+    (await page.locator('.about-version').innerText()).includes('0.1.0'),
+  )
+  check(
+    'About shows the available release',
+    (await page.locator('.about-badge').innerText()).includes('v9.9.9'),
+    await page.locator('.about-badge').innerText(),
+  )
+  check(
+    'About links to the GitHub repository',
+    (await page.locator('.about-links a', { hasText: 'GitHub repository' }).getAttribute('href')) ===
+      'https://github.com/CameronEllum/burley',
+  )
+  const bugHref = await page.locator('.about-links a', { hasText: 'Report a bug' }).getAttribute('href')
+  check(
+    'Report a bug opens a prefilled GitHub issue',
+    !!bugHref &&
+      bugHref.startsWith('https://github.com/CameronEllum/burley/issues/new?') &&
+      bugHref.includes('0.1.0'),
+    (bugHref ?? '').slice(0, 120),
+  )
+  check(
+    'About credits the open-source stack',
+    (await page.locator('.about-credit-list').innerText()).includes('CodeMirror 6'),
+  )
+  const checksBeforeNow = releaseChecks
+  await page.locator('.about-button').click()
+  await page.waitForTimeout(600)
+  check('Check now refreshes the release check', releaseChecks > checksBeforeNow)
+  await closeSettings()
 
   // Optional native spellchecking, with code/math excluded.
   await page.locator('.file-row', { hasText: 'welcome' }).click()

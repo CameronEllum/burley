@@ -1,22 +1,40 @@
 <script lang="ts">
-  import type { AppSettings } from '../lib/api'
+  import type { AppSettings, ReleaseInfo } from '../lib/api'
   import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
+  import { bugReportUrl } from '../lib/project'
 
   let {
     settings,
     onchange,
     onclose,
+    version = '',
+    repo = 'https://github.com/CameronEllum/burley',
+    release = null,
+    checkingRelease = false,
+    oncheck = () => {},
   }: {
     settings: AppSettings
     onchange: (patch: Partial<AppSettings>) => void
     onclose: () => void
+    version?: string
+    repo?: string
+    release?: ReleaseInfo | null
+    checkingRelease?: boolean
+    oncheck?: () => void
   } = $props()
 
-  let tab = $state<'behaviour' | 'appearance'>(
-    localStorage.getItem('burley:settings-tab') === 'appearance' ? 'appearance' : 'behaviour',
+  const bugUrl = $derived(bugReportUrl(repo, version))
+  const releasesUrl = $derived(`${repo}/releases`)
+
+  let tab = $state<'behaviour' | 'appearance' | 'about'>(
+    localStorage.getItem('burley:settings-tab') === 'appearance'
+      ? 'appearance'
+      : localStorage.getItem('burley:settings-tab') === 'about'
+        ? 'about'
+        : 'behaviour',
   )
 
-  function switchTab(next: 'behaviour' | 'appearance') {
+  function switchTab(next: 'behaviour' | 'appearance' | 'about') {
     tab = next
     localStorage.setItem('burley:settings-tab', next)
   }
@@ -56,6 +74,13 @@
         role="tab"
         aria-selected={tab === 'appearance'}
         onclick={() => switchTab('appearance')}>Appearance</button
+      >
+      <button
+        class="settings-tab"
+        class:active={tab === 'about'}
+        role="tab"
+        aria-selected={tab === 'about'}
+        onclick={() => switchTab('about')}>About</button
       >
     </div>
 
@@ -103,7 +128,7 @@
             />
           </label>
         </section>
-      {:else}
+      {:else if tab === 'appearance'}
         <section class="settings-section">
           <h3>Mode</h3>
           <div class="segmented theme-segments">
@@ -194,6 +219,65 @@
               </button>
             {/each}
           </div>
+        </section>
+      {:else}
+        <section class="settings-section about-panel">
+          <h3>Version</h3>
+          <div class="about-version">
+            <div class="about-version-main">
+              <strong>Burley {version || 'dev'}</strong>
+              <small>Single binary · Go + Svelte 5 · local-first Markdown</small>
+            </div>
+            <span class="about-badge" class:update={!!release?.updateAvailable}>
+              {#if release?.updateAvailable}
+                {release.latest} available
+              {:else if release?.error}
+                Check unavailable
+              {:else if release}
+                Up to date
+              {:else}
+                Checking…
+              {/if}
+            </span>
+          </div>
+          <div class="about-update-row">
+            <span class="about-note">
+              {#if release?.updateAvailable}
+                A newer release is published on GitHub.
+              {:else if release?.error}
+                Could not reach GitHub ({release.error}).
+              {:else if release}
+                You are running the latest published release.
+              {:else}
+                Checking for a newer release…
+              {/if}
+            </span>
+            <button class="about-button" onclick={oncheck} disabled={checkingRelease}>
+              {checkingRelease ? 'Checking…' : 'Check now'}
+            </button>
+          </div>
+
+          <h3>Links</h3>
+          <div class="about-links">
+            <a href={repo} target="_blank" rel="noopener noreferrer">GitHub repository</a>
+            <a href={bugUrl} target="_blank" rel="noopener noreferrer">Report a bug</a>
+            <a href={releasesUrl} target="_blank" rel="noopener noreferrer">Releases</a>
+          </div>
+
+          <h3>Credits</h3>
+          <p class="about-credits">
+            Burley is built by Cameron Ellum and stands on excellent open-source work:
+          </p>
+          <ul class="about-credit-list">
+            <li><strong>Svelte 5</strong> — interface</li>
+            <li><strong>CodeMirror 6</strong> — editor and live preview</li>
+            <li><strong>KaTeX</strong> — math rendering</li>
+            <li><strong>Plotly</strong> — charts</li>
+            <li><strong>highlight.js</strong> — code colouring</li>
+            <li><strong>wasmoon</strong> — sandboxed Lua</li>
+            <li><strong>marked + DOMPurify</strong> — export and chat Markdown</li>
+          </ul>
+          <p class="about-license">MIT licensed. © 2026 Cameron Ellum.</p>
         </section>
       {/if}
     </div>
@@ -470,6 +554,110 @@
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.4;
+  }
+  .about-version {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: var(--bg-app);
+  }
+  .about-version-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+  }
+  .about-version-main strong {
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .about-version-main small {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .about-badge {
+    border: 1px solid var(--ok-border);
+    border-radius: 999px;
+    padding: 3px 9px;
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .about-badge.update {
+    border-color: var(--accent);
+    background: var(--active);
+    color: var(--accent);
+  }
+  .about-update-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .about-note {
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .about-button {
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 11.5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .about-button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .about-button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .about-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .about-links a {
+    color: hsl(var(--md-link));
+    font-size: 12.5px;
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+  .about-links a:hover {
+    color: var(--accent);
+  }
+  .about-credits {
+    margin: 0 0 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .about-credit-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    line-height: 1.7;
+  }
+  .about-credit-list strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .about-license {
+    margin: 10px 0 0;
+    color: var(--text-muted);
+    font-size: 10.5px;
   }
   .settings-foot {
     display: flex;

@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"burley/internal/vault"
@@ -28,6 +29,11 @@ type Options struct {
 	RipgrepAvailable bool
 	// Root is the vault root, surfaced by /api/health.
 	Root string
+	// Version is the running binary's version (defaults to 0.0.0-dev).
+	Version string
+	// RepoURL and ReleaseAPI can be overridden (tests, forks).
+	RepoURL    string
+	ReleaseAPI string
 	// Logger defaults to the standard logger.
 	Logger *log.Logger
 	// OnQuit is invoked (after a short delay) when POST /api/quit is called.
@@ -45,6 +51,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/release", s.handleRelease)
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("GET /api/file", s.handleGetFile)
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
@@ -70,6 +77,10 @@ type server struct {
 	vault  vault.Vault
 	static fs.FS
 	opts   Options
+
+	releaseMu    sync.Mutex
+	releaseCache ReleaseInfo
+	releaseAt    time.Time
 }
 
 // ---------------------------------------------------------------- middleware
@@ -160,7 +171,8 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"root":    s.opts.Root,
 		"ripgrep": s.opts.RipgrepAvailable,
-		"version": "0.1.0",
+		"version": s.currentVersion(),
+		"repo":    s.repoURL(),
 	})
 }
 
