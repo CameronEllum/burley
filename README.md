@@ -52,6 +52,8 @@ the compiled frontend, so deployment is a single executable.
   chat in a right-side panel (Alt+T) in Ask/Edit mode with SSE streaming,
   Markdown/KaTeX replies, and insert-at-cursor code blocks.
 - **Shortcut sheet:** `Ctrl+?` anywhere, `?` when not typing, or the `?` button.
+- **Export:** download a self-contained HTML file (inline images/fonts, static
+  Plotly SVG) or open the browser's Save-as-PDF dialog with print CSS.
 - **Right-click delete:** a file tree context menu offers Delete, confirmed in a
   native HTML dialog; the tree, editor, and favorites update immediately.
 - **Deep links & history:** the open file and heading live in the URL

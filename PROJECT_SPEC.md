@@ -52,6 +52,7 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 19. **Escape exits elements:** Pressing `Escape` with the caret inside math, a link, inline code, a fenced block, table or heading moves the caret out so the rendered element returns.
 20. **Talk panel (CLI agents):** `GET /api/agents` auto-detects `claude`, `codex`, `gemini`, and `opencode` via `exec.LookPath`. A hidden right-side Talk panel (Alt+T or the chat button) streams answers over SSE in Ask or Edit mode, sends the current file/selection plus recent turns, renders Markdown + KaTeX, offers insert-at-cursor for code fences, and applies Edit-mode file changes as one CodeMirror transaction.
 21. **Shortcut sheet:** `Ctrl+?` works globally; plain `?` opens it when focus is not in CodeMirror/an input/contenteditable; a `?` top-bar button offers mouse discovery.
+22. **HTML/PDF export:** The export menu renders the current note with Markdown/KaTeX, inlines relative images as data URIs, rasterizes Plotly blocks to self-contained SVG images, inlines CSS and KaTeX fonts, and downloads a standalone `.html`. PDF uses the same document in a hidden iframe with `@page` print CSS and the browser's Save-as-PDF dialog.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -312,6 +313,7 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Raw mode toggles preview off/on without losing cursor, scroll or undo history; Escape exits rendered elements.
 - [ ] `GET /api/agents` detects installed CLIs and the Talk panel streams Ask/Edit responses (SSE), with Markdown/KaTeX rendering and insert-at-cursor.
 - [ ] `Ctrl+?`/plain `?`/the `?` button open the shortcut sheet; it closes with Escape.
+- [ ] HTML export is self-contained (inline images/fonts, Plotly SVG); PDF opens the print dialog with pagination CSS.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

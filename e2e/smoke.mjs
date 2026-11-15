@@ -362,6 +362,21 @@ try {
   await page.waitForSelector('.cm-content', { timeout: 15000 })
   await page.waitForTimeout(700)
 
+  // HTML export downloads a self-contained document.
+  const downloadPromise = page.waitForEvent('download', { timeout: 60000 })
+  await page.locator('button[aria-label="Export note"]').click()
+  await page.locator('.export-item', { hasText: 'Export as HTML' }).click()
+  const download = await downloadPromise
+  check('HTML export downloads a file', download.suggestedFilename().endsWith('.html'), download.suggestedFilename())
+  const exportedPath = await download.path()
+  const exportedHtml = exportedPath ? await fs.readFile(exportedPath, 'utf8') : ''
+  check('HTML export contains the note', exportedHtml.includes('Welcome to Burley'))
+  check(
+    'HTML export inlines relative images',
+    exportedHtml.includes('data:image/png;base64') || exportedHtml.includes('data:image/jpeg;base64'),
+  )
+  check('HTML export renders Plotly as SVG data', exportedHtml.includes('data:image/svg+xml'))
+
   // CodeMirror virtualizes the viewport, so walk the note to exercise every
   // widget type (plotly, code block, image chart) as it scrolls into view.
   const scroller = page.locator('.cm-scroller')

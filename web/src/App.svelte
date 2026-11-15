@@ -8,6 +8,7 @@
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
+  import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
   import ShortcutsModal from './components/ShortcutsModal.svelte'
   import { buildOutline, type OutlineItem } from './lib/outline'
@@ -72,6 +73,8 @@
   let talkError = $state('')
   let talkMessagesEl = $state<HTMLDivElement | null>(null)
   let talkAbort: AbortController | null = null
+  let exportMenuOpen = $state(false)
+  let exporting = $state(false)
   let favorites = $state<string[]>([])
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
@@ -217,6 +220,18 @@
       run: () => {
         shortcutsOpen = true
       },
+    },
+    {
+      id: 'export-html',
+      label: 'Export note as HTML',
+      keywords: 'download save offline',
+      run: () => void runExport('html'),
+    },
+    {
+      id: 'export-pdf',
+      label: 'Export note as PDF',
+      keywords: 'download print save',
+      run: () => void runExport('pdf'),
     },
   ])
   const saveLabel = $derived(
@@ -703,6 +718,30 @@
     talkOpen = !talkOpen
   }
 
+  async function runExport(kind: 'html' | 'pdf') {
+    if (!currentPath || exporting) return
+    exportMenuOpen = false
+    exporting = true
+    try {
+      const html = await buildExportHtml({
+        markdown: content,
+        path: currentPath,
+        markdownStyle,
+      })
+      if (kind === 'html') {
+        downloadHtml(html, exportFileName(currentPath))
+        flash('HTML export downloaded')
+      } else {
+        printPdf(html)
+        flash('Opening the print dialog — choose “Save as PDF”')
+      }
+    } catch (err) {
+      flash(`Export failed: ${err instanceof Error ? err.message : String(err)}`, true)
+    } finally {
+      exporting = false
+    }
+  }
+
   function newTalkChat() {
     talkAbort?.abort()
     talkAbort = null
@@ -716,14 +755,13 @@
   }
 
   function talkKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault()
       void sendTalk()
     }
   }
 
-  async function sendTalk() {
-    const prompt = talkInput.trim()
+  async function sendTalk() {    const prompt = talkInput.trim()
     if (!prompt || talkStreaming || !talkAgent) return
     const history = talkMessages.slice(-8).map((message) => ({
       role: message.role,
@@ -865,11 +903,12 @@
   }
 
   function handleWindowPointerDown(event: PointerEvent) {
+    const target = event.target as HTMLElement | null
+    if (exportMenuOpen && !target?.closest('.export-wrap')) exportMenuOpen = false
     if (!contextMenu) return
-    if ((event.target as HTMLElement | null)?.closest('.context-menu')) return
+    if (target?.closest('.context-menu')) return
     contextMenu = null
   }
-
   async function requestDelete() {
     const path = contextMenu?.path
     contextMenu = null
@@ -1093,10 +1132,9 @@
         <span class="brand-mark" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
             <rect width="32" height="32" rx="7" fill="#c2410c" />
-            <path d="M4 20.5c4-2.5 8 2.5 12 0s8-2.5 12 0" stroke="#fff7ed" stroke-width="2" stroke-linecap="round" opacity="0.55" />
-            <rect x="5.5" y="13" width="5" height="3.5" rx="1.75" fill="#fff7ed" />
-            <rect x="13.5" y="11" width="5.5" height="3.5" rx="1.75" fill="#fff7ed" />
-            <rect x="21.5" y="13.5" width="5" height="3.5" rx="1.75" fill="#fff7ed" />
+            <rect x="6" y="7" width="13" height="4.5" rx="2.25" fill="#fff7ed" />
+            <rect x="12" y="13.75" width="14" height="4.5" rx="2.25" fill="#fff7ed" opacity="0.85" />
+            <rect x="6" y="20.5" width="13" height="4.5" rx="2.25" fill="#fff7ed" />
           </svg>
         </span>
         <span class="brand-name">Burley</span>
@@ -1140,6 +1178,23 @@
     </button>
 
     <div class="toolbar">
+      <div class="export-wrap">
+        <button
+          class="icon-btn"
+          aria-label="Export note"
+          title="Export as HTML or PDF"
+          disabled={!currentPath || exporting}
+          onclick={() => (exportMenuOpen = !exportMenuOpen)}
+        >
+          <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M10 2.8v8.4M6.8 8l3.2 3.2L13.2 8M4 13.2v3.2h12v-3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        {#if exportMenuOpen}
+          <div class="export-menu" role="menu" aria-label="Export note">
+            <button class="export-item" role="menuitem" onclick={() => void runExport('html')}>Export as HTML</button>
+            <button class="export-item" role="menuitem" onclick={() => void runExport('pdf')}>Export as PDF</button>
+          </div>
+        {/if}
+      </div>
       <button class="icon-btn talk-btn" class:on={talkOpen} title="Talk to an AI agent (Alt+T)" aria-label="Toggle Talk panel" onclick={toggleTalk}>
         <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 4.2h14v9.1H8.4L4.9 16v-2.7H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M6.4 8.7h7.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
       </button>
@@ -1454,7 +1509,7 @@
           <div class="talk-compose">
             <textarea
               bind:value={talkInput}
-              placeholder="Ask about this note… (Ctrl+Enter to send)"
+              placeholder="Ask about this note… (Enter sends, Shift+Enter adds a line)"
               onkeydown={talkKeydown}
             ></textarea>
             <button
@@ -1463,7 +1518,6 @@
               onclick={() => void sendTalk()}
             >Send</button>
           </div>
-          <p class="talk-foot">Alt T toggles this panel · conversation is not stored on disk</p>
         {/if}
       </aside>
     {/if}
@@ -1720,9 +1774,40 @@
     gap: 4px;
     justify-self: end;
   }
+  .export-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+  .export-menu {
+    position: absolute;
+    right: 0;
+    top: 34px;
+    z-index: 170;
+    min-width: 168px;
+    padding: 4px;
+    background: var(--bg-app);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 14px 34px -12px rgb(0 0 0 / 0.35);
+  }
+  .export-item {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    padding: 7px 9px;
+    cursor: pointer;
+  }
+  .export-item:hover {
+    background: var(--hover);
+  }
   .search-trigger {
-    display: flex;
-    align-items: center;
+    display: flex;    align-items: center;
     gap: 8px;
     width: 100%;
     height: 32px;
@@ -2077,12 +2162,6 @@
   .talk-compose .primary:disabled {
     opacity: 0.55;
     cursor: default;
-  }
-  .talk-foot {
-    margin: 0;
-    padding: 0 10px 7px;
-    font-size: 9.5px;
-    color: var(--text-muted);
   }
 
   .editor-pane {
