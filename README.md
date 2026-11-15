@@ -1,7 +1,10 @@
 # Burley
 
+[![CI](https://github.com/CameronEllum/burley/actions/workflows/ci.yml/badge.svg)](https://github.com/CameronEllum/burley/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A fast, folder-first Markdown viewer and live-preview editor for a plain folder of
-`.md` files — locally or on an EC2 box reached over an SSH tunnel.
+`.md` files — locally or on a remote host reached over an SSH tunnel.
 
 Burley edits the files in place. There is no database and no hidden metadata
 folder; the Markdown file on disk is the source of truth. The Go backend embeds
@@ -305,42 +308,6 @@ See [the todo list](./notes/todo.md).
 
 Writes are atomic: a hidden temp file in the same directory is synced and then
 renamed over the target, with the original permissions preserved.
-
----
-
-## Deploying to EC2
-
-Cross-compile a static Linux binary:
-
-```bash
-make linux
-# bin/burley-linux-amd64
-```
-
-Copy it and install a service:
-
-```bash
-scp bin/burley-linux-amd64 ec2:/tmp/burley
-ssh ec2 'sudo install -m 755 /tmp/burley /usr/local/bin/burley'
-```
-
-A ready-to-edit unit file lives at [`deploy/burley.service`](deploy/burley.service):
-
-```bash
-sudo cp deploy/burley.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now burley
-```
-
-Then tunnel the port from your laptop:
-
-```bash
-ssh -N -L 8080:localhost:8080 user@your-ec2-host
-# browse http://127.0.0.1:8080
-```
-
-Install `ripgrep` on the server for the fastest content search; without it
-Burley falls back to a pure-Go scan automatically.
 
 ---
 
