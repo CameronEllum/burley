@@ -39,6 +39,7 @@ import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
 import { spellcheckExclusions } from './spellcheck'
 import { slashCommands } from './slashCommands'
+import { zenFocusExtensions } from './zenFocus'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -61,6 +62,7 @@ export interface EditorController {
   setDoc(path: string, content: string): void
   setReadOnly(readOnly: boolean): void
   setRawMode(raw: boolean): void
+  setZenFocus(enabled: boolean): void
   setSpellcheck(enabled: boolean): void
   getContent(): string
   getSelection(): string
@@ -136,6 +138,7 @@ const burleyTheme = EditorView.theme({
 const readOnlyCompartment = new Compartment()
 const previewCompartment = new Compartment()
 const spellcheckCompartment = new Compartment()
+const zenCompartment = new Compartment()
 
 function readOnlyExtensions(value: boolean): Extension {
   return [EditorState.readOnly.of(value), EditorView.editable.of(!value), readOnlyFacet.of(value)]
@@ -201,6 +204,7 @@ function markdownExtensions(readOnly: boolean, rawMode: boolean, spellcheck: boo
     burleyTheme,
     previewCompartment.of(rawMode ? [] : previewExtensions()),
     spellcheckCompartment.of(spellcheckExtensions(spellcheck)),
+    zenCompartment.of([]),
     readOnlySelectionGuard,
     escapeElementKeymap,
     readOnlyCompartment.of(readOnlyExtensions(readOnly)),
@@ -217,6 +221,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   let currentPath = ''
   let readOnly = false
   let rawMode = false
+  let zenFocus = false
   let spellcheck = false
 
   const listener = EditorView.updateListener.of((update) => {
@@ -338,6 +343,14 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       rawMode = value
       view.dispatch({
         effects: previewCompartment.reconfigure(value ? [] : previewExtensions()),
+      })
+    },
+
+    setZenFocus(value: boolean) {
+      if (zenFocus === value) return
+      zenFocus = value
+      view.dispatch({
+        effects: zenCompartment.reconfigure(value ? zenFocusExtensions() : []),
       })
     },
 

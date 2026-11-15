@@ -454,6 +454,21 @@ button {
   background: var(--panel);
 }
 
+/* ------------------------------------------------ Zen focus dimming */
+
+.cm-zen-focus .cm-line {
+  opacity: 0.45;
+  transition: opacity 150ms ease;
+}
+
+.cm-zen-focus .cm-line.cm-zen-active {
+  opacity: 1;
+}
+
+.cm-zen-focus .cm-line:hover {
+  opacity: 0.8;
+}
+
 /* ------------------------------------------------------- Lua live cells */
 
 .cm-burley-lua-source {

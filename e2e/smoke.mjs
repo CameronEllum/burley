@@ -858,6 +858,57 @@ try {
   await page.keyboard.press('Control+b')
   await page.waitForTimeout(200)
 
+  // Zen mode: hidden chrome, focus dimming, progress hairline, stats pill.
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(500)
+  await page.locator('.cm-line').first().click()
+  await page.keyboard.press('Control+Shift+z')
+  await page.waitForTimeout(500)
+  check(
+    'Zen mode hides the top bar and sidebar',
+    (await page.locator('.app-shell.zen').count()) === 1 &&
+      (await page.locator('.topbar').isHidden()) &&
+      (await page.locator('.sidebar').isHidden()),
+  )
+  check('Zen mode shows a reading-progress hairline', (await page.locator('.zen-progress').count()) === 1)
+  const zenScrollerHeight = await page.locator('.cm-scroller').evaluate((el) => el.clientHeight)
+  check('Zen editor fills the viewport', zenScrollerHeight > 300, `${zenScrollerHeight}px`)
+  const zenStats = await page.locator('.zen-stats').innerText()
+  check(
+    'Zen stats show words and read time',
+    /\d+ words/.test(zenStats) && /\d+ min read/.test(zenStats),
+    zenStats.replace(/\s+/g, ' '),
+  )
+  check(
+    'Zen mode applies paragraph dimming',
+    (await page.locator('.cm-zen-focus').count()) === 1 && (await page.locator('.cm-zen-active').count()) >= 1,
+  )
+  const zenOpacities = await page
+    .locator('.cm-zen-focus .cm-line')
+    .evaluateAll((lines) => lines.map((line) => Number(getComputedStyle(line).opacity)))
+  check(
+    'inactive blocks are dimmed while the active one stays clear',
+    zenOpacities.some((value) => value < 0.6) && zenOpacities.some((value) => value > 0.9),
+    zenOpacities.slice(0, 8).join(','),
+  )
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await page.waitForTimeout(500)
+  const zenProgress = await page.locator('.zen-progress').evaluate((el) => el.getBoundingClientRect().width)
+  check('reading progress tracks scrolling', zenProgress > 700, `${Math.round(zenProgress)}px`)
+  await page.screenshot({ path: path.join(here, 'screenshot-zen.png') })
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  check(
+    'Escape exits Zen mode',
+    (await page.locator('.app-shell.zen').count()) === 0 && (await page.locator('.topbar').isVisible()),
+  )
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0
+  })
+  await page.waitForTimeout(200)
+
   // Resizable sidebar (drag + keyboard + persistence + reset).
   const sidebarBefore = (await page.locator('.sidebar').boundingBox()).width
   const resizer = page.locator('.sidebar-resizer')

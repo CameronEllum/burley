@@ -35,6 +35,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const RAW_MODE_KEY = 'burley:raw-mode'
   const SCOPE_KEY = 'burley:scope'
+  const ZEN_KEY = 'burley:zen'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
 
@@ -65,6 +66,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let spellCheck = $state(false)
   let rawMode = $state(false)
+  let zenMode = $state(false)
+  let scrollProgress = $state(0)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
   let agents = $state<AgentInfo[]>([])
@@ -120,6 +123,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   let toastTimer: ReturnType<typeof setTimeout> | null = null
 
   const words = $derived(countWords(content))
+  const readMinutes = $derived(Math.max(1, Math.round(words / 220)))
   const absolutePath = $derived.by(() => {
     if (!currentPath) return ''
     const separator = root.includes('\\') ? '\\' : '/'
@@ -212,6 +216,12 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       run: toggleRawMode,
     },
     {
+      id: 'toggle-zen',
+      label: zenMode ? 'Exit Zen mode' : 'Enter Zen mode',
+      keywords: 'focus distraction free writing reading',
+      run: toggleZenMode,
+    },
+    {
       id: 'restart-lua',
       label: 'Restart Lua VM',
       keywords: 'lua cell sandbox reset',
@@ -284,6 +294,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     }
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
     rawMode = localStorage.getItem(RAW_MODE_KEY) === '1'
+    zenMode = localStorage.getItem(ZEN_KEY) === '1'
     const storedFavoritesOpen = localStorage.getItem(FAVORITES_OPEN_KEY)
     if (storedFavoritesOpen !== null) favoritesOpen = storedFavoritesOpen === '1'
 
@@ -306,7 +317,22 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     })
     editor.setRawMode(rawMode)
     editor.setSpellcheck(spellCheck)
+    editor.setZenFocus(zenMode)
     setLuaNotifyHandler((message) => flash(message))
+
+    const scroller = editor.view.scrollDOM
+    let scrollFrame = 0
+    const measureScroll = () => {
+      scrollFrame = 0
+      const max = scroller.scrollHeight - scroller.clientHeight
+      scrollProgress = max > 0 ? Math.min(1, Math.max(0, scroller.scrollTop / max)) : 0
+    }
+    const onScroll = () => {
+      if (scrollFrame) return
+      scrollFrame = requestAnimationFrame(measureScroll)
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    measureScroll()
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', paletteShortcut, true)
@@ -324,6 +350,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       window.removeEventListener('popstate', onPopState)
       unwatchTheme()
       setLuaNotifyHandler(null)
+      scroller.removeEventListener('scroll', onScroll)
+      if (scrollFrame) cancelAnimationFrame(scrollFrame)
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
@@ -704,6 +732,17 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     rawMode = !rawMode
     localStorage.setItem(RAW_MODE_KEY, rawMode ? '1' : '0')
     editor?.setRawMode(rawMode)
+  }
+
+  function toggleZenMode() {
+    zenMode = !zenMode
+    localStorage.setItem(ZEN_KEY, zenMode ? '1' : '0')
+    editor?.setZenFocus(zenMode)
+    if (zenMode) {
+      talkOpen = false
+      scrollProgress = 0
+    }
+    requestAnimationFrame(() => editor?.focus())
   }
 
   function cycleMarkdownStyle() {
@@ -1128,6 +1167,12 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
   }
 
   function paletteShortcut(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault()
+      event.stopPropagation()
+      toggleZenMode()
+      return
+    }
     if (event.key === 'F1') {
       event.preventDefault()
       openSearch('')
@@ -1188,6 +1233,11 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     if (event.key === 'Escape' && contextMenu) {
       event.preventDefault()
       contextMenu = null
+      return
+    }
+    if (event.key === 'Escape' && zenMode) {
+      event.preventDefault()
+      toggleZenMode()
       return
     }
     const mod = event.ctrlKey || event.metaKey
@@ -1263,7 +1313,10 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
 
 <svelte:window onkeydown={handleKeydown} onpointerdown={handleWindowPointerDown} />
 
-<div class="app-shell">
+<div class="app-shell" class:zen={zenMode}>
+  {#if zenMode}
+    <div class="zen-progress" style={`width: ${Math.round(scrollProgress * 100)}%`} aria-hidden="true"></div>
+  {/if}
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand" title="Burley">
@@ -1372,6 +1425,9 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       <button class="icon-btn" class:on={sidebarOpen} title="Toggle sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={toggleSidebar}>
         <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M12.5 4v12" stroke="currentColor" stroke-width="1.5" /></svg>
       </button>
+      <button class="icon-btn" class:on={zenMode} title="Zen mode (Ctrl+Shift+Z)" aria-label="Toggle Zen mode" onclick={toggleZenMode}>
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3.2 6h13.6M5.6 10h8.8M3.2 14h13.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      </button>
       <span class="toolbar-sep" aria-hidden="true"></span>
       <button class="icon-btn quit-btn" title="Quit Burley (stops the local server)" aria-label="Quit Burley" onclick={requestQuit}>
         <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M10 2.6v6.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M6.1 5.1a6.1 6.1 0 1 0 7.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
@@ -1379,8 +1435,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     </div>
   </header>
 
-  <main class="workspace" class:collapsed={!sidebarOpen} class:talk-open={talkOpen} style={`--sidebar-width: ${sidebarWidth}px`}>
-    <aside class="sidebar" class:closed={!sidebarOpen} aria-label="Sidebar">
+  <main class="workspace" class:collapsed={!sidebarOpen || zenMode} class:talk-open={talkOpen} class:zen={zenMode} style={`--sidebar-width: ${sidebarWidth}px`}>
+    <aside class="sidebar" class:closed={!sidebarOpen || zenMode} aria-label="Sidebar">
       <div class="sidebar-tabs" role="tablist" aria-label="Sidebar panels">
         <button
           class="sidebar-tab"
@@ -1564,7 +1620,7 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
         class:raw={rawMode}
         data-md-style={markdownStyle}
         bind:this={editorHost}
-        style={`--editor-measure: ${wideMode ? '1200px' : '820px'}; --editor-gutter: ${wideMode ? '28px' : '48px'}`}
+        style={`--editor-measure: ${zenMode ? '760px' : wideMode ? '1200px' : '820px'}; --editor-gutter: ${zenMode ? '32px' : wideMode ? '28px' : '48px'}`}
       ></div>
 
       {#if !currentPath}
@@ -1684,6 +1740,15 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
       {#if readOnly}<span class="status-item lock">Read-only</span>{/if}
     </div>
   </footer>
+
+  {#if zenMode}
+    <div class="zen-stats" role="status" aria-label="Reading stats">
+      <span>{words} words</span>
+      <span class="zen-dot" aria-hidden="true">·</span>
+      <span>{readMinutes} min read</span>
+      <button class="zen-exit" onclick={toggleZenMode}>Esc to exit</button>
+    </div>
+  {/if}
 </div>
 
 {#if searchOpen}
@@ -1881,6 +1946,72 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
     display: grid;
     grid-template-rows: 52px minmax(0, 1fr) 26px;
     background: var(--bg-app);
+  }
+
+  .app-shell.zen {
+    grid-template-rows: 0 minmax(0, 1fr) 26px;
+  }
+
+  .app-shell.zen .topbar {
+    height: 0;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+
+  .zen-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    z-index: 80;
+    border-radius: 0 2px 2px 0;
+    background: var(--accent);
+    box-shadow: 0 0 8px -1px var(--accent);
+    transition: width 90ms linear;
+    pointer-events: none;
+  }
+
+  .zen-stats {
+    position: fixed;
+    right: 20px;
+    bottom: 44px;
+    z-index: 35;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 6px 5px 12px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-chrome) 92%, transparent);
+    color: var(--text-muted);
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    box-shadow: 0 10px 30px -16px rgb(0 0 0 / 0.35);
+    backdrop-filter: blur(6px);
+  }
+
+  .zen-dot {
+    opacity: 0.6;
+  }
+
+  .zen-exit {
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+
+  .zen-exit:hover {
+    background: var(--hover);
+    color: var(--text-primary);
   }
 
   .topbar {
