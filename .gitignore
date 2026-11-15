@@ -24,3 +24,6 @@ Thumbs.db
 
 # Vault metadata (favorites live here)
 .burley/
+
+# Local planning docs
+plans/
