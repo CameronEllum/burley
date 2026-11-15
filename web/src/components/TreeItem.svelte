@@ -19,7 +19,7 @@
     visiblePaths: Set<string> | null
     favorites: string[]
     ontogglefavorite: (path: string) => void
-    oncontext: (event: MouseEvent, path: string) => void
+    oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
   } = $props()
 
@@ -40,7 +40,12 @@
 {#if visible}
   {#if entry.isDir}
   <li class="dir">
-    <button class="row dir-row" onclick={() => (open = !open)} aria-expanded={expanded}>
+    <button class="row dir-row" onclick={() => (open = !open)} aria-expanded={expanded}
+      oncontextmenu={(event) => {
+        event.preventDefault()
+        oncontext(event, entry.path, true)
+      }}
+    >
       <span class="chevron" class:open={expanded} aria-hidden="true">
         <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </span>
@@ -66,7 +71,7 @@
       onclick={() => onselect(entry.path)}
       oncontextmenu={(event) => {
         event.preventDefault()
-        oncontext(event, entry.path)
+        oncontext(event, entry.path, false)
       }}
     >
       <span class="file-dot" aria-hidden="true"></span>

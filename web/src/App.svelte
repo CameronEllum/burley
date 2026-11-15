@@ -33,6 +33,7 @@
   const WIDE_MODE_KEY = 'burley:wide-mode'
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const RAW_MODE_KEY = 'burley:raw-mode'
+  const SCOPE_KEY = 'burley:scope'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
 
@@ -41,6 +42,7 @@
   let root = $state('')
   let loading = $state(true)
   let loadError = $state('')
+  let scopePath = $state<string | null>(null)
 
   let currentPath = $state('')
   let format = $state<TextFormat>(defaultFormat)
@@ -60,6 +62,7 @@
   let markdownStyle = $state<AppSettings['markdownStyle']>('default')
   let autoSave = $state(true)
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
+  let spellCheck = $state(false)
   let rawMode = $state(false)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
@@ -95,9 +98,15 @@
 
   let quitOpen = $state(false)
   let shuttingDown = $state(false)
-  let contextMenu = $state<{ x: number; y: number; path: string } | null>(null)
+  let contextMenu = $state<{ x: number; y: number; path: string; isDir: boolean } | null>(null)
   let pendingDelete = $state<string | null>(null)
   let deleteDialogEl = $state<HTMLDialogElement | null>(null)
+  let newDocDialogEl = $state<HTMLDialogElement | null>(null)
+  let newDocInput = $state<HTMLInputElement | null>(null)
+  let newDocFolder = $state('')
+  let newDocName = $state('')
+  let newDocError = $state('')
+  let newDocBusy = $state(false)
 
   let toast = $state('')
   let toastError = $state(false)
@@ -149,6 +158,8 @@
   })
   const showFavorites = $derived(!treeFilter.trim() || filteredFavorites.length > 0)
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
+  const scopedEntry = $derived(scopePath ? findFolder(tree, scopePath) : null)
+  const treeEntries = $derived(scopePath ? (scopedEntry?.children ?? []) : tree)
 
   $effect(() => {
     const path = currentPath
@@ -233,6 +244,12 @@
       keywords: 'download print save',
       run: () => void runExport('pdf'),
     },
+    {
+      id: 'spellcheck',
+      label: spellCheck ? 'Turn off spell checking' : 'Turn on spell checking',
+      keywords: 'spelling squiggles',
+      run: () => updateSetting({ spellCheck: !spellCheck }),
+    },
   ])
   const saveLabel = $derived(
     saveState === 'saved'
@@ -273,8 +290,12 @@
       onOpenPath: (path) => {
         void openFile(path)
       },
+      onFiles: (files, pos) => {
+        void uploadImages(files, pos)
+      },
     })
     editor.setRawMode(rawMode)
+    editor.setSpellcheck(spellCheck)
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', paletteShortcut, true)
@@ -302,6 +323,8 @@
   async function initialLoad() {
     await refreshTree()
     await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents()])
+    const storedScope = localStorage.getItem(SCOPE_KEY)
+    if (storedScope && findFolder(tree, storedScope)) scopePath = storedScope
     const params = new URLSearchParams(window.location.search)
     const requested = params.get('file') ?? ''
     const initialHash = window.location.hash.replace(/^#/, '')
@@ -330,6 +353,10 @@
       files = response.files
       root = response.root
       loadError = ''
+      if (scopePath && !findFolder(tree, scopePath)) {
+        scopePath = null
+        localStorage.removeItem(SCOPE_KEY)
+      }
     } catch (err) {
       loadError = err instanceof Error ? err.message : String(err)
       flash(loadError, true)
@@ -622,6 +649,7 @@
         markdownStyle,
         autoSave,
         ctrlClickLink,
+        spellCheck,
       })
     } catch (err) {
       flash(`Could not save settings: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -652,6 +680,10 @@
         scheduleSave()
       }
     }
+    if (patch.spellCheck !== undefined) {
+      spellCheck = patch.spellCheck
+      editor?.setSpellcheck(spellCheck)
+    }
     void persistSettings()
   }
 
@@ -676,10 +708,12 @@
         markdownStyle = response.settings.markdownStyle
         autoSave = response.settings.autoSave
         ctrlClickLink = response.settings.ctrlClickLink
+        spellCheck = response.settings.spellCheck
         applyTheme(themeMode)
         storeThemeMode(themeMode)
         localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
         setLinkClickBehavior(ctrlClickLink)
+        editor?.setSpellcheck(spellCheck)
       } else {
         // First run on this EC2 host: migrate local browser preferences.
         await api.saveSettings({
@@ -688,6 +722,7 @@
           markdownStyle,
           autoSave,
           ctrlClickLink,
+          spellCheck,
         })
       }
     } catch (err) {
@@ -704,8 +739,27 @@
     }
   }
 
-  async function loadAgents() {
-    try {
+  async function uploadImages(files: File[], pos: number) {
+    if (!currentPath) {
+      flash('Open a note before pasting or dropping an image.', true)
+      return
+    }
+    let insertPos = pos
+    let uploaded = 0
+    for (const file of files) {
+      try {
+        const asset = await api.uploadAsset(currentPath, file)
+        const alt = file.name.replace(/\.[^.]+$/, '').trim() || 'image'
+        insertPos = editor?.insertTextAt(`![${alt}](${asset.ref})`, insertPos) ?? insertPos
+        uploaded++
+      } catch (err) {
+        flash(`Image upload failed: ${err instanceof Error ? err.message : String(err)}`, true)
+      }
+    }
+    if (uploaded > 0) flash(`Uploaded ${uploaded} image${uploaded === 1 ? '' : 's'}`)
+  }
+
+  async function loadAgents() {    try {
       const response = await api.agents()
       agents = response.agents.filter((agent) => agent.available)
       if (!talkAgent && agents.length > 0) talkAgent = agents[0].id
@@ -891,15 +945,29 @@
     quitOpen = true
   }
 
-  function showContextMenu(event: MouseEvent, path: string) {
+  function showContextMenu(event: MouseEvent, path: string, isDir: boolean) {
     event.preventDefault()
-    const width = 180
-    const height = 48
+    const width = 210
+    const height = scopePath ? 100 : 48
     contextMenu = {
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
       path,
+      isDir,
     }
+  }
+
+  function scopeToFolder() {
+    if (!contextMenu?.isDir) return
+    scopePath = contextMenu.path
+    localStorage.setItem(SCOPE_KEY, scopePath)
+    contextMenu = null
+  }
+
+  function unscopeFolder() {
+    scopePath = null
+    localStorage.removeItem(SCOPE_KEY)
+    contextMenu = null
   }
 
   function handleWindowPointerDown(event: PointerEvent) {
@@ -916,6 +984,52 @@
     pendingDelete = path
     await tick()
     deleteDialogEl?.showModal()
+  }
+
+  async function requestAddDocument() {
+    newDocFolder = contextMenu?.path ?? ''
+    contextMenu = null
+    newDocName = ''
+    newDocError = ''
+    await tick()
+    newDocDialogEl?.showModal()
+    requestAnimationFrame(() => newDocInput?.focus())
+  }
+
+  function closeNewDocDialog() {
+    newDocDialogEl?.close()
+    newDocFolder = ''
+    newDocName = ''
+    newDocError = ''
+    newDocBusy = false
+  }
+
+  async function confirmAddDocument() {
+    if (newDocBusy) return
+    let name = newDocName.trim().replace(/[\\/:*?"<>|]+/g, '-')
+    if (!name) {
+      newDocError = 'Enter a note name.'
+      return
+    }
+    if (!/\.md$/i.test(name)) name += '.md'
+    const fullPath = newDocFolder ? `${newDocFolder}/${name}` : name
+    if (files.some((file) => file.path === fullPath)) {
+      newDocError = 'A note with that name already exists.'
+      return
+    }
+    newDocBusy = true
+    newDocError = ''
+    const title = name.replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim() || 'Untitled'
+    try {
+      await api.save(fullPath, `# ${title}\n\n`, '')
+      closeNewDocDialog()
+      await refreshTree()
+      await openFile(fullPath)
+      flash(`Created ${fullPath}`)
+    } catch (err) {
+      newDocError = err instanceof Error ? err.message : String(err)
+      newDocBusy = false
+    }
   }
 
   function closeDeleteDialog() {
@@ -1101,6 +1215,17 @@
     event.returnValue = ''
   }
 
+  function findFolder(entries: Entry[], path: string): Entry | null {
+    for (const entry of entries) {
+      if (entry.isDir) {
+        if (entry.path === path) return entry
+        const nested = findFolder(entry.children ?? [], path)
+        if (nested) return nested
+      }
+    }
+    return null
+  }
+
   function flash(message: string, error = false) {
     toast = message
     toastError = error
@@ -1269,6 +1394,12 @@
       </div>
 
       {#if sidebarTab === 'files'}
+        {#if scopePath}
+          <div class="scope-banner">
+            <span class="scope-label">Scoped to <strong>{scopePath}</strong></span>
+            <button class="scope-clear" onclick={unscopeFolder}>Unscope</button>
+          </div>
+        {/if}
         <div class="filter-wrap">
           <div class="filter-input-wrap">
             <input
@@ -1353,7 +1484,7 @@
             <p class="tree-status error">{loadError}</p>
           {:else}
             <FileTree
-              entries={tree}
+              entries={treeEntries}
               selectedPath={currentPath}
               filter={treeFilter}
               favorites={favorites}
@@ -1588,10 +1719,34 @@
     role="menu"
     aria-label="File actions"
   >
-    <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
-      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-      <span>Delete</span>
-    </button>
+    {#if contextMenu.isDir}
+      {#if scopePath === contextMenu.path}
+        <button class="context-menu-item" role="menuitem" onclick={unscopeFolder}>
+          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4 10h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+          <span>Unscope</span>
+        </button>
+      {:else}
+        <button class="context-menu-item" role="menuitem" onclick={scopeToFolder}>
+          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4 5.2h4.2l1.4 1.5h6.4v8.1H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /><circle cx="10" cy="10.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
+          <span>Scope to here</span>
+        </button>
+        {#if scopePath}
+          <button class="context-menu-item" role="menuitem" onclick={unscopeFolder}>
+            <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4 10h12M12 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <span>Unscope file browser</span>
+          </button>
+        {/if}
+      {/if}
+      <button class="context-menu-item" role="menuitem" onclick={() => void requestAddDocument()}>
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+        <span>Add document</span>
+      </button>
+    {:else}
+      <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <span>Delete</span>
+      </button>
+    {/if}
   </div>
 {/if}
 
@@ -1624,13 +1779,55 @@
   </div>
 </dialog>
 
+<dialog
+  bind:this={newDocDialogEl}
+  class="delete-dialog newdoc-dialog"
+  aria-labelledby="newdoc-title"
+  oncancel={(event) => {
+    event.preventDefault()
+    closeNewDocDialog()
+  }}
+  onclick={(event) => {
+    if (event.target === event.currentTarget) closeNewDocDialog()
+  }}
+>
+  <div class="delete-head">
+    <span class="delete-icon newdoc-icon" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+    </span>
+    <div>
+      <h2 id="newdoc-title">New document</h2>
+      <p>Create a Markdown note in <code>{newDocFolder || 'the vault root'}</code>.</p>
+    </div>
+  </div>
+  <div class="newdoc-body">
+    <input
+      bind:this={newDocInput}
+      bind:value={newDocName}
+      placeholder="note-name"
+      spellcheck="false"
+      autocomplete="off"
+      onkeydown={(event) => {
+        if (event.key === 'Enter') void confirmAddDocument()
+      }}
+    />
+  </div>
+  {#if newDocError}<p class="newdoc-error">{newDocError}</p>{/if}
+  <div class="delete-actions">
+    <button class="secondary" onclick={closeNewDocDialog}>Cancel</button>
+    <button class="primary" disabled={newDocBusy} onclick={() => void confirmAddDocument()}>
+      {newDocBusy ? 'Creating…' : 'Create'}
+    </button>
+  </div>
+</dialog>
+
 {#if shortcutsOpen}
   <ShortcutsModal onclose={() => (shortcutsOpen = false)} />
 {/if}
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, wideMode, markdownStyle, autoSave, ctrlClickLink }}
+    settings={{ theme: themeMode, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck }}
     onchange={updateSetting}
     onclose={() => (settingsOpen = false)}
   />
@@ -2507,6 +2704,43 @@
     gap: 6px;
     padding: 8px 10px 4px;
   }
+  .scope-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 8px 0;
+    padding: 5px 8px;
+    border: 1px solid var(--ok-border);
+    border-radius: 7px;
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+    font-size: 10.5px;
+  }
+  .scope-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scope-label strong {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+  }
+  .scope-clear {
+    border: 1px solid var(--ok-border);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ok-fg);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .scope-clear:hover {
+    background: var(--ok-border);
+  }
   .filter-input-wrap {
     position: relative;
     flex: 1;
@@ -2780,6 +3014,34 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 14px 16px;
+  }
+  .newdoc-body {
+    padding: 8px 20px 4px;
+  }
+  .newdoc-body input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 14px;
+    padding: 9px 11px;
+    outline: none;
+  }
+  .newdoc-body input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--active);
+  }
+  .newdoc-error {
+    margin: 4px 20px 0;
+    color: var(--danger-fg);
+    font-size: 11.5px;
+  }
+  .newdoc-icon {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
   }
 
   .quit-modal {

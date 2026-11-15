@@ -32,6 +32,7 @@ import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
 import { escapeElementKeymap } from './escape'
+import { spellcheckExclusions } from './spellcheck'
 import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
@@ -46,6 +47,7 @@ export interface EditorOptions {
   onChange: (content: string) => void
   onSelectionChange: (info: SelectionInfo) => void
   onOpenPath?: (path: string) => void
+  onFiles?: (files: File[], pos: number) => void
 }
 
 export interface EditorController {
@@ -53,9 +55,11 @@ export interface EditorController {
   setDoc(path: string, content: string): void
   setReadOnly(readOnly: boolean): void
   setRawMode(raw: boolean): void
+  setSpellcheck(enabled: boolean): void
   getContent(): string
   getSelection(): string
   insertText(text: string): void
+  insertTextAt(text: string, pos: number): number
   replaceAll(content: string): void
   focus(): void
   scrollToLine(line: number, column?: number): void
@@ -125,9 +129,17 @@ const burleyTheme = EditorView.theme({
 
 const readOnlyCompartment = new Compartment()
 const previewCompartment = new Compartment()
+const spellcheckCompartment = new Compartment()
 
 function readOnlyExtensions(value: boolean): Extension {
   return [EditorState.readOnly.of(value), EditorView.editable.of(!value), readOnlyFacet.of(value)]
+}
+
+function spellcheckExtensions(enabled: boolean): Extension {
+  return [
+    EditorView.contentAttributes.of({ spellcheck: enabled ? 'true' : 'false' }),
+    ...(enabled ? [spellcheckExclusions] : []),
+  ]
 }
 
 /**
@@ -161,7 +173,7 @@ function previewExtensions(): Extension[] {
   ]
 }
 
-function markdownExtensions(readOnly: boolean, rawMode: boolean): Extension[] {
+function markdownExtensions(readOnly: boolean, rawMode: boolean, spellcheck: boolean): Extension[] {
   return [
     history(),
     drawSelection(),
@@ -177,6 +189,7 @@ function markdownExtensions(readOnly: boolean, rawMode: boolean): Extension[] {
     editorTheme,
     burleyTheme,
     previewCompartment.of(rawMode ? [] : previewExtensions()),
+    spellcheckCompartment.of(spellcheckExtensions(spellcheck)),
     readOnlySelectionGuard,
     escapeElementKeymap,
     readOnlyCompartment.of(readOnlyExtensions(readOnly)),
@@ -192,6 +205,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   let currentPath = ''
   let readOnly = false
   let rawMode = false
+  let spellcheck = false
 
   const listener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
@@ -212,7 +226,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   })
 
   const extensionsFor = (path: string): Extension[] => [
-    ...markdownExtensions(readOnly, rawMode),
+    ...markdownExtensions(readOnly, rawMode, spellcheck),
     listener,
     filePathFacet.of(path),
   ]
@@ -237,6 +251,30 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     })
   }
   document.addEventListener('mouseup', onMouseUp)
+
+  const imageFiles = (data: DataTransfer | null): File[] =>
+    Array.from(data?.files ?? []).filter((file) => file.type.startsWith('image/'))
+
+  const onPaste = (event: ClipboardEvent) => {
+    const files = imageFiles(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    opts.onFiles?.(files, view.state.selection.main.from)
+  }
+  const onDragOver = (event: DragEvent) => {
+    if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+  }
+  const onDrop = (event: DragEvent) => {
+    const files = imageFiles(event.dataTransfer)
+    if (files.length === 0) return
+    event.preventDefault()
+    const position =
+      view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.from
+    opts.onFiles?.(files, position)
+  }
+  view.contentDOM.addEventListener('paste', onPaste)
+  view.contentDOM.addEventListener('dragover', onDragOver)
+  view.contentDOM.addEventListener('drop', onDrop)
 
   // Open relative Markdown links inside Burley rather than in a new tab.
   const onClick = (event: MouseEvent) => {
@@ -291,6 +329,14 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       })
     },
 
+    setSpellcheck(value: boolean) {
+      if (spellcheck === value) return
+      spellcheck = value
+      view.dispatch({
+        effects: spellcheckCompartment.reconfigure(spellcheckExtensions(value)),
+      })
+    },
+
     getContent() {
       return view.state.doc.toString()
     },
@@ -308,6 +354,17 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
         scrollIntoView: true,
       })
       view.focus()
+    },
+
+    insertTextAt(text: string, pos: number): number {
+      const at = Math.max(0, Math.min(pos, view.state.doc.length))
+      view.dispatch({
+        changes: { from: at, insert: text },
+        selection: { anchor: at + text.length },
+        scrollIntoView: true,
+      })
+      view.focus()
+      return at + text.length
     },
 
     replaceAll(content: string) {
@@ -340,6 +397,9 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     destroy() {
       view.contentDOM.removeEventListener('mousedown', onMouseDown)
       view.contentDOM.removeEventListener('click', onClick)
+      view.contentDOM.removeEventListener('paste', onPaste)
+      view.contentDOM.removeEventListener('dragover', onDragOver)
+      view.contentDOM.removeEventListener('drop', onDrop)
       document.removeEventListener('mouseup', onMouseUp)
       setLinkOpenHandler(null)
       setActiveView(null)

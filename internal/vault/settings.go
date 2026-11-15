@@ -18,6 +18,7 @@ type Settings struct {
 	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
 	AutoSave      bool   `json:"autoSave"`
 	CtrlClickLink string `json:"ctrlClickLink"` // toggle | open
+	SpellCheck    bool   `json:"spellCheck"`
 }
 
 func defaultSettings() Settings {
@@ -27,6 +28,7 @@ func defaultSettings() Settings {
 		MarkdownStyle: "default",
 		AutoSave:      true,
 		CtrlClickLink: "toggle",
+		SpellCheck:    false,
 	}
 }
 
@@ -102,6 +104,7 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		MarkdownStyle: style,
 		AutoSave:      settings.AutoSave,
 		CtrlClickLink: ctrlClick,
+		SpellCheck:    settings.SpellCheck,
 	}, nil
 }
 
@@ -119,6 +122,8 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(boolYAML(settings.AutoSave))
 	b.WriteString("\nctrl_click_link: ")
 	b.WriteString(yamlQuote(settings.CtrlClickLink))
+	b.WriteString("\nspell_check: ")
+	b.WriteString(boolYAML(settings.SpellCheck))
 	b.WriteByte('\n')
 	return b.String()
 }
@@ -159,6 +164,10 @@ func parseSettingsYAML(content string) Settings {
 			behavior := strings.ToLower(parsed)
 			if behavior == "toggle" || behavior == "open" {
 				settings.CtrlClickLink = behavior
+			}
+		case "spell_check", "spellcheck":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.SpellCheck = parsedBool
 			}
 		}
 	}

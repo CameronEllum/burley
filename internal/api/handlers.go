@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
 	mux.HandleFunc("DELETE /api/file", s.handleDeleteFile)
 	mux.HandleFunc("GET /api/asset", s.handleAsset)
+	mux.HandleFunc("POST /api/asset", s.handleUploadAsset)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/favorites", s.handleGetFavorites)
 	mux.HandleFunc("PUT /api/favorites", s.handlePutFavorites)
@@ -143,6 +145,8 @@ func vaultError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, vault.ErrTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "file is too large")
+	case errors.Is(err, vault.ErrUnsupportedMedia):
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 	default:
 		log.Printf("vault error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -236,6 +240,42 @@ func (s *server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": p})
+}
+
+func (s *server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 33<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid upload: "+err.Error())
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing file field")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 33<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "could not read upload")
+		return
+	}
+	notePath := r.URL.Query().Get("path")
+	relative, err := s.vault.SaveAsset(r.Context(), notePath, header.Filename, data, http.DetectContentType(data))
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	noteDir := path.Dir(notePath)
+	ref := relative
+	if noteDir != "." && noteDir != "/" {
+		ref = strings.TrimPrefix(relative, path.Clean(noteDir)+"/")
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"path": relative,
+		"ref":  ref,
+		"url":  "/api/asset?path=" + url.QueryEscape(relative),
+		"size": len(data),
+	})
 }
 
 func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {	p := r.URL.Query().Get("path")

@@ -377,6 +377,35 @@ try {
   )
   check('HTML export renders Plotly as SVG data', exportedHtml.includes('data:image/svg+xml'))
 
+  // Clipboard image paste uploads to <note>_assets/.
+  await page.locator('.cm-line').first().click()
+  await page.evaluate(() => {
+    const base64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhQGAWjR9awAAAABJRU5ErkJggg=='
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }))
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: data })
+    document.querySelector('.cm-content')?.dispatchEvent(event)
+  })
+  await page.waitForTimeout(1500)
+  await page.keyboard.press('Control+s')
+  await page.waitForTimeout(600)
+  const pastedFile = await getFile('welcome.md')
+  check(
+    'pasted image inserts note-scoped markdown',
+    pastedFile.content.includes('welcome_assets/pasted.png'),
+    pastedFile.content.slice(-120),
+  )
+  const pastedAssetPath = path.join(vault, 'welcome_assets', 'pasted.png')
+  check('pasted image is written to <note>_assets', await fs.stat(pastedAssetPath).then(() => true).catch(() => false))
+  await putFile('welcome.md', original.welcome.content, pastedFile.hash)
+  await fs.rm(path.join(vault, 'welcome_assets'), { recursive: true, force: true })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('.cm-content', { timeout: 15000 })
+  await page.waitForTimeout(700)
+
   // CodeMirror virtualizes the viewport, so walk the note to exercise every
   // widget type (plotly, code block, image chart) as it scrolls into view.
   const scroller = page.locator('.cm-scroller')
@@ -707,11 +736,42 @@ try {
   await page.locator('.settings-modal .style-card', { hasText: 'Default' }).click()
   await page.waitForTimeout(200)
   await closeSettings()
+
+  // Optional native spellchecking, with code/math excluded.
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(500)
+  await openSettings('Behaviour')
+  await page
+    .locator('.setting-row', { hasText: 'Spell checking' })
+    .locator('input[type="checkbox"]')
+    .check()
+  await page.waitForTimeout(300)
+  await closeSettings()
+  check(
+    'spellcheck can be enabled',
+    (await page.locator('.cm-content').getAttribute('spellcheck')) === 'true',
+  )
+  check(
+    'code and math are excluded from spellcheck',
+    (await page.locator('.cm-content [spellcheck="false"]').count()) >= 1,
+  )
+  await openSettings('Behaviour')
+  await page
+    .locator('.setting-row', { hasText: 'Spell checking' })
+    .locator('input[type="checkbox"]')
+    .uncheck()
+  await page.waitForTimeout(250)
+  await closeSettings()
+  check(
+    'spellcheck can be disabled',
+    (await page.locator('.cm-content').getAttribute('spellcheck')) === 'false',
+  )
+
   await page.locator('button[aria-label="Open settings"]').click()
   await page.waitForSelector('.settings-modal', { timeout: 5000 })
   check(
     'settings remembers the last tab',
-    (await page.locator('.settings-tab.active').innerText()).trim() === 'Appearance',
+    (await page.locator('.settings-tab.active').innerText()).trim() === 'Behaviour',
   )
   await closeSettings()
 
@@ -775,6 +835,10 @@ try {
   check('favorite persisted to YAML API', (await getFavorites()).includes('welcome.md'))
 
   const todoRow = page.locator('.file-row', { hasText: 'todo' }).first()
+  if ((await todoRow.count()) === 0) {
+    await page.locator('.dir-row').first().click()
+    await page.waitForTimeout(300)
+  }
   await todoRow.hover()
   await todoRow.locator('..').locator('.row-star').click()
   await page.waitForTimeout(500)
@@ -849,6 +913,51 @@ try {
 
   await putFavorites(originalFavorites)
 
+  // Folder context menu → Add document dialog.
+  const notesFolder = page.locator('.dir-row', { hasText: 'notes' }).first()
+  await notesFolder.click({ button: 'right' })
+  await page.waitForSelector('.context-menu', { timeout: 3000 })
+  await page.locator('.context-menu-item', { hasText: 'Add document' }).click()
+  await page.waitForSelector('.newdoc-dialog[open]', { timeout: 3000 })
+  await page.locator('.newdoc-dialog input').fill('scratch-note')
+  await page.locator('.newdoc-dialog .primary').click()
+  await page.waitForTimeout(900)
+  check(
+    'folder menu creates a new document',
+    (await page.locator('.status-file').innerText()).includes('scratch-note.md'),
+  )
+  check(
+    'new document exists through the API',
+    (await fetch(`${BASE}/api/file?path=notes%2Fscratch-note.md`)).status === 200,
+  )
+  await fetch(`${BASE}/api/file?path=notes%2Fscratch-note.md`, { method: 'DELETE' })
+  await page.locator('.file-row', { hasText: 'welcome' }).click()
+  await page.waitForTimeout(600)
+
+  // Folder scoping: right-click a folder to restrict the browser, then unscope.
+  await page.locator('.dir-row', { hasText: 'notes' }).first().click({ button: 'right' })
+  await page.waitForSelector('.context-menu', { timeout: 3000 })
+  check(
+    'folder menu offers Scope to here',
+    (await page.locator('.context-menu-item', { hasText: 'Scope to here' }).count()) === 1,
+  )
+  await page.locator('.context-menu-item', { hasText: 'Scope to here' }).click()
+  await page.waitForTimeout(400)
+  check('folder scope banner appears', (await page.locator('.scope-banner').count()) === 1)
+  check(
+    'scoped tree hides notes outside the folder',
+    (await page.locator('.file-row', { hasText: 'welcome' }).count()) === 0,
+  )
+  await page.locator('.dir-row', { hasText: 'deep' }).first().click({ button: 'right' })
+  await page.waitForSelector('.context-menu', { timeout: 3000 })
+  await page.locator('.context-menu-item', { hasText: 'Unscope file browser' }).click()
+  await page.waitForTimeout(400)
+  check('folder scope can be removed from the menu', (await page.locator('.scope-banner').count()) === 0)
+  check(
+    'unscoped tree shows the root again',
+    (await page.locator('.file-row', { hasText: 'welcome' }).count()) >= 1,
+  )
+
   // Deep links + browser history.
   const deepPage = await context.newPage()
   const featurePath = 'notes/feature-tour.md'
@@ -896,19 +1005,19 @@ try {
   await page.waitForSelector('.context-menu', { timeout: 3000 })
   check('right-click opens the file menu', (await page.locator('.context-menu-item').innerText()).includes('Delete'))
   await page.locator('.context-menu-item', { hasText: 'Delete' }).click()
-  await page.waitForSelector('.delete-dialog[open]', { timeout: 3000 })
-  check('delete uses an HTML dialog', (await page.locator('dialog.delete-dialog[open]').count()) === 1)
-  check('delete dialog names the file', (await page.locator('.delete-dialog').innerText()).includes('welcome.md'))
+  await page.waitForSelector('.delete-dialog:not(.newdoc-dialog)[open]', { timeout: 3000 })
+  check('delete uses an HTML dialog', (await page.locator('dialog.delete-dialog:not(.newdoc-dialog)[open]').count()) === 1)
+  check('delete dialog names the file', (await page.locator('.delete-dialog:not(.newdoc-dialog)').innerText()).includes('welcome.md'))
   await page.screenshot({ path: path.join(here, 'screenshot-delete.png') })
-  await page.locator('.delete-dialog .secondary').click()
+  await page.locator('.delete-dialog:not(.newdoc-dialog) .secondary').click()
   await page.waitForTimeout(300)
   check('cancelling the dialog keeps the note', (await fetch(`${BASE}/api/file?path=welcome.md`)).ok)
 
   await welcomeRow.click({ button: 'right' })
   await page.waitForSelector('.context-menu', { timeout: 3000 })
   await page.locator('.context-menu-item', { hasText: 'Delete' }).click()
-  await page.waitForSelector('.delete-dialog[open]', { timeout: 3000 })
-  await page.locator('.delete-dialog .danger').click()
+  await page.waitForSelector('.delete-dialog:not(.newdoc-dialog)[open]', { timeout: 3000 })
+  await page.locator('.delete-dialog:not(.newdoc-dialog) .danger').click()
   await page.waitForTimeout(900)
   check(
     'confirmed delete removes the note from the tree',
@@ -999,3 +1108,4 @@ if (failed.length) {
   console.log(`Failed: ${failed.map((f) => f.name).join(', ')}`)
   process.exit(1)
 }
+

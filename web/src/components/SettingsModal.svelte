@@ -89,6 +89,18 @@
               <option value="open">Open link</option>
             </select>
           </label>
+          <label class="setting-row">
+            <span>
+              <strong>Spell checking</strong>
+              <small>Show native browser spellcheck squiggles; code, URLs and math are excluded.</small>
+            </span>
+            <input
+              type="checkbox"
+              class="switch"
+              checked={settings.spellCheck}
+              onchange={(event) => onchange({ spellCheck: event.currentTarget.checked })}
+            />
+          </label>
         </section>
       {:else}
         <section class="settings-section">

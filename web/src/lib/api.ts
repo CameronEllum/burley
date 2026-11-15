@@ -45,6 +45,7 @@ export interface AppSettings {
   markdownStyle: 'default' | 'github' | 'academic' | 'compact'
   autoSave: boolean
   ctrlClickLink: 'toggle' | 'open'
+  spellCheck: boolean
 }
 
 export interface AgentInfo {
@@ -170,6 +171,26 @@ export const api = {
 
   async agents(): Promise<{ agents: AgentInfo[] }> {
     return request<{ agents: AgentInfo[] }>('/api/agents')
+  },
+
+  async uploadAsset(notePath: string, file: File): Promise<{ path: string; ref: string; url: string; size: number }> {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    const res = await fetch(`/api/asset?path=${encodeURIComponent(notePath)}`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`
+      try {
+        const body = await res.json()
+        if (body && typeof body.error === 'string') message = body.error
+      } catch {
+        /* ignore */
+      }
+      throw new ApiError(res.status, message)
+    }
+    return res.json()
   },
 
   async recent(signal?: AbortSignal): Promise<{ recent: string[] }> {

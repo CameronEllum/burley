@@ -17,7 +17,7 @@
     filter: string
     favorites: string[]
     ontogglefavorite: (path: string) => void
-    oncontext: (event: MouseEvent, path: string) => void
+    oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
   } = $props()
 

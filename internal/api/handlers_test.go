@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -165,8 +166,57 @@ func TestTreeAndFileRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAssetServing(t *testing.T) {
+func TestUploadAssetEndpoint(t *testing.T) {
 	h := newHarness(t)
+	h.write(t, "notes/a.md", "# A\n")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "pasted.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("\x89PNG\r\n\x1a\nfake")); err != nil {
+		t.Fatal(err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, h.srv.URL+"/api/asset?path=notes%2Fa.md", &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := h.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("upload = %d %s", resp.StatusCode, data)
+	}
+	var uploaded struct {
+		Path string `json:"path"`
+		Ref  string `json:"ref"`
+		URL  string `json:"url"`
+	}
+	if err := json.Unmarshal(data, &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if uploaded.Path != "notes/a_assets/pasted.png" || uploaded.Ref != "a_assets/pasted.png" {
+		t.Fatalf("uploaded = %+v", uploaded)
+	}
+	assetResp, err := h.srv.Client().Get(h.srv.URL + uploaded.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetResp.Body.Close()
+	if assetResp.StatusCode != 200 {
+		t.Fatalf("asset fetch = %d", assetResp.StatusCode)
+	}
+}
+
+func TestAssetServing(t *testing.T) {	h := newHarness(t)
 	h.write(t, "img/pic.png", "PNGDATA")
 
 	resp, data := h.do(t, "GET", "/api/asset?path=img/pic.png", nil)

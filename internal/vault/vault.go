@@ -50,6 +50,7 @@ type Vault interface {
 	Write(ctx context.Context, relPath string, content []byte, expectedHash string) (FileData, error)
 	Delete(ctx context.Context, relPath string) error
 	ReadAsset(ctx context.Context, relPath string) ([]byte, string, error)
+	SaveAsset(ctx context.Context, notePath, filename string, data []byte, mimeType string) (string, error)
 	ReadFavorites(ctx context.Context) ([]string, error)
 	WriteFavorites(ctx context.Context, paths []string) error
 	ReadSettings(ctx context.Context) (Settings, bool, error)
@@ -79,6 +80,8 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrTooLarge means the file exceeds the configured size limit.
 	ErrTooLarge = errors.New("file is too large")
+	// ErrUnsupportedMedia means an upload is not an accepted image type.
+	ErrUnsupportedMedia = errors.New("unsupported media type")
 )
 
 // HashBytes returns the lowercase SHA-256 hex digest of b.
