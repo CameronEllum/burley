@@ -11,7 +11,14 @@
     onclose: () => void
   } = $props()
 
-  let tab = $state<'behaviour' | 'appearance'>('behaviour')
+  let tab = $state<'behaviour' | 'appearance'>(
+    localStorage.getItem('burley:settings-tab') === 'appearance' ? 'appearance' : 'behaviour',
+  )
+
+  function switchTab(next: 'behaviour' | 'appearance') {
+    tab = next
+    localStorage.setItem('burley:settings-tab', next)
+  }
 
   const styles = [
     { id: 'default', name: 'Default', description: 'Warm, balanced reading view' },
@@ -40,14 +47,14 @@
         class:active={tab === 'behaviour'}
         role="tab"
         aria-selected={tab === 'behaviour'}
-        onclick={() => (tab = 'behaviour')}>Behaviour</button
+        onclick={() => switchTab('behaviour')}>Behaviour</button
       >
       <button
         class="settings-tab"
         class:active={tab === 'appearance'}
         role="tab"
         aria-selected={tab === 'appearance'}
-        onclick={() => (tab = 'appearance')}>Appearance</button
+        onclick={() => switchTab('appearance')}>Appearance</button
       >
     </div>
 

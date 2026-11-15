@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, type AppSettings, type Entry, type FileData, type FlatFile } from './lib/api'
+  import { api, ConflictError, streamAgentChat, type AgentInfo, type AppSettings, type Entry, type FileData, type FlatFile } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
+  import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import SettingsModal from './components/SettingsModal.svelte'
+  import ShortcutsModal from './components/ShortcutsModal.svelte'
   import { buildOutline, type OutlineItem } from './lib/outline'
   import {
     applyTheme,
@@ -59,6 +61,17 @@
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let rawMode = $state(false)
   let settingsOpen = $state(false)
+  let shortcutsOpen = $state(false)
+  let agents = $state<AgentInfo[]>([])
+  let talkOpen = $state(false)
+  let talkAgent = $state('')
+  let talkMode = $state<'ask' | 'edit'>('ask')
+  let talkMessages = $state<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+  let talkInput = $state('')
+  let talkStreaming = $state(false)
+  let talkError = $state('')
+  let talkMessagesEl = $state<HTMLDivElement | null>(null)
+  let talkAbort: AbortController | null = null
   let favorites = $state<string[]>([])
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
@@ -197,6 +210,14 @@
         settingsOpen = true
       },
     },
+    {
+      id: 'shortcuts',
+      label: 'Show keyboard shortcuts',
+      keywords: 'help keys cheatsheet',
+      run: () => {
+        shortcutsOpen = true
+      },
+    },
   ])
   const saveLabel = $derived(
     saveState === 'saved'
@@ -265,7 +286,7 @@
 
   async function initialLoad() {
     await refreshTree()
-    await Promise.all([loadFavorites(), loadSettings(), loadRecent()])
+    await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents()])
     const params = new URLSearchParams(window.location.search)
     const requested = params.get('file') ?? ''
     const initialHash = window.location.hash.replace(/^#/, '')
@@ -668,6 +689,98 @@
     }
   }
 
+  async function loadAgents() {
+    try {
+      const response = await api.agents()
+      agents = response.agents.filter((agent) => agent.available)
+      if (!talkAgent && agents.length > 0) talkAgent = agents[0].id
+    } catch (err) {
+      flash(`Could not detect CLI agents: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
+
+  function toggleTalk() {
+    talkOpen = !talkOpen
+  }
+
+  function newTalkChat() {
+    talkAbort?.abort()
+    talkAbort = null
+    talkStreaming = false
+    talkMessages = []
+    talkError = ''
+  }
+
+  function insertTalkBlock(block: FencedBlock) {
+    editor?.insertText(block.code)
+  }
+
+  function talkKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      void sendTalk()
+    }
+  }
+
+  async function sendTalk() {
+    const prompt = talkInput.trim()
+    if (!prompt || talkStreaming || !talkAgent) return
+    const history = talkMessages.slice(-8).map((message) => ({
+      role: message.role,
+      content: message.content,
+    }))
+    const selection = editor?.getSelection() ?? ''
+    talkMessages = [...talkMessages, { role: 'user', content: prompt }]
+    talkInput = ''
+    talkMessages = [...talkMessages, { role: 'assistant', content: '' }]
+    const assistantIndex = talkMessages.length - 1
+    talkStreaming = true
+    talkError = ''
+    talkAbort = new AbortController()
+    try {
+      await streamAgentChat(
+        {
+          agent: talkAgent,
+          prompt,
+          path: currentPath,
+          mode: talkMode,
+          selection,
+          history,
+        },
+        (event, data) => {
+          if (event === 'delta' && typeof data.text === 'string') {
+            const messages = [...talkMessages]
+            messages[assistantIndex] = {
+              role: 'assistant',
+              content: messages[assistantIndex].content + data.text,
+            }
+            talkMessages = messages
+          } else if (event === 'done' && data.file?.content) {
+            editor?.replaceAll(data.file.content)
+            flash('Agent updated the note')
+          } else if (event === 'error') {
+            talkError = data.message ?? 'Agent failed'
+          }
+        },
+        talkAbort.signal,
+      )
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        talkError = err instanceof Error ? err.message : String(err)
+      }
+    } finally {
+      talkStreaming = false
+      talkAbort = null
+    }
+  }
+
+  $effect(() => {
+    talkMessages
+    talkStreaming
+    const element = talkMessagesEl
+    if (element) element.scrollTop = element.scrollHeight
+  })
+
   async function loadRecent() {
     try {
       const response = await api.recent()
@@ -854,8 +967,29 @@
       openSearch('')
       return
     }
+    if (event.altKey && event.key.toLowerCase() === 't') {
+      event.preventDefault()
+      talkOpen = !talkOpen
+      return
+    }
+    if (
+      (event.key === '?' || (event.key === '/' && event.shiftKey)) &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !isTypingTarget(document.activeElement)
+    ) {
+      event.preventDefault()
+      shortcutsOpen = true
+      return
+    }
     const mod = event.ctrlKey || event.metaKey
     if (!mod) return
+    if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+      event.preventDefault()
+      shortcutsOpen = true
+      return
+    }
     const key = event.key.toLowerCase()
     if (key === 'p' && !event.shiftKey) {
       event.preventDefault()
@@ -870,6 +1004,11 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && shortcutsOpen) {
+      event.preventDefault()
+      shortcutsOpen = false
+      return
+    }
     if (event.key === 'Escape' && settingsOpen) {
       event.preventDefault()
       settingsOpen = false
@@ -931,6 +1070,18 @@
       toast = ''
     }, 2800)
   }
+
+  function isTypingTarget(target: EventTarget | null): boolean {
+    const element = target as HTMLElement | null
+    if (!element) return false
+    const tag = element.tagName
+    return (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      element.isContentEditable === true
+    )
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} onpointerdown={handleWindowPointerDown} />
@@ -940,15 +1091,12 @@
     <div class="topbar-left">
       <div class="brand" title="Burley">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="25" height="25">
-            <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
-              <path d="M16 2.5 21.2 14H10.8Z" />
-              <path d="M11 14h10v14H11z" />
-              <circle cx="16" cy="19.2" r="2.6" />
-              <path d="M16 17.6v1.6l1 .8" />
-              <path d="M14 28v-3a2 2 0 0 1 4 0v3" />
-              <path d="M10.8 14 8.8 11M21.2 14l2-3" />
-            </g>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
+            <rect width="32" height="32" rx="7" fill="#c2410c" />
+            <path d="M4 20.5c4-2.5 8 2.5 12 0s8-2.5 12 0" stroke="#fff7ed" stroke-width="2" stroke-linecap="round" opacity="0.55" />
+            <rect x="5.5" y="13" width="5" height="3.5" rx="1.75" fill="#fff7ed" />
+            <rect x="13.5" y="11" width="5.5" height="3.5" rx="1.75" fill="#fff7ed" />
+            <rect x="21.5" y="13.5" width="5" height="3.5" rx="1.75" fill="#fff7ed" />
           </svg>
         </span>
         <span class="brand-name">Burley</span>
@@ -992,6 +1140,9 @@
     </button>
 
     <div class="toolbar">
+      <button class="icon-btn talk-btn" class:on={talkOpen} title="Talk to an AI agent (Alt+T)" aria-label="Toggle Talk panel" onclick={toggleTalk}>
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 4.2h14v9.1H8.4L4.9 16v-2.7H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M6.4 8.7h7.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+      </button>
       <button
         class="icon-btn raw-btn"
         class:on={rawMode}
@@ -1002,8 +1153,20 @@
       >
         <span class="raw-glyph" aria-hidden="true">&lt;/&gt;</span>
       </button>
+      <button class="icon-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (Ctrl+?)" onclick={() => (shortcutsOpen = true)}>
+        <span class="shortcut-glyph" aria-hidden="true">?</span>
+      </button>
       <button class="icon-btn" aria-label="Open settings" title="Settings" onclick={() => (settingsOpen = true)}>
-        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10 2.6v2M10 15.4v2M2.6 10h2M15.4 10h2M4.8 4.8l1.4 1.4M13.8 13.8l1.4 1.4M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5" />
+        </svg>
       </button>
       <button class="toggle-btn" class:on={readOnly} title="Toggle read-only mode" onclick={toggleReadOnly}>
         {#if readOnly}
@@ -1023,7 +1186,7 @@
     </div>
   </header>
 
-  <main class="workspace" class:collapsed={!sidebarOpen} style={`--sidebar-width: ${sidebarWidth}px`}>
+  <main class="workspace" class:collapsed={!sidebarOpen} class:talk-open={talkOpen} style={`--sidebar-width: ${sidebarWidth}px`}>
     <aside class="sidebar" class:closed={!sidebarOpen} aria-label="Sidebar">
       <div class="sidebar-tabs" role="tablist" aria-label="Sidebar panels">
         <button
@@ -1231,6 +1394,79 @@
         <div class="loading-bar" role="status" aria-label="Loading note"></div>
       {/if}
     </section>
+
+    {#if talkOpen}
+      <aside class="talk-panel" aria-label="Talk">
+        <header class="talk-head">
+          <span class="talk-title">Talk</span>
+          {#if agents.length > 1}
+            <select class="talk-agent-select" bind:value={talkAgent}>
+              {#each agents as agent (agent.id)}
+                <option value={agent.id}>{agent.name}</option>
+              {/each}
+            </select>
+          {:else if agents.length === 1}
+            <span class="talk-agent-name">{agents[0].name}</span>
+          {/if}
+          <span class="grow"></span>
+          <button class="talk-icon" title="New chat" aria-label="New chat" onclick={newTalkChat}>+</button>
+          <button class="talk-icon" title="Close Talk" aria-label="Close Talk" onclick={() => (talkOpen = false)}>×</button>
+        </header>
+
+        {#if agents.length === 0}
+          <p class="talk-empty">
+            No supported CLI agents were found on this server. Install <code>claude</code>,
+            <code>codex</code>, <code>gemini</code>, or <code>opencode</code> and reload.
+          </p>
+        {:else}
+          <div class="talk-modes">
+            <button class="talk-mode" class:active={talkMode === 'ask'} onclick={() => (talkMode = 'ask')}>Ask</button>
+            <button class="talk-mode" class:active={talkMode === 'edit'} onclick={() => (talkMode = 'edit')}>Edit</button>
+            <span class="talk-mode-hint">{talkMode === 'edit' ? 'may edit this note' : 'read-only'}</span>
+          </div>
+
+          <div class="talk-messages" bind:this={talkMessagesEl}>
+            {#if talkMessages.length === 0}
+              <p class="talk-hint">
+                Ask about <strong>{baseName(currentPath) || 'this note'}</strong>. Use Edit mode to let the agent change
+                the file on disk.
+              </p>
+            {/if}
+            {#each talkMessages as message, index (index)}
+              <div class="talk-message {message.role}">
+                {#if message.role === 'assistant'}
+                  <div class="talk-markdown">{@html renderMarkdown(message.content)}</div>
+                  {#each extractFencedBlocks(message.content) as block, blockIndex (blockIndex)}
+                    <button class="talk-insert" onclick={() => insertTalkBlock(block)}>
+                      Insert {block.lang || 'code'} at cursor
+                    </button>
+                  {/each}
+                {:else}
+                  <p>{message.content}</p>
+                {/if}
+              </div>
+            {/each}
+            {#if talkStreaming}<span class="talk-typing">Working…</span>{/if}
+          </div>
+
+          {#if talkError}<p class="talk-error">{talkError}</p>{/if}
+
+          <div class="talk-compose">
+            <textarea
+              bind:value={talkInput}
+              placeholder="Ask about this note… (Ctrl+Enter to send)"
+              onkeydown={talkKeydown}
+            ></textarea>
+            <button
+              class="primary"
+              disabled={talkStreaming || !talkInput.trim() || !talkAgent}
+              onclick={() => void sendTalk()}
+            >Send</button>
+          </div>
+          <p class="talk-foot">Alt T toggles this panel · conversation is not stored on disk</p>
+        {/if}
+      </aside>
+    {/if}
   </main>
 
   <footer class="statusbar">
@@ -1334,6 +1570,10 @@
   </div>
 </dialog>
 
+{#if shortcutsOpen}
+  <ShortcutsModal onclose={() => (shortcutsOpen = false)} />
+{/if}
+
 {#if settingsOpen}
   <SettingsModal
     settings={{ theme: themeMode, wideMode, markdownStyle, autoSave, ctrlClickLink }}
@@ -1405,8 +1645,11 @@
     place-items: center;
     width: 26px;
     height: 26px;
-    color: var(--accent);
     flex: 0 0 auto;
+  }
+  .brand-mark svg {
+    display: block;
+    border-radius: 6px;
   }
   .brand-name {
     font-weight: 650;
@@ -1560,6 +1803,11 @@
     font-weight: 600;
     letter-spacing: -0.04em;
   }
+  .shortcut-glyph {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+  }
   .icon-btn.small {
     width: 24px;
     height: 24px;
@@ -1608,6 +1856,233 @@
   }
   .workspace.collapsed {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace.talk-open {
+    grid-template-columns: var(--sidebar-width, 302px) minmax(0, 1fr) 350px;
+  }
+  .workspace.collapsed.talk-open {
+    grid-template-columns: minmax(0, 1fr) 350px;
+  }
+
+  .talk-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--border-soft);
+    background: var(--bg-sidebar);
+  }
+  .talk-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .talk-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+  .talk-agent-select {
+    font: inherit;
+    font-size: 11px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    padding: 3px 5px;
+    max-width: 130px;
+  }
+  .talk-agent-name {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .talk-icon {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .talk-icon:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .talk-modes {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 10px 4px;
+  }
+  .talk-mode {
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .talk-mode.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--active);
+  }
+  .talk-mode-hint {
+    margin-left: auto;
+    font-size: 9.5px;
+    color: var(--text-muted);
+  }
+  .talk-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .talk-hint,
+  .talk-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 6px 2px;
+  }
+  .talk-empty {
+    padding: 12px 14px;
+  }
+  .talk-empty code {
+    font-family: var(--font-mono);
+    font-size: 0.94em;
+  }
+  .talk-message {
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .talk-message.user {
+    align-self: flex-end;
+    max-width: 92%;
+    padding: 6px 10px;
+    border-radius: 10px 10px 3px 10px;
+    background: var(--active);
+    color: var(--text-primary);
+  }
+  .talk-message.user p {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .talk-message.assistant {
+    padding: 7px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px 10px 10px 3px;
+    background: var(--bg-app);
+  }
+  .talk-markdown > :first-child {
+    margin-top: 0;
+  }
+  .talk-markdown > :last-child {
+    margin-bottom: 0;
+  }
+  .talk-markdown :global(p) {
+    margin: 0 0 0.55em;
+  }
+  .talk-markdown :global(pre) {
+    overflow-x: auto;
+    margin: 0.5em 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--panel);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .talk-markdown :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  .talk-markdown :global(table) {
+    border-collapse: collapse;
+    font-size: 0.92em;
+    margin: 0.5em 0;
+  }
+  .talk-markdown :global(th),
+  .talk-markdown :global(td) {
+    border: 1px solid var(--border-soft);
+    padding: 3px 6px;
+  }
+  .talk-insert {
+    display: inline-block;
+    margin-top: 4px;
+    border: 1px solid var(--border-soft);
+    border-radius: 5px;
+    background: var(--panel);
+    color: var(--accent);
+    font: inherit;
+    font-size: 10.5px;
+    padding: 3px 7px;
+    cursor: pointer;
+  }
+  .talk-insert:hover {
+    border-color: var(--accent);
+  }
+  .talk-typing {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-style: italic;
+  }
+  .talk-error {
+    margin: 0;
+    padding: 4px 10px;
+    color: var(--danger-fg);
+    font-size: 11px;
+  }
+  .talk-compose {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .talk-compose textarea {
+    flex: 1;
+    min-width: 0;
+    min-height: 58px;
+    max-height: 160px;
+    resize: vertical;
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.45;
+    padding: 6px 8px;
+    outline: none;
+  }
+  .talk-compose textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--active);
+  }
+  .talk-compose .primary {
+    padding: 7px 12px;
+  }
+  .talk-compose .primary:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .talk-foot {
+    margin: 0;
+    padding: 0 10px 7px;
+    font-size: 9.5px;
+    color: var(--text-muted);
   }
 
   .editor-pane {
@@ -2316,6 +2791,18 @@
     }
     .sidebar-resizer {
       display: none;
+    }
+    .workspace.talk-open {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .talk-panel {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: min(360px, 92vw);
+      z-index: 45;
+      box-shadow: -14px 0 40px -20px rgb(0 0 0 / 0.35);
     }
     .path-crumb {
       display: none;

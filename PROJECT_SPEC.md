@@ -50,6 +50,8 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 17. **Settings page:** A gear button opens a two-tab dialog. **Behaviour:** auto-save on/off and Ctrl/Cmd-click on links (toggle Markdown vs open). **Appearance:** theme (system/light/dark), reading width (narrow/wide) and Markdown style (`Default`, `GitHub`, `Academic`, `Compact`). Everything is stored in `.burley/settings.yaml`.
 18. **Raw Markdown mode:** A `</>` top-bar toggle (and palette command) disables the live-preview extensions inside a CodeMirror compartment, keeping the same document, cursor, scroll and undo history. Raw mode uses a monospace source font.
 19. **Escape exits elements:** Pressing `Escape` with the caret inside math, a link, inline code, a fenced block, table or heading moves the caret out so the rendered element returns.
+20. **Talk panel (CLI agents):** `GET /api/agents` auto-detects `claude`, `codex`, `gemini`, and `opencode` via `exec.LookPath`. A hidden right-side Talk panel (Alt+T or the chat button) streams answers over SSE in Ask or Edit mode, sends the current file/selection plus recent turns, renders Markdown + KaTeX, offers insert-at-cursor for code fences, and applies Edit-mode file changes as one CodeMirror transaction.
+21. **Shortcut sheet:** `Ctrl+?` works globally; plain `?` opens it when focus is not in CodeMirror/an input/contenteditable; a `?` top-bar button offers mouse discovery.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -179,6 +181,8 @@ type Vault interface {
 | `PUT /api/settings` | Save theme/wide-mode settings | JSON `{theme,wideMode}` | `200` JSON `{settings, exists}` |
 | `GET /api/recent` | Read the recent-files YAML | none | `200` JSON `{recent:[...]}` |
 | `PUT /api/recent` | Replace recents (max 10) | JSON `{recent:[...]}` | `200` canonical list |
+| `GET /api/agents` | Detect local CLI agents | none | `200` JSON `{agents:[{id,name,path,available}]}` |
+| `POST /api/agent/chat` | Run an agent and stream SSE | JSON `{agent,prompt,path,mode,history,selection}` | `text/event-stream` (`meta`, `delta`, `done`, `error`) |
 | `POST /api/quit` | Gracefully stop the local server (loopback clients only) | none | `200` JSON `{"status":"shutting_down"}` |
 
 ### 5.3 Safety Rules in `LocalVault`
@@ -306,6 +310,8 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Table cells are editable in place; add/remove row and column controls work and only the table range changes.
 - [ ] Settings persist theme, width, Markdown style, auto-save and link behavior in `.burley/settings.yaml`.
 - [ ] Raw mode toggles preview off/on without losing cursor, scroll or undo history; Escape exits rendered elements.
+- [ ] `GET /api/agents` detects installed CLIs and the Talk panel streams Ask/Edit responses (SSE), with Markdown/KaTeX rendering and insert-at-cursor.
+- [ ] `Ctrl+?`/plain `?`/the `?` button open the shortcut sheet; it closes with Escape.
 - [ ] The file tree is docked on the left and the editor fills the right pane.
 - [ ] The left sidebar switches between full-height Files and Outline tabs; clicking an Outline heading scrolls to it.
 - [ ] The left sidebar can be resized by dragging its divider, and the width survives a reload.

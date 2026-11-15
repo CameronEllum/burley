@@ -56,6 +56,8 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/recent", s.handleGetRecent)
 	mux.HandleFunc("PUT /api/recent", s.handlePutRecent)
+	mux.HandleFunc("GET /api/agents", s.handleAgents)
+	mux.HandleFunc("POST /api/agent/chat", s.handleAgentChat)
 	mux.HandleFunc("/api/quit", s.handleQuit)
 	mux.HandleFunc("/", s.handleStatic)
 

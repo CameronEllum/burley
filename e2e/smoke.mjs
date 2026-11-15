@@ -152,6 +152,41 @@ try {
   const sidebarBox = await page.locator('.sidebar').boundingBox()
   const editorBox = await page.locator('.editor-pane').boundingBox()
   check('file tree is on the left', !!sidebarBox && !!editorBox && sidebarBox.x < editorBox.x)
+
+  // Keyboard shortcuts dialog: Ctrl+?, plain ?, and the top-bar button.
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Control+Shift+/')
+  await page.waitForSelector('.shortcuts-modal', { timeout: 3000 })
+  check('Ctrl+? opens the shortcuts dialog', (await page.locator('.shortcuts-modal').count()) === 1)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  check('Escape closes the shortcuts dialog', (await page.locator('.shortcuts-modal').count()) === 0)
+  await page.locator('.brand').click()
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await page.keyboard.press('Shift+/')
+  await page.waitForSelector('.shortcuts-modal', { timeout: 3000 })
+  check('plain ? opens shortcuts when not typing', (await page.locator('.shortcuts-modal').count()) === 1)
+  await page.locator('.shortcuts-modal .secondary').click()
+  await page.waitForTimeout(200)
+  await page.locator('button[aria-label="Keyboard shortcuts"]').click()
+  await page.waitForSelector('.shortcuts-modal', { timeout: 3000 })
+  check('top-bar ? button opens shortcuts', (await page.locator('.shortcuts-modal').count()) === 1)
+  await page.locator('.shortcuts-modal .secondary').click()
+  await page.waitForTimeout(200)
+
+  // Talk panel toggles (agent list may be empty on this machine).
+  await page.locator('button[aria-label="Toggle Talk panel"]').click()
+  await page.waitForSelector('.talk-panel', { timeout: 3000 })
+  const talkReady =
+    (await page.locator('.talk-empty').count()) === 1 ||
+    (await page.locator('.talk-compose textarea').count()) === 1
+  check('Talk panel opens with agent status or composer', talkReady)
+  await page.keyboard.press('Alt+t')
+  await page.waitForTimeout(250)
+  check('Alt+T closes the Talk panel', (await page.locator('.talk-panel').count()) === 0)
+
   check('file tree lists root note', (await page.locator('.file-row').count()) >= 1)
   await page.locator('.dir-row').first().click()
   await page.waitForTimeout(300)
@@ -657,6 +692,13 @@ try {
   await page.locator('.settings-modal .style-card', { hasText: 'Default' }).click()
   await page.waitForTimeout(200)
   await closeSettings()
+  await page.locator('button[aria-label="Open settings"]').click()
+  await page.waitForSelector('.settings-modal', { timeout: 5000 })
+  check(
+    'settings remembers the last tab',
+    (await page.locator('.settings-tab.active').innerText()).trim() === 'Appearance',
+  )
+  await closeSettings()
 
   // Settings persist to .burley/settings.yaml and reload from the server.
   await openSettings('Appearance')
@@ -873,6 +915,7 @@ try {
   await page.screenshot({ path: path.join(here, 'screenshot.png') })
 
   // A separate context with an OS dark preference verifies first-load theming.
+  await putSettings({ ...originalSettings.settings, theme: 'system' })
   const darkContext = await browser.newContext({
     viewport: { width: 1440, height: 960 },
     colorScheme: 'dark',

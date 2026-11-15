@@ -54,6 +54,9 @@ export interface EditorController {
   setReadOnly(readOnly: boolean): void
   setRawMode(raw: boolean): void
   getContent(): string
+  getSelection(): string
+  insertText(text: string): void
+  replaceAll(content: string): void
   focus(): void
   scrollToLine(line: number, column?: number): void
   destroy(): void
@@ -290,6 +293,28 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
 
     getContent() {
       return view.state.doc.toString()
+    },
+
+    getSelection() {
+      const range = view.state.selection.main
+      return view.state.doc.sliceString(range.from, range.to)
+    },
+
+    insertText(text: string) {
+      const range = view.state.selection.main
+      view.dispatch({
+        changes: { from: range.from, to: range.to, insert: text },
+        selection: { anchor: range.from + text.length },
+        scrollIntoView: true,
+      })
+      view.focus()
+    },
+
+    replaceAll(content: string) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+        selection: { anchor: 0 },
+      })
     },
 
     focus() {

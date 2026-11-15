@@ -47,6 +47,22 @@ export interface AppSettings {
   ctrlClickLink: 'toggle' | 'open'
 }
 
+export interface AgentInfo {
+  id: string
+  name: string
+  path: string
+  available: boolean
+}
+
+export interface AgentChatRequest {
+  agent: string
+  prompt: string
+  path: string
+  mode: 'ask' | 'edit'
+  selection?: string
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -152,6 +168,10 @@ export const api = {
     })
   },
 
+  async agents(): Promise<{ agents: AgentInfo[] }> {
+    return request<{ agents: AgentInfo[] }>('/api/agents')
+  },
+
   async recent(signal?: AbortSignal): Promise<{ recent: string[] }> {
     return request<{ recent: string[] }>('/api/recent', { signal })
   },
@@ -174,4 +194,57 @@ export const api = {
   assetUrl(path: string): string {
     return `/api/asset?path=${encodeURIComponent(path)}`
   },
+}
+
+/** Stream the agent SSE response, invoking onEvent for each event block. */
+export async function streamAgentChat(
+  req: AgentChatRequest,
+  onEvent: (event: string, data: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch('/api/agent/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(req),
+    signal,
+  })
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (body && typeof body.error === 'string') message = body.error
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message)
+  }
+  if (!res.body) throw new ApiError(500, 'Agent stream is unavailable')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary).replace(/\r/g, '')
+      buffer = buffer.slice(boundary + 2)
+      let event = 'message'
+      let data = ''
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        else if (line.startsWith('data:')) data += line.slice(5).trim()
+      }
+      if (data) {
+        try {
+          onEvent(event, JSON.parse(data))
+        } catch {
+          /* ignore malformed event */
+        }
+      }
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
 }

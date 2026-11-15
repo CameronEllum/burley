@@ -48,6 +48,10 @@ the compiled frontend, so deployment is a single executable.
   Compact) tabs. Stored in `.burley/settings.yaml`.
 - **Raw mode:** `</>` toggles source view without losing cursor, scroll or undo;
   `Escape` exits the element under the caret.
+- **Talk (CLI agents):** detect `claude`, `codex`, `gemini`, or `opencode`, then
+  chat in a right-side panel (Alt+T) in Ask/Edit mode with SSE streaming,
+  Markdown/KaTeX replies, and insert-at-cursor code blocks.
+- **Shortcut sheet:** `Ctrl+?` anywhere, `?` when not typing, or the `?` button.
 - **Right-click delete:** a file tree context menu offers Delete, confirmed in a
   native HTML dialog; the tree, editor, and favorites update immediately.
 - **Deep links & history:** the open file and heading live in the URL
@@ -162,6 +166,8 @@ mode, light/dark themes and the quit confirmation. Screenshots are written to
 | `Ctrl+P` / `Cmd+P` / `F1` | Quick-open palette (favorites, recents, files) |
 | `Ctrl+Shift+O` | Palette in `@` heading mode |
 | `Ctrl+Shift+F` | Palette in `?` content-search mode |
+| `Ctrl+?` | Keyboard-shortcut sheet (also `?` when not typing) |
+| `Alt+T` | Toggle the Talk panel |
 | `Ctrl+Click` / `Cmd+Click` | Reveal a rendered link's Markdown source |
 | `Ctrl+Enter` | Open the highlighted file in a new tab |
 | `Ctrl+S` / `Cmd+S` | Save now (autosave runs 1.5 s after typing stops) |
@@ -237,6 +243,8 @@ See [the todo list](./notes/todo.md).
 | `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
 | `GET /api/settings` | Read `.burley/settings.yaml` (theme, wide mode) |
 | `PUT /api/settings` | Save theme / wide mode |
+| `GET /api/agents` | Detect installed CLI agents |
+| `POST /api/agent/chat` | Stream an agent reply over SSE |
 | `GET /api/recent` | Read `.burley/recent.yaml` (last 10 files) |
 | `PUT /api/recent` | Save the recent list |
 | `POST /api/quit` | Graceful shutdown (loopback clients only) |
