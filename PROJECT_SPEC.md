@@ -53,6 +53,11 @@ A fast, lightweight, Obsidian-style Markdown viewer and live-preview editor for 
 20. **Talk panel (CLI agents):** `GET /api/agents` auto-detects `claude`, `codex`, `gemini`, and `opencode` via `exec.LookPath`. A hidden right-side Talk panel (Alt+T or the chat button) streams answers over SSE in Ask or Edit mode, sends the current file/selection plus recent turns, renders Markdown + KaTeX, offers insert-at-cursor for code fences, and applies Edit-mode file changes as one CodeMirror transaction.
 21. **Shortcut sheet:** `Ctrl+?` works globally; plain `?` opens it when focus is not in CodeMirror/an input/contenteditable; a `?` top-bar button offers mouse discovery.
 22. **HTML/PDF export:** The export menu renders the current note with Markdown/KaTeX, inlines relative images as data URIs, rasterizes Plotly blocks to self-contained SVG images, inlines CSS and KaTeX fonts, and downloads a standalone `.html`. PDF uses the same document in a hidden iframe with `@page` print CSS and the browser's Save-as-PDF dialog.
+23. **YAML properties card:** A leading `---` frontmatter block is replaced by an Obsidian-style **Properties** card while the cursor is outside it. Rows show `key: value`; sequences (`tags`, `aliases`, reviewers) render as chips, tag keys as `#tag` pills, nested maps as indented sub-rows, and URLs as links. Clicking a row or **Edit** moves the caret to that YAML line and reveals the raw block in a monospace source style; leaving the block folds it back. Unparsable lines are shown verbatim.
+24. **Folder scoping:** Right-clicking a folder offers **Scope to here**, which restricts the Files tab (and its filter footer) to that subtree and shows a banner naming the scope. **Unscope** (banner button or folder menu) restores the whole vault. The scope is stored in `localStorage` and dropped automatically if the folder disappears.
+25. **Add document:** Right-clicking a folder (or the tree background) opens an **Add document** dialog. The name is validated and `.md` is appended when absent, the note is created through `PUT /api/file` (never overwriting an existing file), the tree refreshes, and the new note opens.
+26. **Image paste & drop:** Pasting a clipboard image or dropping an image file into the editor uploads it with `POST /api/asset?path=<note>`, which stores it in a sibling `<noteBase>_assets/` folder (sanitized, de-duplicated names, MIME whitelist, 32 MB cap). The response's note-relative `ref` is inserted as `![alt](<note>_assets/name.png)` at the caret or drop position.
+27. **Spellcheck:** The Behaviour tab toggles native browser spellchecking. When enabled, the editor sets `spellcheck="true"` and decorations mark code fences, inline code, math, HTML and link URLs with `spellcheck="false"` so they are not flagged.
 
 ### Non-Functional Requirements
 - **Cross-platform client:** Runs in any modern browser (macOS, Windows, Linux) over `ssh -L` (or Tailscale/HTTPS), with an optional **Wails** wrapper later if a native desktop window is desired.
@@ -106,6 +111,7 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 │   ├── vault/
 │   │   ├── vault.go             # Vault interface, Entry, FileContent, ConflictError
 │   │   ├── local.go             # LocalVault implementation (atomic writes, path safety)
+│   │   ├── assets.go            # Image uploads into <note>_assets/
 │   │   └── favorites.go         # YAML favorites at .burley/favorites.yaml
 │   │   └── settings.go          # YAML settings at .burley/settings.yaml
 │   │   └── recent.go            # YAML recents at .burley/recent.yaml
@@ -120,6 +126,8 @@ By putting filesystem operations behind a Go `Vault` interface, you can later ad
 │       │   ├── api.ts           # Typed fetch wrappers + AbortController support
 │       │   ├── editor.ts        # CodeMirror 6 setup + codemirror-live-markdown
 │       │   ├── blockPlugins.ts  # Generic StateField/WidgetType plugin registry
+│       │   ├── frontmatter.ts   # YAML properties card (fold/unfold in place)
+│       │   ├── spellcheck.ts    # Exclude code/math from native spellcheck
 │       │   ├── outline.ts       # Heading extraction for the Outline tab
 │       │   ├── theme.ts         # system/light/dark theme handling
 │       │   └── plugins/
@@ -175,6 +183,7 @@ type Vault interface {
 | `PUT /api/file` | Save file with conflict check | JSON `{ path, content, expectedHash }` | `200` updated `FileData`, or `409 Conflict` with current server `FileData` |
 | `DELETE /api/file` | Permanently delete a Markdown note | `?path=notes/todo.md` | `200` JSON `{"deleted": path}` |
 | `GET /api/asset` | Serve images / JSON / CSV | `?path=notes/img/fig1.png` | `200` raw bytes with `Content-Type` |
+| `POST /api/asset` | Upload an image for a note | multipart `file` + `?path=notes/a.md` | `201` JSON `{path, ref, url, size}`; stored under `notes/a_assets/` |
 | `GET /api/search` | Content search via `rg` | `?q=eigenvalue` | `200` JSON `[]SearchMatch` (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read the YAML favorite list | none | `200` JSON `{"favorites":["a.md"]}` |
 | `PUT /api/favorites` | Replace the favorite list | JSON `{favorites:[...]}` | `200` canonical list (deduped, validated) |
@@ -188,7 +197,7 @@ type Vault interface {
 
 ### 5.3 Safety Rules in `LocalVault`
 - **Path traversal guard:** Convert incoming `relPath` with `filepath.FromSlash`, join with `rootDir`, run `filepath.EvalSymlinks` (or `filepath.Abs` + `filepath.Clean`), and verify `strings.HasPrefix(absPath, rootAbs + string(filepath.Separator))`. Reject anything outside `rootDir` with `400`/`403`.
-- **Atomic writes:** Write to a hidden temp file in the **same directory** (`os.CreateTemp(filepath.Dir(target), ".burley-tmp-*")`), preserve original file permissions (`os.Stat`), `Sync()`, `Close()`, and `os.Rename(tmp, target)`.
+- **Atomic writes:** Write to a hidden temp file in the **same directory** (`os.CreateTemp(filepath.Dir(target), ".burley-tmp-*")`), preserve original file permissions (`os.Stat`), `Sync()`, `Close()`, and `os.Rename(tmp, target)`. On Windows the rename retries briefly (8 attempts, increasing backoff) because a scanner or concurrent reader can hold the destination and fail with `Access is denied` / sharing violation.
 - **Conflict detection:** Before writing, read the current file's SHA-256 hash. If `expectedHash != ""` and `currentHash != expectedHash`, abort and return `409 Conflict` with the server's current content so the UI can prompt the user.
 - **Ripgrep fallback:** Run `rg --json --max-count 50 --smart-case <query> <rootDir>` (using `exec.CommandContext` with a 3-second timeout—never pass raw shell strings; pass args directly to `exec.Command`). Fall back to Go `filepath.WalkDir` + substring scan if `rg` is not installed.
 
@@ -207,7 +216,7 @@ type Vault interface {
   - **Tabs at the top: `Files` | `Outline`** (Typora style); each tab gets the full sidebar height.
   - **Resize handle** on the divider: drag to 220–560 px, arrow keys for keyboard resizing, double-click to reset; the chosen width is stored in `localStorage`.
   - **Favorites section** above the tree: collapsible, drag-to-reorder, missing paths dimmed with a remove button. The single **Filter notes…** box filters favorites and the tree together; the section header hides when no favorite matches. A thin divider separates it from the folder tree. File rows show a hover star; the empty `Ctrl+P` list puts favorites first.
-  - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty). Right-clicking a file opens a context menu with **Delete**, confirmed through a native `<dialog>`.
+  - **Files tab:** quick filter input, reload button, recursive `FileTree.svelte` showing folders and `.md` files, and a footer with note count / autosave indicator. Clicking a file loads it into CodeMirror (autosaving first if dirty). Right-clicking a file opens a context menu with **Delete**, confirmed through a native `<dialog>`; right-clicking a folder offers **Scope to here** / **Unscope** and **Add document**. A scoped tree shows a banner naming the folder with an **Unscope** button.
   - **Outline tab:** the open note's headings (H1–H6, indented by level, code fences excluded). Clicking an entry scrolls to that heading; the heading containing the cursor is highlighted.
 - **Main Pane (~75–80% width):** Full-height CodeMirror 6 editor with comfortable max-width reading measure (e.g. `820px` centered) and clean typography.
 - **Status Bar (bottom):** Vault path, line/column, word count, line-ending indicator (`LF`/`CRLF`), save errors, and a read-only indicator.
@@ -217,8 +226,10 @@ Assemble the CodeMirror 6 `EditorState` with:
 - `@codemirror/lang-markdown` (GFM + code languages)
 - `codemirror-live-markdown` extensions (headings, emphasis, links, images, GFM tables, KaTeX math)
 - Custom `blockPluginField` (`StateField`) for specialized fenced blocks (`plotly`, etc.)
+- Custom `frontmatterField` (`StateField`) that folds a leading YAML block into a properties card; clicking a row dispatches a selection into the block so the raw YAML is revealed, and `selectionTouches` folds it again
 - `EditorView.updateListener` to track dirty state and trigger debounced autosave (e.g. 1.5 s after typing stops)
 - Relative image URL resolution: rewrite relative image paths in Markdown widgets to `/api/asset?path=<resolved-relative-to-current-file>`
+- `paste`/`drop` listeners on `contentDOM` that collect image files and hand them to the app for upload; `spellcheck` content attributes plus exclusion decorations from `spellcheck.ts`
 
 ### 6.3 Specialized Content Block Plugins (`blockPlugins.ts`)
 CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line `block: true` replacements:
@@ -324,3 +335,8 @@ CodeMirror 6 requires a **`StateField`** (not a `ViewPlugin`) to emit multi-line
 - [ ] Favorites are stored as YAML in `.burley/favorites.yaml`, appear above the tree and at the top of an empty `Ctrl+P`, survive reloads, and flag missing files.
 - [ ] The single Filter notes box filters favorites and the tree, hiding the Favorites header when nothing matches; a divider separates them.
 - [ ] Theme and wide mode are stored in `.burley/settings.yaml`, survive a reload, and follow the user across browsers.
+- [ ] A leading YAML frontmatter block folds into a Properties card (tag chips, nested maps, links); clicking a row reveals the raw YAML and moving out folds it back.
+- [ ] Right-clicking a folder scopes the tree to it, the banner unscopes, and the scope survives a reload.
+- [ ] **Add document** creates a new note in the chosen folder without overwriting an existing file and opens it.
+- [ ] Pasting or dropping an image stores it in `<note>_assets/` and inserts a relative Markdown reference.
+- [ ] Spellcheck can be toggled, and code/math are excluded from squiggles.

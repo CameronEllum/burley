@@ -23,12 +23,25 @@ the compiled frontend, so deployment is a single executable.
   headings, emphasis, links, blockquotes, GFM tables and task checkboxes render
   inline; raw Markdown appears only when the cursor enters an element. List
   markers stay visible as bullets (•/◦/▪) and numbers instead of disappearing.
+- **YAML properties card:** a leading frontmatter block folds into a compact
+  card with tag chips, nested maps and clickable links; click a row or **Edit**
+  to reveal the raw YAML in place, then move out to fold it back.
 - **Editable tables:** click a cell to edit it (Tab/Shift+Tab, arrows, Enter),
   hover for + row / + column controls, cycle column alignment, and add/remove
   rows or columns. Only the table range is rewritten, so the rest of the note is
   untouched.
 - **Highlighted code blocks:** fenced code renders with highlight.js colors;
   editing the raw fence switches to a monospace source style.
+- **Image paste & drop:** paste a screenshot or drop an image file into the
+  editor and Burley stores it in `<note>_assets/` next to the note, inserting a
+  relative `![](…)` reference at the caret.
+- **Folder scoping:** right-click a folder in the tree and choose **Scope to
+  here** to restrict the browser to that subtree; **Unscope** returns to the
+  whole vault. The scope survives reloads.
+- **Add document:** right-click a folder and choose **Add document** to name and
+  create a new note in that folder (or at the vault root) and open it.
+- **Spellcheck:** optional native browser spellchecking, enabled from Settings;
+  code fences, inline code, math and URLs are excluded from squiggles.
 - **Lossless saves:** the plain-text buffer is edited directly, files are written
   atomically (temp file + rename), and the original line endings (LF/CRLF), BOM
   and trailing newline are preserved.
@@ -43,9 +56,9 @@ the compiled frontend, so deployment is a single executable.
   source for editing.
 - **Status bar:** the full file path and last-modified time live at the bottom
   (the top bar stays uncluttered).
-- **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior)
-  and Appearance (theme, width, Markdown style: Default / GitHub / Academic /
-  Compact) tabs. Stored in `.burley/settings.yaml`.
+- **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior,
+  spellcheck) and Appearance (theme, width, Markdown style: Default / GitHub /
+  Academic / Compact) tabs. Stored in `.burley/settings.yaml`.
 - **Raw mode:** `</>` toggles source view without losing cursor, scroll or undo;
   `Escape` exits the element under the caret.
 - **Talk (CLI agents):** detect `claude`, `codex`, `gemini`, or `opencode`, then
@@ -155,9 +168,9 @@ If the server picked a different port, point the test at it:
 `BURLEY_URL=http://127.0.0.1:8081 npm run smoke`.
 
 It exercises the tree layout, math, tables, task checkboxes, images, Plotly,
-fuzzy/content search, autosave, CRLF preservation, conflict handling, read-only
-mode, light/dark themes and the quit confirmation. Screenshots are written to
-`e2e/`.
+frontmatter cards, folder scoping, image uploads, fuzzy/content search, autosave,
+CRLF preservation, conflict handling, read-only mode, light/dark themes and the
+quit confirmation. Screenshots are written to `e2e/`.
 
 ---
 
@@ -240,6 +253,7 @@ See [the todo list](./notes/todo.md).
 | `PUT /api/file` | `{path, content, expectedHash}`; `409` returns the current file |
 | `DELETE /api/file` | Permanently delete a Markdown note (`?path=...`) |
 | `GET /api/asset?path=...` | Images / JSON / CSV and other whitelisted assets |
+| `POST /api/asset?path=<note>` | Upload an image (multipart `file`); stored in `<note>_assets/` |
 | `GET /api/search?q=...` | Content search results (`path`, `line`, `snippet`) |
 | `GET /api/favorites` | Read `.burley/favorites.yaml` |
 | `PUT /api/favorites` | Replace the favorite list (`{favorites:[...]}`) |
@@ -299,7 +313,9 @@ Burley falls back to a pure-Go scan automatically.
   absolute paths, Windows drive paths and symlinks escaping the root are
   rejected with `400`/`403`.
 - Assets are restricted to a MIME whitelist (images, JSON, CSV/TSV, text, PDF,
-  video) and served with `nosniff` + a sandbox CSP.
+  video) and served with `nosniff` + a sandbox CSP. Uploads accept images only,
+  are capped at 32 MB, and are written inside `<note>_assets/` with sanitized
+  names.
 - The frontend ships with a strict CSP; all assets (KaTeX fonts, Plotly) are
   bundled, so notes make no CDN requests.
 - `/api/quit` is loopback-only.
@@ -313,7 +329,7 @@ cmd/server/          CLI, embedded frontend, port fallback, graceful shutdown
 internal/vault/      Vault interface + LocalVault (atomic writes, path safety)
 internal/api/        REST handlers, static serving, quit endpoint
 web/                 Svelte 5 + Vite + TypeScript frontend
-  src/lib/           editor, math, images, links, tasks, outline, block plugins, theme
+  src/lib/           editor, math, images, links, tasks, frontmatter, spellcheck, outline, block plugins, theme
   src/components/    FileTree, SearchModal, ConflictModal
 e2e/                 Playwright smoke test
 demo-vault/          Sample notes, images and Plotly data
