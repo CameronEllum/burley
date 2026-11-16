@@ -487,17 +487,23 @@ try {
   await sparklePage.waitForSelector('.talk-panel', { timeout: 5000 })
   check(
     'Alt+Enter hands the selection to Talk',
-    (await sparklePage.locator('.sparkle-popover').count()) === 0,
+    (await sparklePage.locator('.sparkle-popover').count()) === 0 &&
+      (await sparklePage.locator('.talk-context').count()) === 1,
   )
   await sparklePage.keyboard.press('Alt+t')
   await sparklePage.waitForTimeout(300)
 
   await selectFirstLine()
   await sparklePage.locator('.sparkle-action', { hasText: 'Explain' }).click()
-  await sparklePage.waitForSelector('.sparkle-markdown', { timeout: 5000 })
+  await sparklePage.waitForSelector('.talk-markdown', { timeout: 6000 })
   check(
-    'Explain streams an answer into the popover',
-    (await sparklePage.locator('.sparkle-markdown').innerText()).includes('Burley workflow'),
+    'Explain streams its answer into Talk',
+    (await sparklePage.locator('.talk-markdown').innerText()).includes('Burley workflow'),
+  )
+  check(
+    'the bar closes once the action is handed off',
+    (await sparklePage.locator('.sparkle-popover').count()) === 0 &&
+      (await sparklePage.locator('.talk-panel').count()) === 1,
   )
   check(
     'the agent request carries the selection in ask mode',
@@ -507,16 +513,17 @@ try {
       sparkleRequests[0].prompt.startsWith('Explain'),
     JSON.stringify(sparkleRequests[0] ?? {}).slice(0, 120),
   )
+  await waitFor(async () => (await sparklePage.locator('.talk-typing').count()) === 0, 5000)
 
-  await sparklePage.locator('.sparkle-btn', { hasText: 'Back' }).click()
+  await selectFirstLine()
   await sparklePage.locator('.sparkle-action', { hasText: 'Rewrite' }).click()
-  await sparklePage.waitForSelector('.sparkle-diff', { timeout: 5000 })
+  await sparklePage.waitForSelector('.talk-diff', { timeout: 6000 })
   check(
-    'Rewrite previews a word-level diff',
-    (await sparklePage.locator('.sparkle-add').count()) >= 1 &&
-      (await sparklePage.locator('.sparkle-del').count()) >= 1,
+    'Rewrite previews a word-level diff in Talk',
+    (await sparklePage.locator('.talk-add').count()) >= 1 &&
+      (await sparklePage.locator('.talk-del').count()) >= 1,
   )
-  await sparklePage.locator('.sparkle-btn', { hasText: 'Replace selection' }).click()
+  await sparklePage.locator('.talk-insert', { hasText: 'Replace selection' }).click()
   await sparklePage.waitForTimeout(400)
   check(
     'Replace swaps the selection for the rewrite',
@@ -526,11 +533,11 @@ try {
   await selectFirstLine()
   await sparklePage.locator('.sparkle-input').fill('Ping')
   await sparklePage.locator('.sparkle-input').press('Enter')
-  await sparklePage.waitForSelector('.sparkle-error', { timeout: 5000 })
+  await sparklePage.waitForSelector('.talk-error', { timeout: 6000 })
   check(
     'agent stderr is shown without ANSI escapes',
-    (await sparklePage.locator('.sparkle-error').innerText()).trim() === 'Agent exploded',
-    await sparklePage.locator('.sparkle-error').innerText(),
+    (await sparklePage.locator('.talk-error').innerText()).trim() === 'Agent exploded',
+    await sparklePage.locator('.talk-error').innerText(),
   )
 
   await sparklePage.locator('button[aria-label="Open settings"]').click()

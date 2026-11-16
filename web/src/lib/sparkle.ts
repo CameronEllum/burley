@@ -2,6 +2,14 @@
 
 export type SparkleAction = 'ask' | 'explain' | 'summarize' | 'shorten' | 'rewrite'
 
+export const SPARKLE_LABELS: Record<SparkleAction, string> = {
+  ask: 'Ask',
+  explain: 'Explain',
+  summarize: 'Summarize',
+  shorten: 'Shorten',
+  rewrite: 'Rewrite',
+}
+
 export const SPARKLE_PROMPTS: Record<Exclude<SparkleAction, 'ask'>, string> = {
   explain:
     'Explain the selected text clearly and concisely. Define unfamiliar terms and preserve technical accuracy.',

@@ -89,10 +89,12 @@ the compiled frontend, so deployment is a single executable.
   `.burley/settings.yaml` (`agent_model_<id>`).
 - **Selection sparkle bar:** when a CLI agent is available, selecting text in the
   editor floats a small action bar above it: **Explain · Summarize · Shorten ·
-  Rewrite**, plus a free-text **Ask**. Answers stream into the popover; Rewrite
-  previews a word-level diff with **Replace selection** / **Insert below**, and
-  **Copy** / **Open in Talk** hand off the result. `Alt+Enter` opens the
-  selection in Talk, `Esc` dismisses. Hidden entirely when no agent is detected.
+  Rewrite**, plus a free-text **Ask**. Actions hand off to the Talk panel, where
+  the answer streams with the selection quoted as context (a removable
+  `selection · Nw` chip keeps it pinned for follow-ups). Rewrite renders its
+  word-level diff in the Talk message with **Replace selection** / **Insert
+  below** / **Copy**. `Alt+Enter` opens the selection in Talk, `Esc` dismisses.
+  Hidden entirely when no agent is detected.
 - **Shortcut sheet:** `Ctrl+?` anywhere, `?` when not typing, or the `?` button.
 - **Export:** download a self-contained HTML file (inline images/fonts, static
   Plotly SVG) or open the browser's Save-as-PDF dialog with print CSS.

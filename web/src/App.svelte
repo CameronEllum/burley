@@ -11,7 +11,8 @@ import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/run
 import { setFigureOpenHandler, type FigureItem } from './lib/figures'
 import { bugReportUrl, openExternal, REPO_URL } from './lib/project'
 import SelectionSparkle from './components/SelectionSparkle.svelte'
-import { cleanSuggestion, SPARKLE_PROMPTS, type SparkleAction } from './lib/sparkle'
+import { cleanSuggestion, SPARKLE_LABELS, SPARKLE_PROMPTS, type SparkleAction } from './lib/sparkle'
+import { wordDiff } from './lib/diff'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
   import { buildExportHtml, downloadHtml, exportFileName, printPdf } from './lib/export'
   import SettingsModal from './components/SettingsModal.svelte'
@@ -95,7 +96,21 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let talkOpen = $state(false)
   let talkAgent = $state('')
   let talkMode = $state<'ask' | 'edit'>('ask')
-  let talkMessages = $state<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+
+  interface TalkMessage {
+    role: 'user' | 'assistant'
+    content: string
+    action?: SparkleAction
+    /** Selection the request was about, for the quote and rewrite diff. */
+    selection?: string
+    from?: number
+    to?: number
+    path?: string
+    applied?: boolean
+  }
+
+  let talkMessages = $state<TalkMessage[]>([])
+  let talkPinnedSelection = $state('')
   let talkInput = $state('')
   let talkStreaming = $state(false)
   let talkError = $state('')
@@ -108,12 +123,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     anchor: { left: number; top: number; bottom: number }
   } | null>(null)
   let sparkleTimer: ReturnType<typeof setTimeout> | null = null
-  let sparkleAction = $state<SparkleAction | ''>('')
-  let sparkleQuestion = $state('')
-  let sparkleOutput = $state('')
-  let sparkleError = $state('')
-  let sparkleBusy = $state(false)
-  let sparkleAbort: AbortController | null = null
   const sparkleAgent = $derived(talkAgent || agents[0]?.id || '')
   const sparkleAgentName = $derived(agents.find((agent) => agent.id === sparkleAgent)?.name ?? '')
   const sparkleModel = $derived(sparkleAgent ? (agentPins[sparkleAgent] ?? '') : '')
@@ -123,11 +132,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     const spaceAbove = sparkle.anchor.top - 16
     const spaceBelow = window.innerHeight - sparkle.anchor.bottom - 16
     const above = spaceAbove > spaceBelow && spaceAbove >= 160
-    const maxHeight = Math.max(160, Math.min(460, above ? spaceAbove : spaceBelow))
     return {
       width,
       above,
-      maxHeight,
       left: Math.min(window.innerWidth - width / 2 - 12, Math.max(width / 2 + 12, sparkle.anchor.left)),
       top: above ? sparkle.anchor.top - 10 : sparkle.anchor.bottom + 10,
     }
@@ -425,7 +432,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
       if (sparkleTimer) clearTimeout(sparkleTimer)
-      sparkleAbort?.abort()
       editor?.destroy()
       editor = null
     }
@@ -493,6 +499,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
     closeSparkle()
+    talkPinnedSelection = ''
     const decoded = decodeForEditor(data.content)
     currentPath = data.path
     format = decoded.format
@@ -1001,6 +1008,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     talkStreaming = false
     talkMessages = []
     talkError = ''
+    talkPinnedSelection = ''
   }
 
   function insertTalkBlock(block: FencedBlock) {
@@ -1014,17 +1022,33 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
   }
 
-  async function sendTalk() {    const prompt = talkInput.trim()
-    if (!prompt || talkStreaming || !talkAgent) return
-    const history = talkMessages.slice(-8).map((message) => ({
-      role: message.role,
-      content: message.content,
-    }))
-    const selection = editor?.getSelection() ?? ''
-    talkMessages = [...talkMessages, { role: 'user', content: prompt }]
-    talkInput = ''
-    talkMessages = [...talkMessages, { role: 'assistant', content: '' }]
+  async function streamTalk(options: {
+    prompt: string
+    display: string
+    selection: string
+    action?: SparkleAction
+    mode?: 'ask' | 'edit'
+    range?: { from: number; to: number }
+  }): Promise<void> {
+    if (!talkAgent || talkStreaming) return
+    const history = talkMessages
+      .filter((message) => message.content.trim())
+      .slice(-8)
+      .map((message) => ({ role: message.role, content: message.content }))
+
+    const user: TalkMessage = { role: 'user', content: options.display }
+    if (options.selection) user.selection = options.selection
+    const assistant: TalkMessage = { role: 'assistant', content: '' }
+    if (options.action) assistant.action = options.action
+    if (options.selection) assistant.selection = options.selection
+    if (options.range) {
+      assistant.from = options.range.from
+      assistant.to = options.range.to
+      assistant.path = currentPath
+    }
+    talkMessages = [...talkMessages, user, assistant]
     const assistantIndex = talkMessages.length - 1
+
     talkStreaming = true
     talkError = ''
     talkAbort = new AbortController()
@@ -1032,17 +1056,17 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       await streamAgentChat(
         {
           agent: talkAgent,
-          prompt,
+          prompt: options.prompt,
           path: currentPath,
-          mode: talkMode,
-          selection,
+          mode: options.mode ?? talkMode,
+          selection: options.selection,
           history,
         },
         (event, data) => {
           if (event === 'delta' && typeof data.text === 'string') {
             const messages = [...talkMessages]
             messages[assistantIndex] = {
-              role: 'assistant',
+              ...messages[assistantIndex],
               content: messages[assistantIndex].content + data.text,
             }
             talkMessages = messages
@@ -1063,6 +1087,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       talkStreaming = false
       talkAbort = null
     }
+  }
+
+  async function sendTalk() {
+    const prompt = talkInput.trim()
+    if (!prompt || talkStreaming || !talkAgent) return
+    talkInput = ''
+    const selection = editor?.getSelection().trim() ? editor.getSelection() : talkPinnedSelection
+    await streamTalk({ prompt, display: prompt, selection })
   }
 
   $effect(() => {
@@ -1091,118 +1123,99 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       if (!sparkleEnabled || !info.anchor) return
       const text = editor?.getSelection() ?? ''
       if (!text.trim()) return
-      if (sparkle && sparkle.text !== text) resetSparkle()
       sparkle = { text, from: info.from, to: info.to, anchor: info.anchor }
     }, 180)
   }
 
-  async function runSparkle(action: SparkleAction, question?: string) {
-    if (!sparkle || sparkleBusy || !sparkleAgent) return
-    const prompt = action === 'ask' ? (question ?? '').trim() : SPARKLE_PROMPTS[action]
-    if (!prompt) return
-    sparkleAction = action
-    sparkleQuestion = action === 'ask' ? prompt : ''
-    sparkleOutput = ''
-    sparkleError = ''
-    sparkleBusy = true
-    const controller = new AbortController()
-    sparkleAbort = controller
-    try {
-      await streamAgentChat(
-        {
-          agent: sparkleAgent,
-          prompt,
-          path: currentPath,
-          mode: 'ask',
-          selection: sparkle.text,
-          history: [],
-        },
-        (event, data) => {
-          if (sparkleAbort !== controller) return
-          if (event === 'delta' && typeof data.text === 'string') {
-            sparkleOutput += data.text
-          } else if (event === 'error') {
-            sparkleError = data.message ?? 'Agent failed'
-          }
-        },
-        controller.signal,
-      )
-    } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        sparkleError = err instanceof Error ? err.message : String(err)
-      }
-    } finally {
-      if (sparkleAbort === controller) sparkleAbort = null
-      sparkleBusy = false
-    }
-  }
-
-  function sparkleRangeValid(): boolean {
-    if (!sparkle) return false
-    return (editor?.getContent() ?? '').slice(sparkle.from, sparkle.to) === sparkle.text
-  }
-
-  function replaceSparkleSelection() {
-    if (!sparkle || !sparkleOutput || readOnly) return
-    const text = cleanSuggestion(sparkleOutput)
-    const { from, to } = sparkle
-    if (!sparkleRangeValid()) {
-      closeSparkle()
-      flash('The note changed — select the text again', true)
+  function sendSparkleToTalk(action: SparkleAction, question?: string) {
+    if (!sparkle || !talkAgent) return
+    if (talkStreaming) {
+      flash('Talk is still answering — try again in a moment.', true)
       return
     }
+    const prompt = action === 'ask' ? (question ?? '').trim() : SPARKLE_PROMPTS[action]
+    if (!prompt) return
+    const selected = sparkle
+    const display = action === 'ask' ? prompt : `${SPARKLE_LABELS[action]} the selection`
     closeSparkle()
-    if (!text) return
+    talkOpen = true
+    talkMode = 'ask'
+    talkPinnedSelection = selected.text
+    void streamTalk({
+      prompt,
+      display,
+      selection: selected.text,
+      action,
+      mode: 'ask',
+      range: { from: selected.from, to: selected.to },
+    })
+  }
+
+  function openSelectionInTalk() {
+    if (!sparkle) return
+    const selected = sparkle
+    closeSparkle()
+    talkOpen = true
+    talkMode = 'ask'
+    talkPinnedSelection = selected.text
+  }
+
+  function clearTalkSelection() {
+    talkPinnedSelection = ''
+  }
+
+  function talkRangeValid(message: TalkMessage): boolean {
+    if (message.from === undefined || message.to === undefined || !message.selection) return false
+    if (message.path !== currentPath) return false
+    return (editor?.getContent() ?? '').slice(message.from, message.to) === message.selection
+  }
+
+  function markTalkMessage(index: number, patch: Partial<TalkMessage>) {
+    const messages = [...talkMessages]
+    messages[index] = { ...messages[index], ...patch }
+    talkMessages = messages
+  }
+
+  function replaceTalkSuggestion(index: number) {
+    const message = talkMessages[index]
+    if (!message || readOnly || !message.content.trim() || !talkRangeValid(message)) return
+    const from = message.from
+    const to = message.to
+    const text = cleanSuggestion(message.content)
+    if (from === undefined || to === undefined || !text) return
     editor?.replaceRange(from, to, text)
+    markTalkMessage(index, { applied: true })
     flash('Selection replaced')
   }
 
-  function insertSparkle() {
-    if (!sparkle || !sparkleOutput || readOnly) return
-    const text = cleanSuggestion(sparkleOutput)
-    const at = sparkle.to
-    if (!sparkleRangeValid()) {
-      closeSparkle()
-      flash('The note changed — select the text again', true)
-      return
-    }
-    closeSparkle()
-    if (!text) return
-    editor?.insertTextAt(`\n\n${text}`, at)
+  function insertTalkSuggestion(index: number) {
+    const message = talkMessages[index]
+    if (!message || readOnly || !message.content.trim() || !talkRangeValid(message)) return
+    const to = message.to
+    const text = cleanSuggestion(message.content)
+    if (to === undefined || !text) return
+    editor?.insertTextAt(`\n\n${text}`, to)
+    markTalkMessage(index, { applied: true })
     flash('Inserted below the selection')
   }
 
-  function copySparkle() {
-    if (!sparkleOutput) return
-    const text = cleanSuggestion(sparkleOutput)
+  function copyTalkSuggestion(index: number) {
+    const message = talkMessages[index]
+    if (!message?.content.trim()) return
     void navigator.clipboard
-      .writeText(text)
+      .writeText(cleanSuggestion(message.content))
       .then(() => flash('Copied the suggestion'))
       .catch(() => flash('Could not copy to the clipboard', true))
   }
 
-  function openSparkleInTalk() {
-    if (!sparkle) return
-    const question = sparkleQuestion
-    // Keep the editor selection alive so Talk picks it up as context.
-    talkOpen = true
-    talkMode = 'ask'
-    if (question) talkInput = question
-    closeSparkle()
+  /** One-line excerpt for the selection quote in Talk. */
+  function excerpt(text: string, max = 180): string {
+    const compact = text.replace(/\s+/g, ' ').trim()
+    return compact.length > max ? `${compact.slice(0, max)}…` : compact
   }
 
-  function stopSparkle() {
-    sparkleAbort?.abort()
-    sparkleAbort = null
-    sparkleBusy = false
-  }
-
-  function resetSparkle() {
-    stopSparkle()
-    sparkleAction = ''
-    sparkleQuestion = ''
-    sparkleOutput = ''
-    sparkleError = ''
+  function selectionWords(text: string): number {
+    return text.trim() ? text.trim().split(/\s+/).length : 0
   }
 
   function closeSparkle() {
@@ -1210,12 +1223,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       clearTimeout(sparkleTimer)
       sparkleTimer = null
     }
-    stopSparkle()
     sparkle = null
-    sparkleAction = ''
-    sparkleQuestion = ''
-    sparkleOutput = ''
-    sparkleError = ''
   }
 
   async function loadRecent() {
@@ -1536,7 +1544,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
     if (event.altKey && event.key === 'Enter' && sparkle) {
       event.preventDefault()
-      openSparkleInTalk()
+      openSelectionInTalk()
       return
     }
     if (event.key === 'Escape' && zenMode) {
@@ -2024,6 +2032,15 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           <div class="talk-modes">
             <button class="talk-mode" class:active={talkMode === 'ask'} onclick={() => (talkMode = 'ask')}>Ask</button>
             <button class="talk-mode" class:active={talkMode === 'edit'} onclick={() => (talkMode = 'edit')}>Edit</button>
+            {#if talkPinnedSelection}
+              <button
+                class="talk-context"
+                title="The selection sent with this conversation"
+                onclick={clearTalkSelection}
+              >
+                selection · {selectionWords(talkPinnedSelection)}w ✕
+              </button>
+            {/if}
             <span class="talk-mode-hint">{talkMode === 'edit' ? 'may edit this note' : 'read-only'}</span>
           </div>
 
@@ -2035,18 +2052,47 @@ import FigureLightbox from './components/FigureLightbox.svelte'
               </p>
             {/if}
             {#each talkMessages as message, index (index)}
-              <div class="talk-message {message.role}">
-                {#if message.role === 'assistant'}
-                  <div class="talk-markdown">{@html renderMarkdown(message.content)}</div>
-                  {#each extractFencedBlocks(message.content) as block, blockIndex (blockIndex)}
-                    <button class="talk-insert" onclick={() => insertTalkBlock(block)}>
-                      Insert {block.lang || 'code'} at cursor
-                    </button>
-                  {/each}
-                {:else}
+              {#if message.role === 'user'}
+                <div class="talk-message user">
                   <p>{message.content}</p>
-                {/if}
-              </div>
+                  {#if message.selection}
+                    <blockquote class="talk-quote">{excerpt(message.selection)}</blockquote>
+                  {/if}
+                </div>
+              {:else if message.content}
+                <div class="talk-message assistant">
+                  {#if message.action === 'rewrite' && message.selection}
+                    <div class="talk-diff">
+                      {#each wordDiff(message.selection, cleanSuggestion(message.content)) as part, partIndex (partIndex)}
+                        <span
+                          class:talk-add={part.kind === 'add'}
+                          class:talk-del={part.kind === 'del'}
+                        >{part.text}</span>
+                      {/each}
+                    </div>
+                    <div class="talk-actions">
+                      {#if message.applied}
+                        <span class="talk-applied">Applied</span>
+                      {:else if !readOnly && !talkStreaming && talkRangeValid(message)}
+                        <button class="talk-insert" onclick={() => replaceTalkSuggestion(index)}>
+                          Replace selection
+                        </button>
+                        <button class="talk-insert" onclick={() => insertTalkSuggestion(index)}>
+                          Insert below
+                        </button>
+                      {/if}
+                      <button class="talk-insert" onclick={() => copyTalkSuggestion(index)}>Copy</button>
+                    </div>
+                  {:else}
+                    <div class="talk-markdown">{@html renderMarkdown(message.content)}</div>
+                    {#each extractFencedBlocks(message.content) as block, blockIndex (blockIndex)}
+                      <button class="talk-insert" onclick={() => insertTalkBlock(block)}>
+                        Insert {block.lang || 'code'} at cursor
+                      </button>
+                    {/each}
+                  {/if}
+                </div>
+              {/if}
             {/each}
             {#if talkStreaming}<span class="talk-typing">Working…</span>{/if}
           </div>
@@ -2271,22 +2317,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     top={sparklePlacement.top}
     above={sparklePlacement.above}
     width={sparklePlacement.width}
-    maxHeight={sparklePlacement.maxHeight}
     selection={sparkle.text}
     agentName={sparkleAgentName}
     model={sparkleModel}
-    busy={sparkleBusy}
-    action={sparkleAction}
-    output={sparkleOutput}
-    error={sparkleError}
-    canEdit={!readOnly}
-    onaction={runSparkle}
-    onreset={resetSparkle}
-    onreplace={replaceSparkleSelection}
-    oninsert={insertSparkle}
-    oncopy={copySparkle}
-    ontalk={openSparkleInTalk}
-    onstop={stopSparkle}
+    onaction={sendSparkleToTalk}
     onclose={closeSparkle}
   />
 {/if}
@@ -2788,6 +2822,64 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     margin-left: auto;
     font-size: 9.5px;
     color: var(--text-muted);
+  }
+  .talk-context {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--active);
+    color: var(--accent);
+    font: inherit;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .talk-context:hover {
+    background: var(--hover);
+  }
+  .talk-quote {
+    margin: 5px 0 0;
+    padding: 4px 8px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--bg-app) 70%, transparent);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .talk-diff {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .talk-add {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+    border-radius: 3px;
+  }
+  .talk-del {
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+    text-decoration: line-through;
+    border-radius: 3px;
+  }
+  .talk-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .talk-applied {
+    color: var(--ok-fg);
+    font-size: 10.5px;
+    font-weight: 600;
   }
   .talk-messages {
     flex: 1;

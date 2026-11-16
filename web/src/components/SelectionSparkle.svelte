@@ -1,29 +1,15 @@
 <script lang="ts">
-  import { renderMarkdown } from '../lib/markdown'
-  import { wordDiff } from '../lib/diff'
-  import { cleanSuggestion, type SparkleAction } from '../lib/sparkle'
+  import type { SparkleAction } from '../lib/sparkle'
 
   interface Props {
     left: number
     top: number
     above: boolean
     width: number
-    maxHeight: number
     selection: string
     agentName: string
     model: string
-    busy: boolean
-    action: SparkleAction | ''
-    output: string
-    error: string
-    canEdit: boolean
     onaction: (action: SparkleAction, question?: string) => void
-    onreset: () => void
-    onreplace: () => void
-    oninsert: () => void
-    oncopy: () => void
-    ontalk: () => void
-    onstop: () => void
     onclose: () => void
   }
 
@@ -32,22 +18,10 @@
     top,
     above,
     width,
-    maxHeight,
     selection,
     agentName,
     model,
-    busy,
-    action,
-    output,
-    error,
-    canEdit,
     onaction,
-    onreset,
-    onreplace,
-    oninsert,
-    oncopy,
-    ontalk,
-    onstop,
     onclose,
   }: Props = $props()
 
@@ -58,23 +32,10 @@
     { id: 'rewrite', label: 'Rewrite', hint: 'Polish and compare' },
   ]
 
-  const LABELS: Record<SparkleAction, string> = {
-    ask: 'Answer',
-    explain: 'Explanation',
-    summarize: 'Summary',
-    shorten: 'Shortened version',
-    rewrite: 'Suggested rewrite',
-  }
-
   let question = $state('')
 
-  function clean(text: string): string {
-    return cleanSuggestion(text)
-  }
-
-  const diff = $derived(action === 'rewrite' && output ? wordDiff(selection, clean(output)) : [])
-
   const modelLabel = $derived(model ? (model.split('/').pop() ?? model) : '')
+  const wordCount = $derived(selection.trim().split(/\s+/).filter(Boolean).length)
 
   function submitQuestion(event: SubmitEvent) {
     event.preventDefault()
@@ -90,7 +51,7 @@
   class:below={!above}
   role="dialog"
   aria-label="AI actions for the selection"
-  style={`left:${left}px; top:${top}px; width:${width}px; max-height:${maxHeight}px`}
+  style={`left:${left}px; top:${top}px; width:${width}px`}
 >
   <header class="sparkle-head">
     <span class="sparkle-glyph" aria-hidden="true">✦</span>
@@ -98,69 +59,30 @@
     {#if modelLabel}
       <span class="sparkle-model" title={`Pinned model: ${model}`}>{modelLabel}</span>
     {/if}
-    <span class="sparkle-context">{selection.trim().split(/\s+/).length} words selected</span>
+    <span class="sparkle-context">{wordCount} words selected</span>
     <span class="sparkle-spacer"></span>
     <button class="sparkle-close" title="Close (Esc)" aria-label="Close" onclick={onclose}>×</button>
   </header>
 
-  {#if !action}
-    <div class="sparkle-actions">
-      {#each QUICK as item (item.id)}
-        <button class="sparkle-action" title={item.hint} onclick={() => onaction(item.id)}>
-          {item.label}
-        </button>
-      {/each}
-    </div>
-    <form class="sparkle-ask" onsubmit={submitQuestion}>
-      <input
-        class="sparkle-input"
-        bind:value={question}
-        placeholder="Ask about this selection…"
-        aria-label="Ask about this selection"
-      />
-      <button class="sparkle-send" type="submit" disabled={!question.trim()}>Ask</button>
-    </form>
-  {:else}
-    <div class="sparkle-result">
-      <div class="sparkle-result-head">
-        <span>{LABELS[action]}</span>
-        {#if busy}<span class="sparkle-typing">working…</span>{/if}
-      </div>
-      {#if action === 'rewrite' && output}
-        <div class="sparkle-diff">
-          {#each diff as part, i (i)}
-            <span
-              class:sparkle-add={part.kind === 'add'}
-              class:sparkle-del={part.kind === 'del'}
-            >{part.text}</span>
-          {/each}
-        </div>
-      {:else if output}
-        <div class="sparkle-markdown">{@html renderMarkdown(output)}</div>
-      {:else if busy}
-        <div class="sparkle-typing-block">Thinking…</div>
-      {/if}
-      {#if error}<p class="sparkle-error">{error}</p>{/if}
-    </div>
-    <footer class="sparkle-foot">
-      {#if busy}
-        <button class="sparkle-btn" onclick={onstop}>Stop</button>
-      {:else}
-        {#if action === 'rewrite' && output && canEdit}
-          <button class="sparkle-btn primary" onclick={onreplace}>Replace selection</button>
-        {/if}
-        {#if output && canEdit}
-          <button class="sparkle-btn" onclick={oninsert}>Insert below</button>
-        {/if}
-        {#if output}
-          <button class="sparkle-btn" onclick={oncopy}>Copy</button>
-        {/if}
-        <button class="sparkle-btn" onclick={ontalk}>Open in Talk</button>
-        <span class="sparkle-spacer"></span>
-        <button class="sparkle-btn ghost" onclick={onreset}>Back</button>
-      {/if}
-    </footer>
-  {/if}
+  <div class="sparkle-actions">
+    {#each QUICK as item (item.id)}
+      <button class="sparkle-action" title={item.hint} onclick={() => onaction(item.id)}>
+        {item.label}
+      </button>
+    {/each}
+  </div>
+
+  <form class="sparkle-ask" onsubmit={submitQuestion}>
+    <input
+      class="sparkle-input"
+      bind:value={question}
+      placeholder="Ask about this selection…"
+      aria-label="Ask about this selection"
+    />
+    <button class="sparkle-send" type="submit" disabled={!question.trim()}>Ask</button>
+  </form>
+
+  <p class="sparkle-hint">Answers stream into the Talk panel.</p>
 </div>
 
 <style>
@@ -170,8 +92,8 @@
     transform: translate(-50%, -100%);
     display: flex;
     flex-direction: column;
-    max-height: min(460px, 70vh);
-    border: 1px solid var(--border-strong);    border-radius: 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 11px;
     background: color-mix(in srgb, var(--bg-chrome) 96%, transparent);
     color: var(--text-primary);
     box-shadow: 0 22px 60px -24px rgb(0 0 0 / 0.55);
@@ -278,7 +200,7 @@
   .sparkle-ask {
     display: flex;
     gap: 6px;
-    padding: 4px 10px 10px;
+    padding: 4px 10px 4px;
   }
   .sparkle-input {
     flex: 1;
@@ -310,104 +232,11 @@
     opacity: 0.45;
     cursor: default;
   }
-  .sparkle-result {
-    flex: 1;
-    min-height: 0;
-    padding: 9px 12px;
-    overflow-y: auto;
-  }
-  .sparkle-result-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 5px;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-weight: 700;
+  .sparkle-hint {
+    margin: 0;
+    padding: 2px 12px 8px;
     color: var(--text-muted);
-  }
-  .sparkle-typing {
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 500;
-    color: var(--accent);
-  }
-  .sparkle-typing-block {
-    color: var(--text-muted);
-    font-size: 12px;
-    padding: 4px 0;
-  }
-  .sparkle-markdown {
-    font-size: 13px;
-    line-height: 1.6;
-    overflow-wrap: anywhere;
-  }
-  .sparkle-markdown :global(*:first-child) {
-    margin-top: 0;
-  }
-  .sparkle-markdown :global(*:last-child) {
-    margin-bottom: 0;
-  }
-  .sparkle-diff {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    max-height: 260px;
-    overflow-y: auto;
-    font-size: 12.8px;
-    line-height: 1.6;
-    padding: 2px 0;
-  }
-  .sparkle-add {
-    background: var(--ok-bg);
-    color: var(--ok-fg);
-    border-radius: 3px;
-  }
-  .sparkle-del {
-    background: var(--danger-bg);
-    color: var(--danger-fg);
-    text-decoration: line-through;
-    border-radius: 3px;
-  }
-  .sparkle-error {
-    margin: 6px 0 0;
-    color: var(--danger-fg);
-    font-size: 12px;
-  }
-  .sparkle-foot {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 7px 10px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-app);
-  }
-  .sparkle-btn {
-    border: 1px solid var(--border-soft);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
-    font: inherit;
-    font-size: 10.5px;
-    font-weight: 600;
-    padding: 4px 8px;
-    cursor: pointer;
-  }
-  .sparkle-btn:hover {
-    background: var(--hover);
-    color: var(--text-primary);
-  }
-  .sparkle-btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-  .sparkle-btn.primary:hover {
-    background: var(--accent-strong);
-    color: #fff;
-  }
-  .sparkle-btn.ghost {
-    border-color: transparent;
+    font-size: 9.5px;
+    letter-spacing: 0.01em;
   }
 </style>
