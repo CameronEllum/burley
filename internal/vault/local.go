@@ -435,13 +435,65 @@ func isRetryableRename(err error) bool {
 	return false
 }
 
-// Delete permanently removes a Markdown file from the vault.
+func hasHiddenSegment(clean string) bool {
+	for _, seg := range strings.Split(clean, "/") {
+		if seg == "" || strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// Rename moves or renames a Markdown file or directory within the vault.
+func (v *LocalVault) Rename(ctx context.Context, fromPath, toPath string) error {
+	fromAbs, fromClean, err := v.resolve(fromPath)
+	if err != nil {
+		return err
+	}
+	toAbs, toClean, err := v.resolve(toPath)
+	if err != nil {
+		return err
+	}
+	if hasHiddenSegment(fromClean) || hasHiddenSegment(toClean) {
+		return ErrInvalidPath
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	fromInfo, err := os.Stat(fromAbs)
+	if err != nil {
+		return notFoundIfNeeded(err)
+	}
+	if fromInfo.IsDir() {
+		if toClean == fromClean || strings.HasPrefix(toClean, fromClean+"/") {
+			return ErrInvalidPath
+		}
+	} else {
+		if !IsMarkdownPath(fromClean) || !IsMarkdownPath(toClean) {
+			return ErrInvalidPath
+		}
+	}
+	if fromClean == toClean {
+		return nil
+	}
+	if _, err := os.Stat(toAbs); err == nil {
+		return ErrExists
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(toAbs), 0o755); err != nil {
+		return err
+	}
+	return renameWithRetry(fromAbs, toAbs)
+}
+
+// Delete permanently removes a Markdown file or directory from the vault.
 func (v *LocalVault) Delete(ctx context.Context, relPath string) error {
 	abs, clean, err := v.resolve(relPath)
 	if err != nil {
 		return err
 	}
-	if !IsMarkdownPath(clean) {
+	if hasHiddenSegment(clean) {
 		return ErrInvalidPath
 	}
 	if err := ctx.Err(); err != nil {
@@ -452,6 +504,9 @@ func (v *LocalVault) Delete(ctx context.Context, relPath string) error {
 		return notFoundIfNeeded(err)
 	}
 	if info.IsDir() {
+		return os.RemoveAll(abs)
+	}
+	if !IsMarkdownPath(clean) {
 		return ErrInvalidPath
 	}
 	return os.Remove(abs)

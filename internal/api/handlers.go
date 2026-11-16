@@ -55,6 +55,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("GET /api/file", s.handleGetFile)
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
+	mux.HandleFunc("POST /api/rename", s.handleRename)
 	mux.HandleFunc("DELETE /api/file", s.handleDeleteFile)
 	mux.HandleFunc("GET /api/asset", s.handleAsset)
 	mux.HandleFunc("POST /api/asset", s.handleUploadAsset)
@@ -157,6 +158,8 @@ func vaultError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid path")
 	case errors.Is(err, vault.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not found")
+	case errors.Is(err, vault.ErrExists):
+		writeError(w, http.StatusConflict, "target already exists")
 	case errors.Is(err, vault.ErrTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "file is too large")
 	case errors.Is(err, vault.ErrUnsupportedMedia):
@@ -216,6 +219,24 @@ func (s *server) handlePutFile(w http.ResponseWriter, r *http.Request) {
 	}
 	s.invalidateTree()
 	writeJSON(w, http.StatusOK, data)
+}
+
+func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if err := s.vault.Rename(r.Context(), body.From, body.To); err != nil {
+		vaultError(w, err)
+		return
+	}
+	s.invalidateTree()
+	writeJSON(w, http.StatusOK, map[string]string{"from": body.From, "to": body.To})
 }
 
 func (s *server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {

@@ -48,6 +48,7 @@ type Vault interface {
 	Tree(ctx context.Context) ([]Entry, error)
 	Read(ctx context.Context, relPath string) (FileData, error)
 	Write(ctx context.Context, relPath string, content []byte, expectedHash string) (FileData, error)
+	Rename(ctx context.Context, fromPath, toPath string) error
 	Delete(ctx context.Context, relPath string) error
 	ReadAsset(ctx context.Context, relPath string) ([]byte, string, error)
 	SaveAsset(ctx context.Context, notePath, filename string, data []byte, mimeType string) (string, error)
@@ -78,6 +79,8 @@ var (
 	ErrInvalidPath = errors.New("invalid path")
 	// ErrNotFound means the path does not exist.
 	ErrNotFound = errors.New("not found")
+	// ErrExists means the destination path already exists.
+	ErrExists = errors.New("already exists")
 	// ErrTooLarge means the file exceeds the configured size limit.
 	ErrTooLarge = errors.New("file is too large")
 	// ErrUnsupportedMedia means an upload is not an accepted image type.

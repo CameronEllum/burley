@@ -199,6 +199,41 @@ func TestDelete(t *testing.T) {
 	if err := v.Delete(context.Background(), "../escape.md"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("traversal delete = %v, want ErrForbidden", err)
 	}
+	writeFile(t, dir, "folder/a.md", "# A\n")
+	if err := v.Delete(context.Background(), "folder"); err != nil {
+		t.Fatalf("Delete dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "folder")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("folder still exists: %v", err)
+	}
+	if err := v.Delete(context.Background(), ".burley"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("hidden dir delete = %v, want ErrInvalidPath", err)
+	}
+}
+
+func TestRename(t *testing.T) {
+	v, dir := newTestVault(t)
+	writeFile(t, dir, "notes/old.md", "# Old\n")
+	writeFile(t, dir, "notes/existing.md", "# Existing\n")
+
+	if err := v.Rename(context.Background(), "notes/old.md", "notes/new.md"); err != nil {
+		t.Fatalf("Rename file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes", "new.md")); err != nil {
+		t.Fatalf("renamed file missing: %v", err)
+	}
+	if err := v.Rename(context.Background(), "notes/new.md", "notes/existing.md"); !errors.Is(err, ErrExists) {
+		t.Fatalf("collision rename = %v, want ErrExists", err)
+	}
+	if err := v.Rename(context.Background(), "notes", "renamed-notes"); err != nil {
+		t.Fatalf("Rename dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "renamed-notes", "new.md")); err != nil {
+		t.Fatalf("file inside renamed dir missing: %v", err)
+	}
+	if err := v.Rename(context.Background(), "renamed-notes", "renamed-notes/sub"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("self-nest rename = %v, want ErrInvalidPath", err)
+	}
 }
 
 func TestWritePreservesPermissions(t *testing.T) {	v, dir := newTestVault(t)

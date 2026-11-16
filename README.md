@@ -178,6 +178,37 @@ next free port (for example `http://127.0.0.1:8081`).
 
 Stop with `Ctrl+C` or the **Quit** button (red power icon, top right).
 
+### Running as a user service (Linux)
+
+If you run Burley in the background on a Linux host and want it to detect CLI
+agents (`claude`, `codex`, `gemini`, `opencode`) installed in `~/.nvm`,
+`~/.local/bin`, or `~/.opencode/bin`, run it as a **`systemd --user`** service
+through a login shell so it inherits your user `PATH` and CLI credentials:
+
+```ini
+# ~/.config/systemd/user/burley.service
+[Unit]
+Description=Burley Markdown viewer
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -lc 'exec /usr/local/bin/burley --root /srv/notes --addr 127.0.0.1:8080'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+```
+
+Enable it and keep it running after SSH logout:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now burley
+sudo loginctl enable-linger "$USER"
+```
+
 ---
 
 ## Development

@@ -163,8 +163,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let quitOpen = $state(false)
   let shuttingDown = $state(false)
   let contextMenu = $state<{ x: number; y: number; path: string; isDir: boolean } | null>(null)
-  let pendingDelete = $state<string | null>(null)
+  let pendingDelete = $state<{ path: string; isDir: boolean } | null>(null)
   let deleteDialogEl = $state<HTMLDialogElement | null>(null)
+  let pendingRename = $state<{ path: string; isDir: boolean } | null>(null)
+  let renameDialogEl = $state<HTMLDialogElement | null>(null)
+  let renameInput = $state<HTMLInputElement | null>(null)
+  let renameValue = $state('')
+  let renameError = $state('')
+  let renameBusy = $state(false)
   let newDocDialogEl = $state<HTMLDialogElement | null>(null)
   let newDocInput = $state<HTMLInputElement | null>(null)
   let newDocFolder = $state('')
@@ -1301,7 +1307,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function showContextMenu(event: MouseEvent, path: string, isDir: boolean) {
     event.preventDefault()
     const width = 210
-    const height = scopePath ? 100 : 48
+    const height = isDir ? (scopePath ? 210 : 175) : 125
     contextMenu = {
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
@@ -1331,11 +1337,107 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (target?.closest('.context-menu')) return
     contextMenu = null
   }
-  async function requestDelete() {
+  async function copyContextPath() {
     const path = contextMenu?.path
     contextMenu = null
     if (!path) return
-    pendingDelete = path
+    try {
+      await navigator.clipboard.writeText(path)
+      flash(`Copied ${path}`)
+    } catch {
+      flash(`Could not copy path`, true)
+    }
+  }
+
+  async function requestRename() {
+    const target = contextMenu
+    contextMenu = null
+    if (!target) return
+    const slash = target.path.lastIndexOf('/')
+    const base = slash >= 0 ? target.path.slice(slash + 1) : target.path
+    pendingRename = { path: target.path, isDir: target.isDir }
+    renameValue = target.isDir ? base : base.replace(/\.(md|markdown|mdown|mkd)$/i, '')
+    renameError = ''
+    renameBusy = false
+    await tick()
+    renameDialogEl?.showModal()
+    requestAnimationFrame(() => {
+      renameInput?.focus()
+      renameInput?.select()
+    })
+  }
+
+  function closeRenameDialog() {
+    renameDialogEl?.close()
+    pendingRename = null
+    renameValue = ''
+    renameError = ''
+    renameBusy = false
+  }
+
+  function remapPathPrefix(p: string, from: string, to: string, isDir: boolean): string {
+    if (p === from) return to
+    if (isDir && p.startsWith(from + '/')) return to + p.slice(from.length)
+    return p
+  }
+
+  async function confirmRename() {
+    if (renameBusy || !pendingRename) return
+    const { path: fromPath, isDir } = pendingRename
+    let name = renameValue.trim().replace(/[\\/:*?"<>|]+/g, '-')
+    if (!name || name === '.' || name === '..') {
+      renameError = isDir ? 'Enter a folder name.' : 'Enter a note name.'
+      return
+    }
+    if (!isDir) {
+      const origExtMatch = fromPath.match(/\.(md|markdown|mdown|mkd)$/i)
+      const hasMdExt = /\.(md|markdown|mdown|mkd)$/i.test(name)
+      if (!hasMdExt) name += origExtMatch ? origExtMatch[0] : '.md'
+    }
+    const slash = fromPath.lastIndexOf('/')
+    const parent = slash >= 0 ? fromPath.slice(0, slash) : ''
+    const toPath = parent ? `${parent}/${name}` : name
+    if (toPath === fromPath) {
+      closeRenameDialog()
+      return
+    }
+    renameBusy = true
+    renameError = ''
+    try {
+      await api.rename(fromPath, toPath)
+      closeRenameDialog()
+      const updatedFavs = favorites.map((entry) => remapPathPrefix(entry, fromPath, toPath, isDir))
+      if (updatedFavs.some((entry, idx) => entry !== favorites[idx])) {
+        await persistFavorites(updatedFavs)
+      }
+      if (scopePath) {
+        const nextScope = remapPathPrefix(scopePath, fromPath, toPath, isDir)
+        if (nextScope !== scopePath) {
+          scopePath = nextScope
+          localStorage.setItem(SCOPE_KEY, scopePath)
+        }
+      }
+      if (currentPath) {
+        const nextCurrent = remapPathPrefix(currentPath, fromPath, toPath, isDir)
+        if (nextCurrent !== currentPath) {
+          currentPath = nextCurrent
+          localStorage.setItem(LAST_PATH_KEY, currentPath)
+          window.history.replaceState({ file: currentPath }, '', buildAppUrl(currentPath, ''))
+        }
+      }
+      await refreshTree(true)
+      flash(`Renamed to ${toPath}`)
+    } catch (err) {
+      renameError = err instanceof Error ? err.message : String(err)
+      renameBusy = false
+    }
+  }
+
+  async function requestDelete() {
+    const target = contextMenu
+    contextMenu = null
+    if (!target) return
+    pendingDelete = { path: target.path, isDir: target.isDir }
     await tick()
     deleteDialogEl?.showModal()
   }
@@ -1392,14 +1494,22 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   async function confirmDelete() {
-    const path = pendingDelete
-    if (!path) return
+    const target = pendingDelete
+    if (!target) return
+    const { path, isDir } = target
     try {
       await api.deleteFile(path)
       closeDeleteDialog()
-      if (favorites.includes(path)) await persistFavorites(favorites.filter((entry) => entry !== path))
+      const matchesDeleted = (entry: string) => entry === path || (isDir && entry.startsWith(path + '/'))
+      if (favorites.some(matchesDeleted)) {
+        await persistFavorites(favorites.filter((entry) => !matchesDeleted(entry)))
+      }
+      if (scopePath && matchesDeleted(scopePath)) {
+        scopePath = null
+        localStorage.removeItem(SCOPE_KEY)
+      }
       await refreshTree(true)
-      if (currentPath === path) clearCurrentFile()
+      if (currentPath && matchesDeleted(currentPath)) clearCurrentFile()
       flash(`Deleted ${path}`)
     } catch (err) {
       flash(`Could not delete ${path}: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -2231,12 +2341,19 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         <span>Add document</span>
       </button>
-    {:else}
-      <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
-        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        <span>Delete</span>
-      </button>
     {/if}
+    <button class="context-menu-item" role="menuitem" onclick={() => void requestRename()}>
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M13.8 3.8l2.4 2.4-8.8 8.8H5v-2.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+      <span>Rename</span>
+    </button>
+    <button class="context-menu-item" role="menuitem" onclick={() => void copyContextPath()}>
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M5 13H4.5A1.5 1.5 0 0 1 3 11.5v-7A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5V5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
+      <span>Copy path</span>
+    </button>
+    <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <span>Delete</span>
+    </button>
   </div>
 {/if}
 
@@ -2257,15 +2374,61 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       <svg viewBox="0 0 20 20" width="20" height="20"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </span>
     <div>
-      <h2 id="delete-title">Delete note?</h2>
+      <h2 id="delete-title">{pendingDelete?.isDir ? 'Delete folder?' : 'Delete note?'}</h2>
       <p>
-        <code>{pendingDelete}</code> will be permanently deleted from this vault. This cannot be undone.
+        {#if pendingDelete?.isDir}
+          <code>{pendingDelete.path}</code> and everything inside it will be permanently deleted from this vault. This cannot be undone.
+        {:else}
+          <code>{pendingDelete?.path}</code> will be permanently deleted from this vault. This cannot be undone.
+        {/if}
       </p>
     </div>
   </div>
   <div class="delete-actions">
     <button class="secondary" onclick={closeDeleteDialog}>Cancel</button>
     <button class="danger" onclick={() => void confirmDelete()}>Delete</button>
+  </div>
+</dialog>
+
+<dialog
+  bind:this={renameDialogEl}
+  class="delete-dialog newdoc-dialog"
+  aria-labelledby="rename-title"
+  oncancel={(event) => {
+    event.preventDefault()
+    closeRenameDialog()
+  }}
+  onclick={(event) => {
+    if (event.target === event.currentTarget) closeRenameDialog()
+  }}
+>
+  <div class="delete-head">
+    <span class="delete-icon newdoc-icon" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="20" height="20"><path d="M13.8 3.8l2.4 2.4-8.8 8.8H5v-2.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+    </span>
+    <div>
+      <h2 id="rename-title">{pendingRename?.isDir ? 'Rename folder' : 'Rename note'}</h2>
+      <p>Enter a new name for <code>{pendingRename?.path}</code>.</p>
+    </div>
+  </div>
+  <div class="newdoc-body">
+    <input
+      bind:this={renameInput}
+      bind:value={renameValue}
+      placeholder={pendingRename?.isDir ? 'folder-name' : 'note-name'}
+      spellcheck="false"
+      autocomplete="off"
+      onkeydown={(event) => {
+        if (event.key === 'Enter') void confirmRename()
+      }}
+    />
+  </div>
+  {#if renameError}<p class="newdoc-error">{renameError}</p>{/if}
+  <div class="delete-actions">
+    <button class="secondary" onclick={closeRenameDialog}>Cancel</button>
+    <button class="primary" disabled={renameBusy} onclick={() => void confirmRename()}>
+      {renameBusy ? 'Renaming…' : 'Rename'}
+    </button>
   </div>
 </dialog>
 

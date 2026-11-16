@@ -1133,6 +1133,81 @@ button {
   font-style: italic;
 }
 
+/* Collapsible <details> sections */
+.cm-burley-details-wrap {
+  margin: 0.45rem 0;
+}
+.cm-burley-details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--bg-soft, transparent));
+  padding: 0.45rem 0.75rem;
+}
+.cm-burley-details-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+  user-select: none;
+}
+.cm-burley-details-summary::-webkit-details-marker {
+  display: none;
+}
+.cm-burley-details-summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+.cm-burley-details[open] > .cm-burley-details-summary::before {
+  transform: rotate(90deg);
+}
+.cm-burley-details-label {
+  flex: 1;
+  min-width: 0;
+}
+.cm-burley-details-edit {
+  opacity: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.cm-burley-details:hover .cm-burley-details-edit,
+.cm-burley-details-edit:focus-visible {
+  opacity: 1;
+}
+.cm-burley-details-edit:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.cm-burley-details-body {
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.96em;
+  line-height: 1.6;
+}
+.cm-burley-details-body > :first-child {
+  margin-top: 0;
+}
+.cm-burley-details-body > :last-child {
+  margin-bottom: 0;
+}
+.cm-burley-details-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
 /* List markers: override the library's collapsed formatting marks. */
 .cm-burley-list-mark {
   font-size: 1rem !important;

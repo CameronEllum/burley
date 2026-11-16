@@ -34,6 +34,7 @@ import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
 import { frontmatterField } from './frontmatter'
+import { detailsField } from './details'
 import { luaCellsField, setLuaCellRunHandler } from './luaCells'
 import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
@@ -175,6 +176,7 @@ function previewExtensions(): Extension[] {
     collapseOnSelectionFacet.of(true),
     mouseSelectingField,
     frontmatterField(),
+    detailsField(),
     luaCellsField(),
     livePreviewPlugin,
     markdownStylePlugin,

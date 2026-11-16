@@ -174,6 +174,13 @@ export const api = {
     return (await res.json()) as FileData
   },
 
+  async rename(from: string, to: string): Promise<{ from: string; to: string }> {
+    return request<{ from: string; to: string }>('/api/rename', {
+      method: 'POST',
+      body: JSON.stringify({ from, to }),
+    })
+  },
+
   async deleteFile(path: string): Promise<{ deleted: string }> {
     return request<{ deleted: string }>(`/api/file?path=${encodeURIComponent(path)}`, {
       method: 'DELETE',

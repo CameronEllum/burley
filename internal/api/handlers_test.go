@@ -331,6 +331,38 @@ func TestDeleteEndpoint(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("delete traversal = %d %s", resp.StatusCode, data)
 	}
+	h.write(t, "folder/note.md", "# Note\n")
+	resp, data = h.do(t, "DELETE", "/api/file?path=folder", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"deleted":"folder"`) {
+		t.Fatalf("delete dir = %d %s", resp.StatusCode, data)
+	}
+}
+
+func TestRenameEndpoint(t *testing.T) {
+	h := newHarness(t)
+	h.write(t, "notes/a.md", "# A\n")
+	h.write(t, "notes/b.md", "# B\n")
+
+	resp, data := h.do(t, "POST", "/api/rename", map[string]string{"from": "notes/a.md", "to": "notes/c.md"})
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"to":"notes/c.md"`) {
+		t.Fatalf("rename file = %d %s", resp.StatusCode, data)
+	}
+	resp, _ = h.do(t, "GET", "/api/file?path=notes/c.md", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get renamed = %d, want 200", resp.StatusCode)
+	}
+	resp, data = h.do(t, "POST", "/api/rename", map[string]string{"from": "notes/c.md", "to": "notes/b.md"})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("rename conflict = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "POST", "/api/rename", map[string]string{"from": "notes", "to": "docs"})
+	if resp.StatusCode != 200 {
+		t.Fatalf("rename dir = %d %s", resp.StatusCode, data)
+	}
+	resp, _ = h.do(t, "GET", "/api/file?path=docs/c.md", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get inside renamed dir = %d, want 200", resp.StatusCode)
+	}
 }
 
 func TestPutBodyValidation(t *testing.T) {	h := newHarness(t)
