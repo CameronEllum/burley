@@ -10,6 +10,7 @@ import { StateField, type EditorState, type Extension, type Range } from '@codem
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { previewGeometryChanged, readOnlyFacet } from './cm'
+import { renderMarkdown } from './markdown'
 import { getActiveView } from './viewRef'
 
 type Alignment = 'left' | 'center' | 'right' | null
@@ -115,10 +116,15 @@ class TableWidget extends WidgetType {
     let activeRow = 0
     let activeCol = 0
 
+    const renderCellHtml = (raw: string): string => {
+      if (!raw) return ''
+      return renderMarkdown(raw).replace(/^<p>|<\/p>\s*$/g, '')
+    }
+
     const readRows = (): string[][] =>
       Array.from(table.querySelectorAll('tr')).map((row) =>
-        Array.from(row.querySelectorAll<HTMLElement>('[data-cell]')).map(
-          (cell) => cell.textContent?.trim() ?? '',
+        Array.from(row.querySelectorAll<HTMLElement>('[data-cell]')).map((cell) =>
+          (cell.dataset.editing === '1' ? cell.textContent : cell.dataset.raw ?? cell.textContent)?.trim() ?? '',
         ),
       )
 
@@ -203,12 +209,51 @@ class TableWidget extends WidgetType {
       textSpan.dataset.cell = ''
       textSpan.dataset.row = String(row)
       textSpan.dataset.col = String(column)
-      textSpan.textContent = text
+      textSpan.dataset.raw = text
+      textSpan.innerHTML = renderCellHtml(text)
       textSpan.contentEditable = this.readOnly ? 'false' : 'true'
       textSpan.spellcheck = false
+      textSpan.addEventListener('mousedown', (event) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null
+        if (!anchor) return
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          textSpan.focus()
+          return
+        }
+        // Let normal clicks open links instead of focusing contenteditable.
+        event.stopPropagation()
+      })
+      textSpan.addEventListener('click', (event) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null
+        if (!anchor) return
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          return
+        }
+        event.stopPropagation()
+        if (!anchor.target) {
+          anchor.target = '_blank'
+          anchor.rel = 'noopener noreferrer'
+        }
+      })
       textSpan.addEventListener('focus', () => {
         activeRow = row
         activeCol = column
+        if (this.readOnly) return
+        textSpan.dataset.editing = '1'
+        textSpan.textContent = textSpan.dataset.raw ?? text
+      })
+      textSpan.addEventListener('blur', () => {
+        if (this.readOnly || textSpan.dataset.editing !== '1') return
+        const nextRaw = textSpan.textContent?.trim() ?? ''
+        const prevRaw = textSpan.dataset.raw ?? ''
+        delete textSpan.dataset.editing
+        textSpan.dataset.raw = nextRaw
+        textSpan.innerHTML = renderCellHtml(nextRaw)
+        if (nextRaw !== prevRaw) {
+          commitCurrent()
+        }
       })
       textSpan.addEventListener('keydown', (event) => {
         if (this.readOnly) return

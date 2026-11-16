@@ -1207,6 +1207,12 @@ button {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+.cm-burley-table-cell a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
 
 /* List markers: override the library's collapsed formatting marks. */
 .cm-burley-list-mark {

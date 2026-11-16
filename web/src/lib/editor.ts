@@ -66,6 +66,7 @@ export interface EditorOptions {
 export interface EditorController {
   readonly view: EditorView
   setDoc(path: string, content: string): void
+  reloadDoc(path: string, content: string): void
   setReadOnly(readOnly: boolean): void
   setRawMode(raw: boolean): void
   setZenFocus(enabled: boolean): void
@@ -314,7 +315,11 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
 
   // Required by codemirror-live-markdown to avoid decoration churn while
   // dragging a text selection.
-  const onMouseDown = () => {
+  const onMouseDown = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null
+    if (target?.closest('.cm-burley-table-widget, .cm-burley-details-wrap, .cm-burley-block, .cm-burley-lua-cell')) {
+      return
+    }
     view.dispatch({ effects: setMouseSelecting.of(true) })
   }
   view.contentDOM.addEventListener('mousedown', onMouseDown)
@@ -375,6 +380,25 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       view.scrollDOM.scrollTop = 0
       view.scrollDOM.scrollLeft = 0
       refreshParsedPreview(view)
+    },
+
+    reloadDoc(path: string, content: string) {
+      currentPath = path
+      const scroller = view.scrollDOM
+      const top = scroller.scrollTop
+      const left = scroller.scrollLeft
+      const prevAnchor = Math.min(view.state.selection.main.head, content.length)
+      const next = EditorState.create({
+        doc: content,
+        selection: { anchor: prevAnchor },
+        extensions: extensionsFor(path),
+      })
+      view.setState(next)
+      refreshParsedPreview(view)
+      requestAnimationFrame(() => {
+        scroller.scrollTop = top
+        scroller.scrollLeft = left
+      })
     },
 
     setReadOnly(value: boolean) {

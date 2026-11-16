@@ -19,9 +19,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"burley/internal/agent"
 	"burley/internal/api"
 	"burley/internal/vault"
 )
@@ -73,6 +75,7 @@ func main() {
 	var (
 		root        = flag.String("root", ".", "folder containing the Markdown files to serve")
 		addr        = flag.String("addr", "127.0.0.1:8080", "address to listen on (host:port); the next free port is used if busy")
+		debugAgents = flag.Bool("debug-agents", false, "log agent CLI invocations, stderr, and exit status")
 		showVersion = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -110,6 +113,7 @@ func main() {
 		RipgrepAvailable: rgErr == nil,
 		Version:          version,
 		Logger:           logger,
+		DebugAgents:      *debugAgents,
 		OnQuit:           quit,
 	})
 
@@ -131,6 +135,7 @@ func main() {
 	} else {
 		logger.Printf("content search: built-in fallback (ripgrep not found)")
 	}
+	logger.Printf("agents: %s", formatAgentSummary(agent.Detect()))
 	if actualAddr != *addr {
 		logger.Printf("port %s is busy; switched to %s", *addr, actualAddr)
 	}
@@ -158,6 +163,18 @@ func main() {
 			logger.Printf("shutdown: %v", err)
 		}
 	}
+}
+
+func formatAgentSummary(infos []agent.Info) string {
+	parts := make([]string, 0, len(infos))
+	for _, info := range infos {
+		if info.Available {
+			parts = append(parts, info.ID+"="+info.Path)
+		} else {
+			parts = append(parts, info.ID+"=missing")
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func displayAddr(addr string) string {

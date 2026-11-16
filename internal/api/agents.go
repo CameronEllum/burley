@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -30,7 +31,64 @@ type chatRequest struct {
 }
 
 func (s *server) handleAgents(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agent.Detect()})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"agents":  agent.Detect(),
+		"pathEnv": os.Getenv("PATH"),
+	})
+}
+
+func (s *server) handleAgentTest(w http.ResponseWriter, r *http.Request) {
+	id := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("agent")))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "agent is required")
+		return
+	}
+	adapter, executable, ok := agent.Find(id)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"agent":     id,
+			"available": false,
+			"exitCode":  -1,
+			"error":     "not found in PATH",
+			"pathEnv":   os.Getenv("PATH"),
+		})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, executable, "--version")
+	cmd.Dir = s.opts.Root
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+	if s.opts.DebugAgents {
+		s.opts.Logger.Printf("agent test %s (%s --version): exit=%d dur=%s err=%q stderr=%q",
+			adapter.ID, executable, exitCode, time.Since(start).Round(time.Millisecond), errMsg, strings.TrimSpace(stderr.String()))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"agent":      adapter.ID,
+		"available":  true,
+		"executable": executable,
+		"exitCode":   exitCode,
+		"stdout":     strings.TrimSpace(stdout.String()),
+		"stderr":     strings.TrimSpace(stderr.String()),
+		"durationMs": time.Since(start).Milliseconds(),
+		"error":      errMsg,
+		"pathEnv":    os.Getenv("PATH"),
+	})
 }
 
 // handleAgentModels lists the models a CLI can serve and reports the pinned one.
@@ -104,14 +162,21 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	prompt := buildAgentPrompt(req, fileBefore, mode)
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	const chatTimeout = 10 * time.Minute
+	ctx, cancel := context.WithTimeout(r.Context(), chatTimeout)
 	defer cancel()
 
 	argsPrompt := prompt
 	if adapter.StdinPrompt {
 		argsPrompt = ""
 	}
-	cmd := exec.CommandContext(ctx, executable, adapter.Args(argsPrompt, pinnedModel)...)
+	rawArgs := adapter.Args(argsPrompt, pinnedModel)
+	safeArgs := adapter.Args("<prompt>", pinnedModel)
+	if adapter.StdinPrompt {
+		safeArgs = rawArgs
+	}
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, executable, rawArgs...)
 	cmd.Dir = s.opts.Root
 	if adapter.StdinPrompt {
 		cmd.Stdin = strings.NewReader(prompt)
@@ -143,7 +208,14 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-	send("meta", map[string]any{"agent": adapter.ID, "mode": mode, "path": req.Path, "model": pinnedModel})
+	send("meta", map[string]any{
+		"agent":      adapter.ID,
+		"mode":       mode,
+		"path":       req.Path,
+		"model":      pinnedModel,
+		"executable": executable,
+		"args":       safeArgs,
+	})
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
@@ -158,9 +230,35 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 	scanErr := scanner.Err()
 	waitErr := cmd.Wait()
+	durationMs := time.Since(start).Milliseconds()
+	stderrText := strings.TrimSpace(stderr.String())
+	exitCode := 0
+	if waitErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+	if s.opts.DebugAgents {
+		s.opts.Logger.Printf("agent chat %s (%s %v): exit=%d dur=%dms stderr=%q",
+			adapter.ID, executable, safeArgs, exitCode, durationMs, stderrText)
+	}
+	send("debug", map[string]any{
+		"command":    executable,
+		"args":       safeArgs,
+		"exitCode":   exitCode,
+		"durationMs": durationMs,
+		"stderr":     stderrText,
+	})
 
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		send("error", map[string]string{"message": fmt.Sprintf("agent timed out after %s", chatTimeout)})
+		return
+	}
 	if waitErr != nil && ctx.Err() == nil {
-		message := strings.TrimSpace(stderr.String())
+		message := stderrText
 		if message == "" {
 			message = waitErr.Error()
 		}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, streamAgentChat, type AgentInfo, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo } from './lib/api'
+  import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, stripMdExt } from './lib/paths'
@@ -44,6 +44,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   const SIDEBAR_KEY = 'burley:sidebar'
   const SIDEBAR_TAB_KEY = 'burley:sidebar-tab'
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
+  const TALK_WIDTH_KEY = 'burley:talk-width'
   const WIDE_MODE_KEY = 'burley:wide-mode'
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const RAW_MODE_KEY = 'burley:raw-mode'
@@ -51,6 +52,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   const ZEN_KEY = 'burley:zen'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
+  const TALK_MIN = 260
+  const TALK_MAX = 720
+  const TALK_DEFAULT = 350
 
   let tree = $state<Entry[]>([])
   let files = $state<FlatFile[]>([])
@@ -94,8 +98,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let shortcutsOpen = $state(false)
   let agents = $state<AgentInfo[]>([])
   let talkOpen = $state(false)
+  let talkWidth = $state(TALK_DEFAULT)
   let talkAgent = $state('')
   let talkMode = $state<'ask' | 'edit'>('ask')
+
+  interface TalkDebug {
+    command?: string
+    args?: string[]
+    exitCode?: number
+    durationMs?: number
+    stderr?: string
+    error?: string
+  }
 
   interface TalkMessage {
     role: 'user' | 'assistant'
@@ -107,8 +121,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     to?: number
     path?: string
     applied?: boolean
+    debug?: TalkDebug
   }
 
+  let allAgents = $state<AgentInfo[]>([])
+  let agentPathEnv = $state('')
+  let talkDiagOpen = $state(false)
+  let agentTests = $state<Record<string, AgentTestResult>>({})
+  let agentTesting = $state<Record<string, boolean>>({})
   let talkMessages = $state<TalkMessage[]>([])
   let talkPinnedSelection = $state('')
   let talkInput = $state('')
@@ -365,6 +385,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (Number.isFinite(storedWidth) && storedWidth >= SIDEBAR_MIN) {
       sidebarWidth = clampSidebarWidth(storedWidth)
     }
+    const storedTalkWidth = Number(localStorage.getItem(TALK_WIDTH_KEY))
+    if (Number.isFinite(storedTalkWidth) && storedTalkWidth >= TALK_MIN) {
+      talkWidth = clampTalkWidth(storedTalkWidth)
+    }
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
     rawMode = localStorage.getItem(RAW_MODE_KEY) === '1'
     zenMode = localStorage.getItem(ZEN_KEY) === '1'
@@ -420,6 +444,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
     window.addEventListener('resize', onResize)
     window.addEventListener('popstate', onPopState)
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') void checkExternalFileChange()
+    }
+    window.addEventListener('focus', onFocusOrVisible)
+    document.addEventListener('visibilitychange', onFocusOrVisible)
+    const filePollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') void checkExternalFileChange()
+    }, 3000)
     void initialLoad()
     void loadMeta()
 
@@ -428,6 +460,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       window.removeEventListener('keydown', paletteShortcut, true)
       window.removeEventListener('resize', onResize)
       window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('focus', onFocusOrVisible)
+      document.removeEventListener('visibilitychange', onFocusOrVisible)
+      clearInterval(filePollTimer)
       unwatchTheme()
       setLuaNotifyHandler(null)
       setFigureOpenHandler(null)
@@ -602,6 +637,38 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
   }
 
+  let fileCheckInFlight = false
+
+  async function checkExternalFileChange() {
+    const path = currentPath
+    if (!path || fileCheckInFlight || loadingFile || saveState === 'saving' || conflictOpen) return
+    fileCheckInFlight = true
+    try {
+      const remote = await api.file(path)
+      if (currentPath !== path || remote.hash === hash) return
+      if (!dirty) {
+        const decoded = decodeForEditor(remote.content)
+        format = decoded.format
+        content = decoded.text
+        hash = remote.hash
+        modTime = remote.modTime
+        dirty = false
+        saveState = 'saved'
+        saveError = ''
+        editor?.reloadDoc(remote.path, decoded.text)
+        flash(`Reloaded ${baseName(remote.path)} (changed on disk)`)
+      } else {
+        conflictData = remote
+        saveState = 'conflict'
+        conflictOpen = true
+      }
+    } catch {
+      /* ignore transient poll errors */
+    } finally {
+      fileCheckInFlight = false
+    }
+  }
+
   function handleEditorChange(next: string) {
     content = next
     dirty = true
@@ -767,6 +834,42 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
     setSidebarWidth(sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16))
+  }
+
+  function clampTalkWidth(width: number): number {
+    const max = Math.min(TALK_MAX, Math.max(TALK_MIN + 80, window.innerWidth * 0.6))
+    return Math.round(Math.min(max, Math.max(TALK_MIN, width)))
+  }
+
+  function setTalkWidth(width: number, persist = true) {
+    talkWidth = clampTalkWidth(width)
+    if (persist) localStorage.setItem(TALK_WIDTH_KEY, String(talkWidth))
+  }
+
+  function startTalkResize(event: PointerEvent) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = talkWidth
+    document.body.classList.add('resizing-talk')
+
+    const onMove = (moveEvent: PointerEvent) => {
+      talkWidth = clampTalkWidth(startWidth + (startX - moveEvent.clientX))
+    }
+    const onUp = () => {
+      document.body.classList.remove('resizing-talk')
+      localStorage.setItem(TALK_WIDTH_KEY, String(talkWidth))
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  function handleTalkResizerKeydown(event: KeyboardEvent) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    setTalkWidth(talkWidth + (event.key === 'ArrowLeft' ? 16 : -16))
   }
 
   function toggleWideMode() {
@@ -971,12 +1074,36 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (uploaded > 0) flash(`Uploaded ${uploaded} image${uploaded === 1 ? '' : 's'}`)
   }
 
-  async function loadAgents() {    try {
+  async function loadAgents() {
+    try {
       const response = await api.agents()
+      allAgents = response.agents
+      agentPathEnv = response.pathEnv ?? ''
       agents = response.agents.filter((agent) => agent.available)
       if (!talkAgent && agents.length > 0) talkAgent = agents[0].id
     } catch (err) {
       flash(`Could not detect CLI agents: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
+
+  async function runAgentTest(id: string) {
+    agentTesting = { ...agentTesting, [id]: true }
+    try {
+      const res = await api.testAgent(id)
+      agentTests = { ...agentTests, [id]: res }
+      if (res.pathEnv) agentPathEnv = res.pathEnv
+    } catch (err) {
+      agentTests = {
+        ...agentTests,
+        [id]: {
+          agent: id,
+          available: false,
+          exitCode: -1,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      }
+    } finally {
+      agentTesting = { ...agentTesting, [id]: false }
     }
   }
 
@@ -1069,18 +1196,50 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           history,
         },
         (event, data) => {
-          if (event === 'delta' && typeof data.text === 'string') {
+          if (event === 'meta') {
+            const messages = [...talkMessages]
+            messages[assistantIndex] = {
+              ...messages[assistantIndex],
+              debug: {
+                ...messages[assistantIndex].debug,
+                command: typeof data.executable === 'string' ? data.executable : undefined,
+                args: Array.isArray(data.args) ? data.args : undefined,
+              },
+            }
+            talkMessages = messages
+          } else if (event === 'delta' && typeof data.text === 'string') {
             const messages = [...talkMessages]
             messages[assistantIndex] = {
               ...messages[assistantIndex],
               content: messages[assistantIndex].content + data.text,
             }
             talkMessages = messages
+          } else if (event === 'debug') {
+            const messages = [...talkMessages]
+            messages[assistantIndex] = {
+              ...messages[assistantIndex],
+              debug: {
+                ...messages[assistantIndex].debug,
+                command: typeof data.command === 'string' ? data.command : messages[assistantIndex].debug?.command,
+                args: Array.isArray(data.args) ? data.args : messages[assistantIndex].debug?.args,
+                exitCode: typeof data.exitCode === 'number' ? data.exitCode : undefined,
+                durationMs: typeof data.durationMs === 'number' ? data.durationMs : undefined,
+                stderr: typeof data.stderr === 'string' ? data.stderr : undefined,
+              },
+            }
+            talkMessages = messages
           } else if (event === 'done' && data.file?.content) {
             editor?.replaceAll(data.file.content)
             flash('Agent updated the note')
           } else if (event === 'error') {
-            talkError = data.message ?? 'Agent failed'
+            const msg = data.message ?? 'Agent failed'
+            talkError = msg
+            const messages = [...talkMessages]
+            messages[assistantIndex] = {
+              ...messages[assistantIndex],
+              debug: { ...messages[assistantIndex].debug, error: msg },
+            }
+            talkMessages = messages
           }
         },
         talkAbort.signal,
@@ -1337,13 +1496,22 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (target?.closest('.context-menu')) return
     contextMenu = null
   }
+  function fullVaultPath(relPath: string): string {
+    if (!root) return relPath
+    const sep = root.includes('\\') ? '\\' : '/'
+    const base = root.replace(/[\\/]+$/, '')
+    const cleanRel = relPath.replace(/^\/+/, '').split('/').join(sep)
+    return cleanRel ? `${base}${sep}${cleanRel}` : base
+  }
+
   async function copyContextPath() {
     const path = contextMenu?.path
     contextMenu = null
     if (!path) return
+    const full = fullVaultPath(path)
     try {
-      await navigator.clipboard.writeText(path)
-      flash(`Copied ${path}`)
+      await navigator.clipboard.writeText(full)
+      flash(`Copied ${full}`)
     } catch {
       flash(`Could not copy path`, true)
     }
@@ -1425,7 +1593,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           window.history.replaceState({ file: currentPath }, '', buildAppUrl(currentPath, ''))
         }
       }
-      await refreshTree(true)
+      await refreshTree(false, true)
       flash(`Renamed to ${toPath}`)
     } catch (err) {
       renameError = err instanceof Error ? err.message : String(err)
@@ -1889,7 +2057,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     </div>
   </header>
 
-  <main class="workspace" class:collapsed={!sidebarOpen || zenMode} class:talk-open={talkOpen} class:zen={zenMode} style={`--sidebar-width: ${sidebarWidth}px`}>
+  <main class="workspace" class:collapsed={!sidebarOpen || zenMode} class:talk-open={talkOpen} class:zen={zenMode} style={`--sidebar-width: ${sidebarWidth}px; --talk-width: ${talkWidth}px`}>
     <aside class="sidebar" class:closed={!sidebarOpen || zenMode} aria-label="Sidebar">
       <div class="sidebar-tabs" role="tablist" aria-label="Sidebar panels">
         <button
@@ -2114,6 +2282,15 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
     {#if talkOpen}
       <aside class="talk-panel" aria-label="Talk">
+        <button
+          type="button"
+          class="talk-resizer"
+          aria-label="Resize Talk panel"
+          title="Drag to resize — double-click to reset"
+          onpointerdown={startTalkResize}
+          onkeydown={handleTalkResizerKeydown}
+          ondblclick={() => setTalkWidth(TALK_DEFAULT)}
+        ></button>
         <header class="talk-head">
           <span class="talk-title">Talk</span>
           {#if agents.length > 1}
@@ -2129,14 +2306,61 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             <span class="talk-model" title={`Pinned model: ${agentPins[talkAgent]}`}>{shortModel(agentPins[talkAgent])}</span>
           {/if}
           <span class="grow"></span>
+          <button
+            class="talk-icon"
+            class:on={talkDiagOpen}
+            title="Agent diagnostics"
+            aria-label="Agent diagnostics"
+            onclick={() => (talkDiagOpen = !talkDiagOpen)}
+          >
+            <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M12.7 3.8a4 4 0 0 0-5.1 5.1L3.8 12.7a1.5 1.5 0 0 0 2.1 2.1l3.8-3.8a4 4 0 0 0 5.1-5.1l-2.2 2.2-1.8-.4-.4-1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+          </button>
           <button class="talk-icon" title="New chat" aria-label="New chat" onclick={newTalkChat}>+</button>
           <button class="talk-icon" title="Close Talk" aria-label="Close Talk" onclick={() => (talkOpen = false)}>×</button>
         </header>
 
+        {#if talkDiagOpen || agents.length === 0}
+          <div class="talk-diag">
+            <div class="talk-diag-head">
+              <strong>Agent diagnostics</strong>
+              <button class="talk-insert" onclick={() => void loadAgents()}>Re-detect</button>
+            </div>
+            <ul class="talk-diag-list">
+              {#each allAgents as item (item.id)}
+                {@const testRes = agentTests[item.id]}
+                <li class="talk-diag-row">
+                  <div class="talk-diag-main">
+                    <span class="talk-diag-dot" class:ok={item.available}></span>
+                    <span class="talk-diag-name">{item.name}</span>
+                    <code class="talk-diag-path">{item.available ? item.path : 'not found'}</code>
+                    <button
+                      class="talk-insert"
+                      disabled={agentTesting[item.id]}
+                      onclick={() => void runAgentTest(item.id)}
+                    >
+                      {agentTesting[item.id] ? 'Testing…' : 'Test'}
+                    </button>
+                  </div>
+                  {#if testRes}
+                    <pre class="talk-diag-out">{`exit ${testRes.exitCode}${testRes.durationMs != null ? ` (${testRes.durationMs}ms)` : ''}${testRes.stdout ? `\nstdout: ${testRes.stdout}` : ''}${testRes.stderr ? `\nstderr: ${testRes.stderr}` : ''}${testRes.error && !testRes.stderr ? `\nerror: ${testRes.error}` : ''}`}</pre>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+            {#if agentPathEnv}
+              <details class="talk-diag-path-env">
+                <summary>Server PATH</summary>
+                <pre class="talk-diag-out">{agentPathEnv}</pre>
+              </details>
+            {/if}
+          </div>
+        {/if}
+
         {#if agents.length === 0}
           <p class="talk-empty">
             No supported CLI agents were found on this server. Install <code>claude</code>,
-            <code>codex</code>, <code>gemini</code>, or <code>opencode</code> and reload.
+            <code>codex</code>, <code>gemini</code>, <code>opencode</code>, <code>cursor-agent</code>,
+            <code>devin</code>, or <code>pi</code> (or check Server PATH above) and click Re-detect.
           </p>
         {:else}
           <div class="talk-modes">
@@ -2169,7 +2393,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
                     <blockquote class="talk-quote">{excerpt(message.selection)}</blockquote>
                   {/if}
                 </div>
-              {:else if message.content}
+              {:else if message.content || message.debug}
                 <div class="talk-message assistant">
                   {#if message.action === 'rewrite' && message.selection}
                     <div class="talk-diff">
@@ -2193,13 +2417,21 @@ import FigureLightbox from './components/FigureLightbox.svelte'
                       {/if}
                       <button class="talk-insert" onclick={() => copyTalkSuggestion(index)}>Copy</button>
                     </div>
-                  {:else}
+                  {:else if message.content}
                     <div class="talk-markdown">{@html renderMarkdown(message.content)}</div>
                     {#each extractFencedBlocks(message.content) as block, blockIndex (blockIndex)}
                       <button class="talk-insert" onclick={() => insertTalkBlock(block)}>
                         Insert {block.lang || 'code'} at cursor
                       </button>
                     {/each}
+                  {/if}
+                  {#if message.debug && (message.debug.stderr || message.debug.error || (message.debug.exitCode !== undefined && message.debug.exitCode !== 0) || message.debug.command)}
+                    <details class="talk-debug" open={!!message.debug.error || (message.debug.exitCode !== undefined && message.debug.exitCode !== 0)}>
+                      <summary>
+                        Debug{message.debug.exitCode !== undefined ? ` · exit ${message.debug.exitCode}` : ''}{message.debug.durationMs !== undefined ? ` · ${message.debug.durationMs}ms` : ''}
+                      </summary>
+                      <pre class="talk-diag-out">{`${message.debug.command ? `${message.debug.command} ${(message.debug.args ?? []).join(' ')}` : ''}${message.debug.stderr ? `\nstderr:\n${message.debug.stderr}` : ''}${message.debug.error && !message.debug.stderr ? `\nerror: ${message.debug.error}` : ''}`.trim()}</pre>
+                    </details>
                   {/if}
                 </div>
               {/if}
@@ -2889,18 +3121,52 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     grid-template-columns: minmax(0, 1fr);
   }
   .workspace.talk-open {
-    grid-template-columns: var(--sidebar-width, 302px) minmax(0, 1fr) 350px;
+    grid-template-columns: var(--sidebar-width, 302px) minmax(0, 1fr) var(--talk-width, 350px);
   }
   .workspace.collapsed.talk-open {
-    grid-template-columns: minmax(0, 1fr) 350px;
+    grid-template-columns: minmax(0, 1fr) var(--talk-width, 350px);
   }
 
   .talk-panel {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
     border-left: 1px solid var(--border-soft);
     background: var(--bg-sidebar);
+  }
+  .talk-resizer {
+    position: absolute;
+    top: 0;
+    left: -4px;
+    bottom: 0;
+    width: 9px;
+    z-index: 20;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+  }
+  .talk-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    background: transparent;
+    transition: background 0.12s ease;
+  }
+  .talk-resizer:hover::after,
+  .talk-resizer:focus-visible::after,
+  :global(body.resizing-talk) .talk-resizer::after {
+    background: var(--accent);
+  }
+  :global(body.resizing-talk) {
+    user-select: none;
+    cursor: col-resize;
   }
   .talk-head {
     display: flex;
@@ -3066,6 +3332,93 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   .talk-empty code {
     font-family: var(--font-mono);
     font-size: 0.94em;
+  }
+  .talk-icon.on {
+    color: var(--accent);
+    background: var(--active);
+  }
+  .talk-diag {
+    border-bottom: 1px solid var(--border-soft);
+    padding: 9px 10px;
+    background: var(--bg-app);
+    font-size: 11.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .talk-diag-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .talk-diag-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .talk-diag-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .talk-diag-main {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .talk-diag-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger-fg, #dc2626);
+    flex-shrink: 0;
+  }
+  .talk-diag-dot.ok {
+    background: #16a34a;
+  }
+  .talk-diag-name {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .talk-diag-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+  .talk-diag-out {
+    margin: 2px 0 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-sidebar);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 150px;
+    overflow: auto;
+  }
+  .talk-diag-path-env summary,
+  .talk-debug summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    user-select: none;
+  }
+  .talk-debug {
+    margin-top: 6px;
   }
   .talk-message {
     font-size: 12.5px;
@@ -3970,7 +4323,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       z-index: 40;
       box-shadow: 14px 0 40px -20px rgb(0 0 0 / 0.35);
     }
-    .sidebar-resizer {
+    .sidebar-resizer,
+    .talk-resizer {
       display: none;
     }
     .workspace.talk-open {

@@ -101,6 +101,18 @@ export interface AgentModelsResponse {
   error?: string
 }
 
+export interface AgentTestResult {
+  agent: string
+  available: boolean
+  executable?: string
+  exitCode: number
+  stdout?: string
+  stderr?: string
+  durationMs?: number
+  error?: string
+  pathEnv?: string
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -213,8 +225,14 @@ export const api = {
     })
   },
 
-  async agents(): Promise<{ agents: AgentInfo[] }> {
-    return request<{ agents: AgentInfo[] }>('/api/agents')
+  async agents(): Promise<{ agents: AgentInfo[]; pathEnv?: string }> {
+    return request<{ agents: AgentInfo[]; pathEnv?: string }>('/api/agents')
+  },
+
+  async testAgent(agent: string): Promise<AgentTestResult> {
+    return request<AgentTestResult>(`/api/agent/test?agent=${encodeURIComponent(agent)}`, {
+      method: 'POST',
+    })
   },
 
   async agentModels(agent: string, signal?: AbortSignal): Promise<AgentModelsResponse> {

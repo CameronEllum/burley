@@ -164,6 +164,39 @@ func (s *server) invalidateTree() {
 	s.tree.mu.Unlock()
 }
 
+// renameTreeEntries updates cached paths in place so renames do not trigger a
+// full vault rescan.
+func (s *server) renameTreeEntries(fromPath, toPath string) {
+	fromClean, err := vault.NormalizeRel(fromPath)
+	if err != nil {
+		return
+	}
+	toClean, err := vault.NormalizeRel(toPath)
+	if err != nil {
+		return
+	}
+
+	s.tree.mu.Lock()
+	defer s.tree.mu.Unlock()
+	if len(s.tree.files) == 0 {
+		return
+	}
+	prefix := fromClean + "/"
+	for i := range s.tree.files {
+		p := s.tree.files[i].Path
+		if p == fromClean {
+			s.tree.files[i].Path = toClean
+			if slash := strings.LastIndex(toClean, "/"); slash >= 0 {
+				s.tree.files[i].Name = toClean[slash+1:]
+			} else {
+				s.tree.files[i].Name = toClean
+			}
+		} else if strings.HasPrefix(p, prefix) {
+			s.tree.files[i].Path = toClean + p[len(fromClean):]
+		}
+	}
+}
+
 type treeNode struct {
 	entry    vault.Entry
 	children []*treeNode

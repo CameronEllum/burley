@@ -36,6 +36,8 @@ type Options struct {
 	ReleaseAPI string
 	// Logger defaults to the standard logger.
 	Logger *log.Logger
+	// DebugAgents logs CLI invocations, stderr, and exit codes.
+	DebugAgents bool
 	// OnQuit is invoked (after a short delay) when POST /api/quit is called.
 	// It is wired to the same graceful-shutdown path as SIGINT.
 	OnQuit func()
@@ -67,6 +69,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/recent", s.handleGetRecent)
 	mux.HandleFunc("PUT /api/recent", s.handlePutRecent)
 	mux.HandleFunc("GET /api/agents", s.handleAgents)
+	mux.HandleFunc("POST /api/agent/test", s.handleAgentTest)
 	mux.HandleFunc("GET /api/agent/models", s.handleAgentModels)
 	mux.HandleFunc("POST /api/agent/chat", s.handleAgentChat)
 	mux.HandleFunc("/api/quit", s.handleQuit)
@@ -235,7 +238,7 @@ func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
-	s.invalidateTree()
+	s.renameTreeEntries(body.From, body.To)
 	writeJSON(w, http.StatusOK, map[string]string{"from": body.From, "to": body.To})
 }
 

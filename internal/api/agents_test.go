@@ -29,8 +29,8 @@ func TestAgentsEndpoint(t *testing.T) {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Agents) != 4 {
-		t.Fatalf("agents = %+v, want 4 adapters", payload.Agents)
+	if len(payload.Agents) != 7 {
+		t.Fatalf("agents = %+v, want 7 adapters", payload.Agents)
 	}
 }
 

@@ -9,9 +9,10 @@ import (
 
 // Adapter describes a CLI that can answer prompts headlessly.
 type Adapter struct {
-	ID      string
-	Name    string
-	Command string
+	ID               string
+	Name             string
+	Command          string
+	FallbackCommands []string
 	// Args builds the non-interactive invocation. model is empty when the user
 	// follows the CLI's own default.
 	Args func(prompt, model string) []string
@@ -85,6 +86,43 @@ var adapters = []Adapter{
 		StdinPrompt: true,
 		ModelsArgs:  []string{"models"},
 	},
+	{
+		ID:               "cursor",
+		Name:             "Cursor",
+		Command:          "cursor-agent",
+		FallbackCommands: []string{"agent"},
+		Args: func(prompt, model string) []string {
+			args := []string{"-p", prompt}
+			if model != "" {
+				args = append(args, "--model", model)
+			}
+			return args
+		},
+	},
+	{
+		ID:      "devin",
+		Name:    "Devin",
+		Command: "devin",
+		Args: func(prompt, model string) []string {
+			args := []string{"-p", prompt}
+			if model != "" {
+				args = append(args, "--model", model)
+			}
+			return args
+		},
+	},
+	{
+		ID:      "pi",
+		Name:    "Pi",
+		Command: "pi",
+		Args: func(prompt, model string) []string {
+			args := []string{"-p", prompt}
+			if model != "" {
+				args = append(args, "--model", model)
+			}
+			return args
+		},
+	},
 }
 
 // Adapters returns the supported adapter table.
@@ -92,12 +130,24 @@ func Adapters() []Adapter {
 	return adapters
 }
 
+func lookPath(adapter Adapter) (string, bool) {
+	if path, err := exec.LookPath(adapter.Command); err == nil {
+		return path, true
+	}
+	for _, alt := range adapter.FallbackCommands {
+		if path, err := exec.LookPath(alt); err == nil {
+			return path, true
+		}
+	}
+	return "", false
+}
+
 // Detect probes PATH for each supported CLI.
 func Detect() []Info {
 	out := make([]Info, 0, len(adapters))
 	for _, adapter := range adapters {
 		info := Info{ID: adapter.ID, Name: adapter.Name}
-		if path, err := exec.LookPath(adapter.Command); err == nil {
+		if path, ok := lookPath(adapter); ok {
 			info.Path = path
 			info.Available = true
 		}
@@ -113,8 +163,8 @@ func Find(id string) (Adapter, string, bool) {
 		if adapter.ID != id {
 			continue
 		}
-		path, err := exec.LookPath(adapter.Command)
-		if err != nil {
+		path, ok := lookPath(adapter)
+		if !ok {
 			return Adapter{}, "", false
 		}
 		return adapter, path, true
