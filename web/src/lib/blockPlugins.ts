@@ -11,7 +11,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemir
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import hljs from 'highlight.js/lib/common'
-import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -129,6 +129,9 @@ class BlockWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    const outer = document.createElement('div')
+    outer.className = 'cm-burley-block-wrap'
+
     const root = document.createElement('div')
     root.className = 'cm-burley-block'
     root.dataset.lang = this.ctx.lang || 'code'
@@ -215,8 +218,9 @@ class BlockWidget extends WidgetType {
       body.appendChild(errorBox(err))
     }
     root.appendChild(body)
+    outer.appendChild(root)
 
-    return root
+    return outer
   }
 
   destroy(dom: HTMLElement): void {
@@ -294,7 +298,10 @@ export function blockPluginField(): Extension {
   return StateField.define<DecorationSet>({
     create: buildBlockDecorations,
     update(deco, tr) {
-      if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildBlockDecorations(tr.state)
+      if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr) || mouseSelectingEnded(tr)) {
+        return buildBlockDecorations(tr.state)
+      }
+      if (isMouseSelecting(tr.state)) return deco
       if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
         return buildBlockDecorations(tr.state)
       }

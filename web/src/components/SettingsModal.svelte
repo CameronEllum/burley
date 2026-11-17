@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type AgentInfo, type AgentModelsResponse, type AppSettings, type ReleaseInfo } from '../lib/api'
+  import { api, type AgentInfo, type AgentModelsResponse, type AgentTestResult, type AppSettings, type ReleaseInfo } from '../lib/api'
   import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
   import { bugReportUrl, featureRequestUrl } from '../lib/project'
 
@@ -8,6 +8,10 @@
     onchange,
     onclose,
     agents = [],
+    agentTests = {},
+    agentTesting = {},
+    ontest = (_id: string) => {},
+    onredetect = () => {},
     version = '',
     repo = 'https://github.com/CameronEllum/burley',
     release = null,
@@ -18,6 +22,10 @@
     onchange: (patch: Partial<AppSettings>) => void
     onclose: () => void
     agents?: AgentInfo[]
+    agentTests?: Record<string, AgentTestResult>
+    agentTesting?: Record<string, boolean>
+    ontest?: (id: string) => void
+    onredetect?: () => void
     version?: string
     repo?: string
     release?: ReleaseInfo | null
@@ -70,10 +78,22 @@
     }
   }
 
+  function isEnabled(id: string): boolean {
+    return !(settings.disabledAgents ?? []).includes(id)
+  }
+
+  function toggleAgent(id: string, enabled: boolean) {
+    const current = settings.disabledAgents ?? []
+    const next = enabled ? current.filter((item) => item !== id) : current.includes(id) ? current : [...current, id]
+    onchange({ disabledAgents: next })
+  }
+
   $effect(() => {
     if (tab !== 'agents') return
     for (const agent of agents) {
-      if (!modelsByAgent[agent.id] && !loadingModels[agent.id]) void loadModels(agent.id)
+      if (agent.available && isEnabled(agent.id) && !modelsByAgent[agent.id] && !loadingModels[agent.id]) {
+        void loadModels(agent.id)
+      }
     }
   })
 
@@ -83,6 +103,8 @@
     else delete next[agentID]
     onchange({ agentModels: next })
     manualModels = { ...manualModels, [agentID]: model }
+    const agent = agents.find((item) => item.id === agentID)
+    if (agent?.available && isEnabled(agentID)) ontest(agentID)
   }
 
   function modelOptions(agentID: string, models: string[]): string[] {
@@ -299,94 +321,174 @@
         </section>
       {:else if tab === 'agents'}
         <section class="settings-section">
-          <h3>Model per CLI agent</h3>
+          <div class="settings-head-row">
+            <h3>CLI agent harnesses</h3>
+            <button class="agent-refresh" onclick={onredetect}>Re-detect</button>
+          </div>
           <p class="settings-note">
-            The pin is used by Talk (<kbd>Alt T</kbd>) and the selection sparkle bar. Leave it on
-            <strong>Agent default</strong> to follow the CLI's own configuration.
+            Found, enabled agents appear first and are used by Talk (<kbd>Alt T</kbd>). Each enabled
+            harness is confirmed in the background by sending and receiving a test message. Leave
+            model on <strong>Agent default</strong> to follow the CLI's own configuration.
           </p>
 
           {#if agents.length === 0}
             <p class="settings-note">
-              No supported CLI agents were detected. Install <code>claude</code>, <code>codex</code>,
-              <code>gemini</code>, or <code>opencode</code> and reload.
+              No CLI agent harnesses are configured.
             </p>
           {:else}
             {#each agents as agent (agent.id)}
-              {@const info = modelsByAgent[agent.id]}
-              {@const pinned = settings.agentModels[agent.id] ?? ''}
-              <div class="agent-row">
-                <div class="agent-head">
+              {@const enabled = isEnabled(agent.id)}
+              {@const test = agentTests[agent.id]}
+              {@const testing = !!agentTesting[agent.id]}
+              {#if !agent.available}
+                <div class="agent-row shrunk not-found">
+                  <span class="agent-dot" aria-hidden="true"></span>
+                  <span class="agent-shrunk-name">{agent.name}</span>
+                  <code class="agent-path">{agent.id}</code>
+                  <span class="grow"></span>
+                  <span class="agent-badge missing">Not found</span>
+                </div>
+              {:else if !enabled}
+                <div class="agent-row shrunk disabled">
+                  <span class="agent-dot" aria-hidden="true"></span>
                   <strong>{agent.name}</strong>
                   <code class="agent-path" title={agent.path}>{agent.path || agent.id}</code>
                   <span class="grow"></span>
-                  <button
-                    class="agent-refresh"
-                    disabled={loadingModels[agent.id]}
-                    onclick={() => void loadModels(agent.id, true)}
-                  >
-                    {loadingModels[agent.id] ? 'Detecting…' : 'Refresh'}
-                  </button>
+                  <span class="agent-badge muted">Disabled</span>
+                  <input
+                    type="checkbox"
+                    class="switch"
+                    aria-label={`Enable ${agent.name}`}
+                    checked={false}
+                    onchange={(event) => toggleAgent(agent.id, event.currentTarget.checked)}
+                  />
                 </div>
-
-                {#if info && info.models.length > 0}
-                  <div class="agent-controls">
-                    <select
-                      class="setting-select agent-model-select"
-                      aria-label={`Model for ${agent.name}`}
-                      value={pinned}
-                      onchange={(event) => pinModel(agent.id, event.currentTarget.value)}
+              {:else}
+                {@const info = modelsByAgent[agent.id]}
+                {@const pinned = settings.agentModels[agent.id] ?? ''}
+                <div class="agent-row">
+                  <div class="agent-head">
+                    <span
+                      class="agent-dot"
+                      class:confirmed={!!test?.confirmed && !testing}
+                      class:testing={testing}
+                      class:failed={!!test && !test.confirmed && !testing}
+                      aria-hidden="true"
+                    ></span>
+                    <strong>{agent.name}</strong>
+                    <code class="agent-path" title={agent.path}>{agent.path || agent.id}</code>
+                    <span
+                      class="agent-badge"
+                      class:confirmed={!!test?.confirmed && !testing}
+                      class:testing={testing}
+                      class:failed={!!test && !test.confirmed && !testing}
                     >
-                      <option value="">Agent default</option>
-                      {#each modelGroups(modelOptions(agent.id, info.models)) as group (group.provider)}
-                        <optgroup label={group.provider || 'Models'}>
-                          {#each group.models as model (model)}
-                            <option value={model} title={model}>{modelLabel(model, group.provider)}</option>
-                          {/each}
-                        </optgroup>
-                      {/each}
-                    </select>
-                    {#if pinned}
-                      <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
-                    {/if}
-                    <small class="agent-count">{info.models.length} models</small>
-                  </div>
-                {:else}
-                  <div class="agent-controls">
-                    <input
-                      class="agent-model-input"
-                      placeholder="provider/model (blank for default)"
-                      aria-label={`Model ID for ${agent.name}`}
-                      value={manualModels[agent.id] ?? pinned}
-                      oninput={(event) =>
-                        (manualModels = { ...manualModels, [agent.id]: event.currentTarget.value })}
-                      onkeydown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          pinModel(agent.id, event.currentTarget.value)
-                        }
-                      }}
-                    />
+                      {#if testing}
+                        Confirming…
+                      {:else if test?.confirmed}
+                        Confirmed
+                      {:else if test}
+                        Unconfirmed
+                      {:else}
+                        Pending
+                      {/if}
+                    </span>
+                    <span class="grow"></span>
                     <button
-                      class="agent-pin"
-                      onclick={() => pinModel(agent.id, manualModels[agent.id] ?? pinned)}
+                      class="agent-refresh"
+                      disabled={testing}
+                      onclick={() => ontest(agent.id)}
                     >
-                      Pin
+                      {testing ? 'Testing…' : 'Test'}
                     </button>
-                    {#if pinned}
-                      <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
-                    {/if}
+                    <button
+                      class="agent-refresh"
+                      disabled={loadingModels[agent.id]}
+                      onclick={() => void loadModels(agent.id, true)}
+                    >
+                      {loadingModels[agent.id] ? 'Detecting…' : 'Refresh'}
+                    </button>
+                    <input
+                      type="checkbox"
+                      class="switch"
+                      aria-label={`Enable ${agent.name}`}
+                      checked={true}
+                      onchange={(event) => toggleAgent(agent.id, event.currentTarget.checked)}
+                    />
                   </div>
-                  {#if loadingModels[agent.id]}
-                    <small class="agent-count">Detecting models…</small>
-                  {:else if info?.error}
-                    <small class="agent-count error">{info.error}</small>
-                  {:else if info?.unsupported}
-                    <small class="agent-count">
-                      This CLI cannot list models; type a model ID instead.
+
+                  {#if info && info.models.length > 0}
+                    <div class="agent-controls">
+                      <select
+                        class="setting-select agent-model-select"
+                        aria-label={`Model for ${agent.name}`}
+                        value={pinned}
+                        onchange={(event) => pinModel(agent.id, event.currentTarget.value)}
+                      >
+                        <option value="">Agent default</option>
+                        {#each modelGroups(modelOptions(agent.id, info.models)) as group (group.provider)}
+                          <optgroup label={group.provider || 'Models'}>
+                            {#each group.models as model (model)}
+                              <option value={model} title={model}>{modelLabel(model, group.provider)}</option>
+                            {/each}
+                          </optgroup>
+                        {/each}
+                      </select>
+                      {#if pinned}
+                        <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
+                      {/if}
+                      <small class="agent-count">{info.models.length} models</small>
+                    </div>
+                  {:else}
+                    <div class="agent-controls">
+                      <input
+                        class="agent-model-input"
+                        placeholder="provider/model (blank for default)"
+                        aria-label={`Model ID for ${agent.name}`}
+                        value={manualModels[agent.id] ?? pinned}
+                        oninput={(event) =>
+                          (manualModels = { ...manualModels, [agent.id]: event.currentTarget.value })}
+                        onkeydown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            pinModel(agent.id, event.currentTarget.value)
+                          }
+                        }}
+                      />
+                      <button
+                        class="agent-pin"
+                        onclick={() => pinModel(agent.id, manualModels[agent.id] ?? pinned)}
+                      >
+                        Pin
+                      </button>
+                      {#if pinned}
+                        <button class="agent-clear" onclick={() => pinModel(agent.id, '')}>Clear</button>
+                      {/if}
+                    </div>
+                    {#if loadingModels[agent.id]}
+                      <small class="agent-count">Detecting models…</small>
+                    {:else if info?.error}
+                      <small class="agent-count error">{info.error}</small>
+                    {:else if info?.unsupported}
+                      <small class="agent-count">
+                        This CLI cannot list models; type a model ID instead.
+                      </small>
+                    {/if}
+                  {/if}
+
+                  {#if testing}
+                    <small class="agent-status">Confirming in the background (sending test message)…</small>
+                  {:else if test?.confirmed}
+                    <small class="agent-status ok">
+                      Confirmed ({test.durationMs ?? 0}ms) — sent test message, received “{(test.reply ?? '').replace(/\s+/g, ' ').slice(0, 80)}”
+                    </small>
+                  {:else if test && !test.confirmed}
+                    <small class="agent-status error">
+                      Confirmation failed: {test.error || test.stderr || test.stdout || `exit ${test.exitCode}`}
                     </small>
                   {/if}
-                {/if}
-              </div>
+                </div>
+              {/if}
             {/each}
           {/if}
 
@@ -967,5 +1069,101 @@
   }
   .agent-footnote {
     margin-top: 12px;
+  }
+  .settings-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0 8px;
+  }
+  .settings-head-row h3 {
+    margin: 0;
+  }
+  .agent-row.shrunk {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    min-height: 0;
+  }
+  .agent-row.not-found {
+    opacity: 0.65;
+    padding: 4px 10px;
+  }
+  .agent-row.disabled {
+    opacity: 0.85;
+  }
+  .agent-shrunk-name {
+    font-size: 12px;
+    font-weight: 550;
+  }
+  .agent-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border-strong);
+    flex: 0 0 auto;
+  }
+  .agent-dot.confirmed {
+    background: #2f9e44;
+  }
+  .agent-dot.testing {
+    background: var(--accent);
+    animation: agent-pulse 1.1s ease-in-out infinite;
+  }
+  .agent-dot.failed {
+    background: var(--danger-fg);
+  }
+  @keyframes agent-pulse {
+    0%, 100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  .agent-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    color: var(--text-muted);
+    background: var(--panel);
+    white-space: nowrap;
+  }
+  .agent-badge.confirmed {
+    border-color: var(--ok-border);
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+  }
+  .agent-badge.testing {
+    border-color: var(--accent);
+    background: var(--active);
+    color: var(--accent);
+  }
+  .agent-badge.failed {
+    border-color: var(--danger-fg);
+    color: var(--danger-fg);
+  }
+  .agent-badge.missing,
+  .agent-badge.muted {
+    background: transparent;
+  }
+  .agent-status {
+    display: block;
+    margin-top: 7px;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .agent-status.ok {
+    color: var(--ok-fg);
+  }
+  .agent-status.error {
+    color: var(--danger-fg);
   }
 </style>

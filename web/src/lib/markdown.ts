@@ -2,6 +2,7 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import katex from 'katex'
+import { isValidInlineMath } from './math'
 
 const blockMath = {
   name: 'blockMath',
@@ -31,8 +32,9 @@ const inlineMath = {
     return src.indexOf('$')
   },
   tokenizer(src: string) {
-    const match = /^\$\$([^$\n]+?)\$\$|^\$([^$\n]+?)\$/.exec(src)
+    const match = /^\$\$([^$\n]+?)\$\$(?!\$)|^\$(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)/.exec(src)
     if (!match) return undefined
+    if (!match[1] && !isValidInlineMath(match[2] ?? '')) return undefined
     return {
       type: 'inlineMath',
       raw: match[0],

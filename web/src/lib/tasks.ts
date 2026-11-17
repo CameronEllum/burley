@@ -8,7 +8,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { getActiveView } from './viewRef'
 
 class CheckboxWidget extends WidgetType {
@@ -72,7 +72,10 @@ function buildTaskDecorations(state: EditorState): DecorationSet {
 export const taskCheckboxField: Extension = StateField.define<DecorationSet>({
   create: buildTaskDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildTaskDecorations(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr) || mouseSelectingEnded(tr)) {
+      return buildTaskDecorations(tr.state)
+    }
+    if (isMouseSelecting(tr.state)) return deco
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildTaskDecorations(tr.state)
     }

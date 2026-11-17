@@ -48,44 +48,96 @@ func (s *server) handleAgentTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"agent":     id,
 			"available": false,
+			"confirmed": false,
 			"exitCode":  -1,
 			"error":     "not found in PATH",
 			"pathEnv":   os.Getenv("PATH"),
 		})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+
+	pinnedModel := strings.TrimSpace(r.URL.Query().Get("model"))
+	if pinnedModel == "" {
+		if settings, _, readErr := s.vault.ReadSettings(r.Context()); readErr == nil {
+			pinnedModel = settings.AgentModels[adapter.ID]
+		}
+	}
+
+	const testPrompt = "Reply with only the word OK."
+	const testTimeout = 45 * time.Second
+	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
 	defer cancel()
+
+	argsPrompt := testPrompt
+	if adapter.StdinPrompt {
+		argsPrompt = ""
+	}
+	rawArgs := adapter.Args(argsPrompt, pinnedModel)
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, executable, "--version")
+	cmd := exec.CommandContext(ctx, executable, rawArgs...)
 	cmd.Dir = s.opts.Root
+	if adapter.StdinPrompt {
+		cmd.Stdin = strings.NewReader(testPrompt)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+
+	stdoutRaw := stdout.String()
+	var replyParts []string
+	scanner := bufio.NewScanner(strings.NewReader(stdoutRaw))
+	scanner.Buffer(make([]byte, 64*1024), 4<<20)
+	for scanner.Scan() {
+		text := strings.TrimSpace(agent.StripANSI(agent.ExtractText(adapter.ID, scanner.Text())))
+		if text != "" {
+			replyParts = append(replyParts, text)
+		}
+	}
+	reply := strings.TrimSpace(strings.Join(replyParts, "\n"))
+	stdoutClean := strings.TrimSpace(agent.StripANSI(stdoutRaw))
+	stderrClean := strings.TrimSpace(agent.StripANSI(stderr.String()))
+
+	confirmed := err == nil && reply != ""
 	exitCode := 0
 	errMsg := ""
 	if err != nil {
-		errMsg = err.Error()
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
 		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			errMsg = fmt.Sprintf("agent timed out after %s", testTimeout)
+		} else if stderrClean != "" {
+			errMsg = stderrClean
+		} else if stdoutClean != "" {
+			errMsg = stdoutClean
+		} else {
+			errMsg = err.Error()
+		}
+	} else if reply == "" {
+		errMsg = "agent exited without returning a message"
 	}
+
+	durationMs := time.Since(start).Milliseconds()
 	if s.opts.DebugAgents {
-		s.opts.Logger.Printf("agent test %s (%s --version): exit=%d dur=%s err=%q stderr=%q",
-			adapter.ID, executable, exitCode, time.Since(start).Round(time.Millisecond), errMsg, strings.TrimSpace(stderr.String()))
+		s.opts.Logger.Printf("agent test %s (%s): confirmed=%v exit=%d dur=%dms err=%q reply=%q stderr=%q",
+			adapter.ID, executable, confirmed, exitCode, durationMs, errMsg, reply, stderrClean)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent":      adapter.ID,
 		"available":  true,
+		"confirmed":  confirmed,
 		"executable": executable,
+		"model":      pinnedModel,
+		"prompt":     testPrompt,
+		"reply":      reply,
 		"exitCode":   exitCode,
-		"stdout":     strings.TrimSpace(stdout.String()),
-		"stderr":     strings.TrimSpace(stderr.String()),
-		"durationMs": time.Since(start).Milliseconds(),
+		"stdout":     stdoutClean,
+		"stderr":     stderrClean,
+		"durationMs": durationMs,
 		"error":      errMsg,
 		"pathEnv":    os.Getenv("PATH"),
 	})

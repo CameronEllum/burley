@@ -7,6 +7,7 @@
  */
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
+import { isMouseSelecting, mouseSelectingEnded, selectionTouches } from './cm'
 import { getActiveView } from './viewRef'
 
 export interface FrontmatterRow {
@@ -223,6 +224,7 @@ class FrontmatterWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    const wrap = el('div', 'cm-burley-frontmatter-wrap')
     const card = el('div', 'cm-burley-frontmatter')
     const head = el('div', 'cm-burley-frontmatter-head')
     head.appendChild(el('span', 'cm-burley-frontmatter-title', 'Properties'))
@@ -253,8 +255,9 @@ class FrontmatterWidget extends WidgetType {
       body.appendChild(raw)
     }
     card.appendChild(body)
+    wrap.appendChild(card)
 
-    return card
+    return wrap
   }
 
   ignoreEvent(): boolean {
@@ -267,7 +270,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   if (!block) return Decoration.none
 
   const decos: Range<Decoration>[] = []
-  const editing = state.selection.ranges.some((r) => r.from <= block.to && r.to >= block.bodyFrom)
+  const editing = selectionTouches(state, block.bodyFrom, block.to)
 
   if (editing) {
     for (let pos = block.from; pos <= block.to; ) {
@@ -288,7 +291,9 @@ export function frontmatterField(): Extension {
   return StateField.define<DecorationSet>({
     create: buildDecorations,
     update(deco, tr) {
-      if (tr.docChanged || tr.reconfigured || tr.selection) return buildDecorations(tr.state)
+      if (tr.docChanged || tr.reconfigured || mouseSelectingEnded(tr)) return buildDecorations(tr.state)
+      if (isMouseSelecting(tr.state)) return deco
+      if (tr.selection) return buildDecorations(tr.state)
       return deco
     },
     provide: (field) => EditorView.decorations.from(field),

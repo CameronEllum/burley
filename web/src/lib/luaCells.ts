@@ -180,6 +180,7 @@ class OutputWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    const outer = el('div', 'cm-burley-lua-output-wrap')
     const wrap = el('div', 'cm-burley-lua-output')
     const head = el('div', 'cm-burley-lua-output-head')
     head.appendChild(el('span', 'cm-burley-lua-output-title', this.output.error ? 'Lua error' : 'Lua output'))
@@ -209,7 +210,8 @@ class OutputWidget extends WidgetType {
       }
     }
     wrap.appendChild(body)
-    return wrap
+    outer.appendChild(wrap)
+    return outer
   }
 
   ignoreEvent(): boolean {

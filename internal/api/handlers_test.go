@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -365,6 +366,55 @@ func TestRenameEndpoint(t *testing.T) {
 	}
 }
 
+func TestDownloadAndFileAssets(t *testing.T) {
+	h := newHarness(t)
+	h.write(t, "notes/plain.md", "# Plain\n\nNo assets here.\n")
+	h.write(t, "notes/report.md", "# Report\n\n![Chart](report_assets/chart.png)\n")
+	h.write(t, "notes/report_assets/chart.png", "png-bytes")
+
+	resp, data := h.do(t, "GET", "/api/file/assets?path=notes/plain.md", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"hasAssets":false`) {
+		t.Fatalf("plain assets = %d %s", resp.StatusCode, data)
+	}
+	resp, data = h.do(t, "GET", "/api/file/assets?path=notes/report.md", nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(data), `"hasAssets":true`) || !strings.Contains(string(data), "notes/report_assets/chart.png") {
+		t.Fatalf("report assets = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "GET", "/api/download?path=notes/plain.md", nil)
+	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Disposition"), "plain.md") || string(data) != "# Plain\n\nNo assets here.\n" {
+		t.Fatalf("download plain = %d hdr=%q body=%q", resp.StatusCode, resp.Header.Get("Content-Disposition"), data)
+	}
+
+	resp, data = h.do(t, "GET", "/api/download?path=notes/report.md&assets=1", nil)
+	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Disposition"), "report.zip") {
+		t.Fatalf("download zip = %d hdr=%q", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	names := make(map[string]string)
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[f.Name] = string(b)
+	}
+	if names["report.md"] != "# Report\n\n![Chart](report_assets/chart.png)\n" {
+		t.Fatalf("zip report.md = %q", names["report.md"])
+	}
+	if names["report_assets/chart.png"] != "png-bytes" {
+		t.Fatalf("zip chart.png = %q (all=%v)", names["report_assets/chart.png"], names)
+	}
+}
+
 func TestPutBodyValidation(t *testing.T) {	h := newHarness(t)
 	resp, data := h.do(t, "PUT", "/api/file", map[string]any{"content": "x"})
 	if resp.StatusCode != http.StatusBadRequest {
@@ -495,7 +545,11 @@ func TestSettingsAPI(t *testing.T) {	h := newHarness(t)
 		t.Fatalf("default settings = %d %s", resp.StatusCode, data)
 	}
 
-	resp, data = h.do(t, "PUT", "/api/settings", map[string]any{"theme": "dark", "wideMode": true})
+	resp, data = h.do(t, "PUT", "/api/settings", map[string]any{
+		"theme":          "dark",
+		"wideMode":       true,
+		"disabledAgents": []string{"codex", "gemini", "codex"},
+	})
 	if resp.StatusCode != 200 {
 		t.Fatalf("put settings = %d %s", resp.StatusCode, data)
 	}
@@ -509,6 +563,9 @@ func TestSettingsAPI(t *testing.T) {	h := newHarness(t)
 	if !payload.Exists || payload.Settings.Theme != "dark" || !payload.Settings.WideMode {
 		t.Fatalf("saved settings = %+v exists=%v", payload.Settings, payload.Exists)
 	}
+	if len(payload.Settings.DisabledAgents) != 2 || payload.Settings.DisabledAgents[0] != "codex" || payload.Settings.DisabledAgents[1] != "gemini" {
+		t.Fatalf("disabledAgents = %v", payload.Settings.DisabledAgents)
+	}
 
 	resp, data = h.do(t, "GET", "/api/settings", nil)
 	if resp.StatusCode != 200 {
@@ -517,7 +574,7 @@ func TestSettingsAPI(t *testing.T) {	h := newHarness(t)
 	if err := json.Unmarshal(data, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Settings.Theme != "dark" || !payload.Settings.WideMode {
+	if payload.Settings.Theme != "dark" || !payload.Settings.WideMode || len(payload.Settings.DisabledAgents) != 2 {
 		t.Fatalf("round-trip settings = %+v", payload.Settings)
 	}
 
@@ -525,7 +582,7 @@ func TestSettingsAPI(t *testing.T) {	h := newHarness(t)
 	if err != nil {
 		t.Fatalf("settings.yaml: %v", err)
 	}
-	if !strings.Contains(string(raw), "wide_mode: true") {
+	if !strings.Contains(string(raw), "wide_mode: true") || !strings.Contains(string(raw), "agent_disabled_codex: true") {
 		t.Fatalf("unexpected settings yaml:\n%s", raw)
 	}
 
@@ -604,5 +661,30 @@ func TestFavoritesAPI(t *testing.T) {	h := newHarness(t)
 	resp, data = h.do(t, "GET", "/api/tree", nil)
 	if resp.StatusCode != 200 || strings.Contains(string(data), ".burley") {
 		t.Fatalf("tree leaked .burley = %d %s", resp.StatusCode, data)
+	}
+}
+
+func TestAgentTestEndpoint(t *testing.T) {
+	h := newHarness(t)
+
+	resp, data := h.do(t, "POST", "/api/agent/test", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing agent = %d %s", resp.StatusCode, data)
+	}
+
+	resp, data = h.do(t, "POST", "/api/agent/test?agent=nonexistent", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("nonexistent agent = %d %s", resp.StatusCode, data)
+	}
+	var payload struct {
+		Agent     string `json:"agent"`
+		Available bool   `json:"available"`
+		Confirmed bool   `json:"confirmed"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Agent != "nonexistent" || payload.Available || payload.Confirmed {
+		t.Fatalf("unexpected payload = %+v (%s)", payload, data)
 	}
 }

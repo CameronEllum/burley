@@ -7,7 +7,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -74,9 +74,13 @@ class ImageWidget extends WidgetType {
     img.decoding = 'async'
     img.draggable = false
     if (this.info.width) img.style.maxWidth = `${this.info.width}px`
+    img.addEventListener('load', () => {
+      getActiveView()?.requestMeasure()
+    })
     img.addEventListener('error', () => {
       wrap.classList.add('cm-burley-image-error')
       wrap.textContent = `⚠ image not found: ${this.info.alt || this.info.url}`
+      getActiveView()?.requestMeasure()
     })
     wrap.appendChild(img)
     if (this.info.alt) {
@@ -152,7 +156,10 @@ function buildImageDecorations(state: EditorState): DecorationSet {
 export const imagePreviewField: StateField<DecorationSet> = StateField.define<DecorationSet>({
   create: buildImageDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildImageDecorations(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr) || mouseSelectingEnded(tr)) {
+      return buildImageDecorations(tr.state)
+    }
+    if (isMouseSelecting(tr.state)) return deco
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildImageDecorations(tr.state)
     }

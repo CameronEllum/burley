@@ -42,13 +42,18 @@ func Models(ctx context.Context, id, dir string) ([]string, error) {
 	return ParseModelList(string(out)), nil
 }
 
+// StripANSI removes terminal escape sequences from CLI output.
+func StripANSI(s string) string {
+	return ansiEscape.ReplaceAllString(s, "")
+}
+
 // ParseModelList keeps one model ID per line, strips ANSI codes and noise, and
 // sorts the result so providers stay grouped.
 func ParseModelList(raw string) []string {
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(ansiEscape.ReplaceAllString(strings.TrimSuffix(line, "\r"), ""))
+		line = strings.TrimSpace(StripANSI(strings.TrimSuffix(line, "\r")))
 		if line == "" || !strings.Contains(line, "/") || strings.ContainsAny(line, " \t") {
 			continue
 		}

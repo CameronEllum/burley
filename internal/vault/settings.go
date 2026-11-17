@@ -24,20 +24,22 @@ type Settings struct {
 	SpellCheck    bool   `json:"spellCheck"`
 	// AgentModels pins a CLI model per agent ID (e.g. opencode). An empty or
 	// missing entry means "use the agent's own default".
-	AgentModels map[string]string `json:"agentModels"`
+	AgentModels    map[string]string `json:"agentModels"`
+	DisabledAgents []string          `json:"disabledAgents"`
 }
 
 func defaultSettings() Settings {
 	return Settings{
-		Theme:         "system",
-		LightTheme:    "parchment",
-		DarkTheme:     "ember",
-		WideMode:      false,
-		MarkdownStyle: "default",
-		AutoSave:      true,
-		CtrlClickLink: "toggle",
-		SpellCheck:    false,
-		AgentModels:   map[string]string{},
+		Theme:          "system",
+		LightTheme:     "parchment",
+		DarkTheme:      "ember",
+		WideMode:       false,
+		MarkdownStyle:  "default",
+		AutoSave:       true,
+		CtrlClickLink:  "toggle",
+		SpellCheck:     false,
+		AgentModels:    map[string]string{},
+		DisabledAgents: []string{},
 	}
 }
 
@@ -128,16 +130,39 @@ func normalizeSettings(settings Settings) (Settings, error) {
 	}
 
 	return Settings{
-		Theme:         theme,
-		LightTheme:    lightTheme,
-		DarkTheme:     darkTheme,
-		WideMode:      settings.WideMode,
-		MarkdownStyle: style,
-		AutoSave:      settings.AutoSave,
-		CtrlClickLink: ctrlClick,
-		SpellCheck:    settings.SpellCheck,
-		AgentModels:   normalizeAgentModels(settings.AgentModels),
+		Theme:          theme,
+		LightTheme:     lightTheme,
+		DarkTheme:      darkTheme,
+		WideMode:       settings.WideMode,
+		MarkdownStyle:  style,
+		AutoSave:       settings.AutoSave,
+		CtrlClickLink:  ctrlClick,
+		SpellCheck:     settings.SpellCheck,
+		AgentModels:    normalizeAgentModels(settings.AgentModels),
+		DisabledAgents: normalizeDisabledAgents(settings.DisabledAgents),
 	}, nil
+}
+
+// normalizeDisabledAgents keeps only valid, unique, sorted agent IDs.
+func normalizeDisabledAgents(ids []string) []string {
+	if len(ids) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(ids))
+	clean := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" || len(id) > 40 || !isAgentID(id) {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	sort.Strings(clean)
+	return clean
 }
 
 // normalizeAgentModels keeps only well-formed agent IDs and model references so
@@ -211,6 +236,14 @@ func settingsYAML(settings Settings) string {
 			b.WriteString(yamlQuote(settings.AgentModels[id]))
 		}
 	}
+	if len(settings.DisabledAgents) > 0 {
+		b.WriteString("\n# Disabled CLI agents.")
+		for _, id := range settings.DisabledAgents {
+			b.WriteString("\nagent_disabled_")
+			b.WriteString(id)
+			b.WriteString(": true")
+		}
+	}
 	b.WriteByte('\n')
 	return b.String()
 }
@@ -232,6 +265,13 @@ func parseSettingsYAML(content string) Settings {
 			id := strings.TrimSpace(strings.TrimPrefix(lowerKey, "agent_model_"))
 			for name, model := range normalizeAgentModels(map[string]string{id: parsed}) {
 				settings.AgentModels[name] = model
+			}
+			continue
+		}
+		if strings.HasPrefix(lowerKey, "agent_disabled_") {
+			id := strings.TrimSpace(strings.TrimPrefix(lowerKey, "agent_disabled_"))
+			if parsedBool, ok := parseYAMLBool(parsed); ok && parsedBool {
+				settings.DisabledAgents = append(settings.DisabledAgents, id)
 			}
 			continue
 		}
@@ -276,6 +316,7 @@ func parseSettingsYAML(content string) Settings {
 			}
 		}
 	}
+	settings.DisabledAgents = normalizeDisabledAgents(settings.DisabledAgents)
 	return settings
 }
 

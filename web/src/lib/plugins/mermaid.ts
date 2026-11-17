@@ -6,6 +6,7 @@
  */
 import { errorBox, registerBlockRenderer, type BlockRenderer } from '../blockPlugins'
 import { openFigureAt } from '../figures'
+import { getActiveView } from '../viewRef'
 
 type MermaidApi = typeof import('mermaid').default
 
@@ -72,9 +73,11 @@ const mermaidRenderer: BlockRenderer = {
           element.style.height = 'auto'
           element.removeAttribute('height')
         }
+        getActiveView()?.requestMeasure()
       } catch (err) {
         if (disposed || current !== run) return
         root.replaceChildren(errorBox(err))
+        getActiveView()?.requestMeasure()
       }
     }
     void draw()

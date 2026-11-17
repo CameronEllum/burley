@@ -8,7 +8,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { readOnlyFacet, selectionTouches } from './cm'
+import { isMouseSelecting, mouseSelectingEnded, readOnlyFacet, selectionTouches } from './cm'
 import { renderMarkdown } from './markdown'
 
 interface DetailsMatch {
@@ -136,6 +136,7 @@ class DetailsWidget extends WidgetType {
     const details = document.createElement('details')
     details.className = 'cm-burley-details'
     if (this.openByDefault) details.open = true
+    details.addEventListener('toggle', () => view.requestMeasure())
 
     const summaryEl = document.createElement('summary')
     summaryEl.className = 'cm-burley-details-summary'
@@ -197,9 +198,14 @@ export function detailsField(): Extension {
     update(deco, tr) {
       if (
         tr.docChanged ||
-        tr.selection ||
+        tr.reconfigured ||
+        mouseSelectingEnded(tr) ||
         tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)
       ) {
+        return buildDetailsDecorations(tr.state)
+      }
+      if (isMouseSelecting(tr.state)) return deco
+      if (tr.selection) {
         return buildDetailsDecorations(tr.state)
       }
       return deco

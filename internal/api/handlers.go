@@ -3,6 +3,8 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -56,6 +58,8 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/release", s.handleRelease)
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("GET /api/file", s.handleGetFile)
+	mux.HandleFunc("GET /api/file/assets", s.handleFileAssets)
+	mux.HandleFunc("GET /api/download", s.handleDownloadFile)
 	mux.HandleFunc("PUT /api/file", s.handlePutFile)
 	mux.HandleFunc("POST /api/rename", s.handleRename)
 	mux.HandleFunc("DELETE /api/file", s.handleDeleteFile)
@@ -193,6 +197,116 @@ func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, data)
+}
+
+func (s *server) handleFileAssets(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	assets, err := s.vault.NoteAssets(r.Context(), p)
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	if assets == nil {
+		assets = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"path":      p,
+		"assets":    assets,
+		"hasAssets": len(assets) > 0,
+	})
+}
+
+func sanitizeDownloadFilename(name string) string {
+	name = strings.ReplaceAll(name, `"`, "_")
+	name = strings.ReplaceAll(name, "\r", "")
+	name = strings.ReplaceAll(name, "\n", "")
+	if name == "" {
+		return "note.md"
+	}
+	return name
+}
+
+func (s *server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	withAssets := r.URL.Query().Get("assets")
+	includeAssets := withAssets == "1" || strings.EqualFold(withAssets, "true")
+
+	data, err := s.vault.Read(r.Context(), p)
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+
+	base := path.Base(data.Path)
+	if !includeAssets {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeDownloadFilename(base)+`"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(data.Content))
+		return
+	}
+
+	assetPaths, err := s.vault.NoteAssets(r.Context(), data.Path)
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	addZipFile := func(name string, content []byte) error {
+		fw, err := zw.Create(name)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(content)
+		return err
+	}
+
+	if err := addZipFile(base, []byte(data.Content)); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not write archive")
+		return
+	}
+
+	noteDir := path.Dir(data.Path)
+	usedZipNames := map[string]struct{}{base: {}}
+	for _, assetRel := range assetPaths {
+		raw, _, readErr := s.vault.ReadAsset(r.Context(), assetRel)
+		if readErr != nil {
+			continue
+		}
+		zipRel := assetRel
+		if noteDir != "." && noteDir != "" {
+			if strings.HasPrefix(assetRel, noteDir+"/") {
+				zipRel = strings.TrimPrefix(assetRel, noteDir+"/")
+			} else {
+				zipRel = path.Join("assets", path.Base(assetRel))
+			}
+		}
+		if _, exists := usedZipNames[zipRel]; exists {
+			zipRel = path.Join("assets", path.Base(assetRel))
+		}
+		usedZipNames[zipRel] = struct{}{}
+		if err := addZipFile(zipRel, raw); err != nil {
+			writeError(w, http.StatusInternalServerError, "could not write archive")
+			return
+		}
+	}
+
+	if err := zw.Close(); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not finalize archive")
+		return
+	}
+
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	if stem == "" {
+		stem = "note"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeDownloadFilename(stem+".zip")+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (s *server) handlePutFile(w http.ResponseWriter, r *http.Request) {

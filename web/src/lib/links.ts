@@ -9,7 +9,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { filePathFacet, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -53,14 +53,20 @@ class LinkWidget extends WidgetType {
   toDOM(): HTMLElement {
     const anchor = document.createElement('a')
     anchor.className = 'cm-burley-link'
+    anchor.draggable = false
     anchor.textContent = this.label || this.url || 'link'
     anchor.title = `${this.internalPath || this.title || this.url} — Ctrl/Cmd-click to edit`
 
     anchor.addEventListener('click', (event) => {
+      const view = getActiveView()
+      if (view && !view.state.selection.main.empty) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && linkClickBehavior === 'toggle') {
         event.preventDefault()
         event.stopPropagation()
-        const view = getActiveView()
         if (!view) return
         const pos = Math.min(this.editPos, view.state.doc.length)
         view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
@@ -88,7 +94,7 @@ class LinkWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    return true
+    return false
   }
 }
 
@@ -138,7 +144,10 @@ function buildLinkDecorations(state: EditorState): DecorationSet {
 export const linkPreviewField: StateField<DecorationSet> = StateField.define<DecorationSet>({
   create: buildLinkDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildLinkDecorations(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr) || mouseSelectingEnded(tr)) {
+      return buildLinkDecorations(tr.state)
+    }
+    if (isMouseSelecting(tr.state)) return deco
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildLinkDecorations(tr.state)
     }

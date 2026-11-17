@@ -15,12 +15,21 @@
  */
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
-import { isInCode, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { setMouseSelecting } from 'codemirror-live-markdown'
+import { isInCode, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { getActiveView } from './viewRef'
 import katex from 'katex'
 
-const INLINE = /(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$(?!\$)/g
+const INLINE = /(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)/g
 const DISPLAY_INLINE = /(?<!\\)\$\$([^$\n]+?)\$\$(?!\$)/g
+
+export function isValidInlineMath(source: string): boolean {
+  const trimmed = source.trim()
+  if (!trimmed || /^\s|\s$/.test(source)) return false
+  // Reject currency-range fragments like "9,900–" or "5 - " or "10 to"
+  if (/^\d[\d,._]*\s*(?:[-–—~/]|to|and|or)?\s*$/i.test(trimmed)) return false
+  return true
+}
 
 class MathWidget extends WidgetType {
   constructor(
@@ -36,7 +45,7 @@ class MathWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const el = document.createElement(this.display ? 'div' : 'span')
+    const el: HTMLElement = document.createElement(this.display ? 'div' : 'span')
     el.className = this.display ? 'cm-burley-math cm-burley-math-block' : 'cm-burley-math cm-burley-math-inline'
     try {
       el.innerHTML = katex.renderToString(this.source, {
@@ -51,20 +60,30 @@ class MathWidget extends WidgetType {
       return el
     }
     el.title = 'Click to edit'
+    let downX = 0
+    let downY = 0
     el.addEventListener('mousedown', (event) => {
+      downX = event.clientX
+      downY = event.clientY
+    })
+    el.addEventListener('click', (event) => {
+      const view = getActiveView()
+      if (!view || Math.hypot(event.clientX - downX, event.clientY - downY) > 4) return
       event.preventDefault()
       event.stopPropagation()
-      const view = getActiveView()
-      if (!view) return
       const pos = Math.min(this.editPos, view.state.doc.length)
-      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: setMouseSelecting.of(false),
+        scrollIntoView: true,
+      })
       view.focus()
     })
     return el
   }
 
   ignoreEvent(): boolean {
-    return true
+    return this.display
   }
 }
 
@@ -114,8 +133,9 @@ function inlineMathAt(state: EditorState, head: number): MathAtCursor | null {
       const to = from + m[0].length
       if (head < from || head > to) continue
       if (isInCode(state, from, to)) return null
-      const tex = display ? (m[1] ?? '') : (m[1] ?? '')
-      return { tex: tex.trim(), display, from, to }
+      const raw = m[1] ?? ''
+      if (!display && !isValidInlineMath(raw)) continue
+      return { tex: raw.trim(), display, from, to }
     }
     return null
   }
@@ -147,8 +167,8 @@ function buildInlineDecorations(state: EditorState): DecorationSet {
     const to = from + m[0].length
     const source = m[1]
     // Standard heuristic: no space directly inside the delimiters, and the
-    // content must not look like a currency amount ("$5 and $10").
-    if (!source.trim() || /^\s|\s$/.test(source)) continue
+    // content must not look like a currency amount ("$5 and $10", "~$9,900–$10,150").
+    if (!isValidInlineMath(source)) continue
     if (covered.some(([a, b]) => from >= a && from < b)) continue
     if (isInCode(state, from, to)) continue
     if (!readOnly && selectionTouches(state, from, to)) continue
@@ -170,7 +190,18 @@ export const inlineMathPlugin: Extension = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged || update.selectionSet || update.startState.facet(readOnlyFacet) !== update.state.facet(readOnlyFacet)) {
+      const ended = update.transactions.some(mouseSelectingEnded)
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        ended ||
+        update.startState.facet(readOnlyFacet) !== update.state.facet(readOnlyFacet)
+      ) {
+        this.decorations = buildInlineDecorations(update.state)
+        return
+      }
+      if (isMouseSelecting(update.state)) return
+      if (update.selectionSet) {
         this.decorations = buildInlineDecorations(update.state)
       }
     }
@@ -230,7 +261,10 @@ function buildBlockMath(state: EditorState): DecorationSet {
 export const blockMathField: Extension = StateField.define<DecorationSet>({
   create: buildBlockMath,
   update(deco, tr) {
-    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr)) return buildBlockMath(tr.state)
+    if (tr.docChanged || tr.reconfigured || previewGeometryChanged(tr) || mouseSelectingEnded(tr)) {
+      return buildBlockMath(tr.state)
+    }
+    if (isMouseSelecting(tr.state)) return deco
     if (tr.selection || tr.startState.facet(readOnlyFacet) !== tr.state.facet(readOnlyFacet)) {
       return buildBlockMath(tr.state)
     }

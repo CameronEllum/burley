@@ -1,6 +1,7 @@
 import { Facet, type EditorState, type Transaction } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
+import { mouseSelectingField } from 'codemirror-live-markdown'
 
 /** Vault-relative path of the file currently loaded in the editor. */
 export const filePathFacet = Facet.define<string, string>({
@@ -12,9 +13,27 @@ export const readOnlyFacet = Facet.define<boolean, boolean>({
   combine: (values) => values.some(Boolean),
 })
 
-/** True when the current selection overlaps [from, to]. */
+export function isMouseSelecting(state: EditorState): boolean {
+  return Boolean(state.field(mouseSelectingField, false))
+}
+
+export function mouseSelectingEnded(tr: Transaction): boolean {
+  return Boolean(tr.startState.field(mouseSelectingField, false)) && !tr.state.field(mouseSelectingField, false)
+}
+
+/**
+ * True when the current selection is inside [from, to] or crosses its boundary
+ * while already revealed (suppressed during drag-select so dragging across a
+ * collapsed widget does not expand it underneath the pointer).
+ */
 export function selectionTouches(state: EditorState, from: number, to: number): boolean {
-  return state.selection.ranges.some((r) => r.from <= to && r.to >= from)
+  if (state.field(mouseSelectingField, false)) return false
+  return state.selection.ranges.some(
+    (r) =>
+      (r.from >= from && r.to <= to) ||
+      (r.from > from && r.from < to) ||
+      (r.to > from && r.to < to),
+  )
 }
 
 /**

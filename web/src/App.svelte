@@ -10,7 +10,6 @@
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
 import { setFigureOpenHandler, type FigureItem } from './lib/figures'
 import { bugReportUrl, openExternal, REPO_URL } from './lib/project'
-import SelectionSparkle from './components/SelectionSparkle.svelte'
 import { cleanSuggestion, SPARKLE_LABELS, SPARKLE_PROMPTS, type SparkleAction } from './lib/sparkle'
 import { wordDiff } from './lib/diff'
   import { renderMarkdown, extractFencedBlocks, type FencedBlock } from './lib/markdown'
@@ -52,7 +51,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   const ZEN_KEY = 'burley:zen'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
-  const TALK_MIN = 260
+  const TALK_MIN = 220
   const TALK_MAX = 720
   const TALK_DEFAULT = 350
 
@@ -84,6 +83,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let spellCheck = $state(false)
   let agentPins = $state<Record<string, string>>({})
+  let disabledAgents = $state<string[]>([])
   let rawMode = $state(false)
   let zenMode = $state(false)
   let scrollProgress = $state(0)
@@ -96,7 +96,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let checkingRelease = $state(false)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
-  let agents = $state<AgentInfo[]>([])
   let talkOpen = $state(false)
   let talkWidth = $state(TALK_DEFAULT)
   let talkAgent = $state('')
@@ -129,36 +128,59 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let talkDiagOpen = $state(false)
   let agentTests = $state<Record<string, AgentTestResult>>({})
   let agentTesting = $state<Record<string, boolean>>({})
+  let agentTestSeq: Record<string, number> = {}
+  let agentTestInFlightModel: Record<string, string> = {}
+
+  function isAgentEnabled(id: string): boolean {
+    return !disabledAgents.includes(id)
+  }
+
+  function agentRank(agent: AgentInfo): number {
+    if (!agent.available) return 4
+    if (!isAgentEnabled(agent.id)) return 3
+    if (agentTests[agent.id]?.confirmed) return 0
+    if (agentTesting[agent.id] || !agentTests[agent.id]) return 1
+    return 2
+  }
+
+  const sortedAllAgents = $derived.by(() => [...allAgents].sort((a, b) => agentRank(a) - agentRank(b)))
+  const agents = $derived.by(() => sortedAllAgents.filter((a) => a.available && isAgentEnabled(a.id)))
+
+  $effect(() => {
+    if (agents.length === 0) {
+      talkAgent = ''
+      return
+    }
+    if (!talkAgent || !agents.some((a) => a.id === talkAgent)) {
+      talkAgent = agents[0].id
+      return
+    }
+    if (
+      !talkStreaming &&
+      talkMessages.length === 0 &&
+      agentTests[talkAgent]?.confirmed === false &&
+      agentTests[agents[0].id]?.confirmed === true
+    ) {
+      talkAgent = agents[0].id
+    }
+  })
   let talkMessages = $state<TalkMessage[]>([])
   let talkPinnedSelection = $state('')
+  let selectedRange = $state<{ text: string; from: number; to: number } | null>(null)
   let talkInput = $state('')
   let talkStreaming = $state(false)
   let talkError = $state('')
   let talkMessagesEl = $state<HTMLDivElement | null>(null)
   let talkAbort: AbortController | null = null
-  let sparkle = $state<{
-    text: string
-    from: number
-    to: number
-    anchor: { left: number; top: number; bottom: number }
-  } | null>(null)
-  let sparkleTimer: ReturnType<typeof setTimeout> | null = null
-  const sparkleAgent = $derived(talkAgent || agents[0]?.id || '')
-  const sparkleAgentName = $derived(agents.find((agent) => agent.id === sparkleAgent)?.name ?? '')
-  const sparkleModel = $derived(sparkleAgent ? (agentPins[sparkleAgent] ?? '') : '')
-  const sparklePlacement = $derived.by(() => {
-    if (!sparkle) return null
-    const width = Math.min(470, Math.max(300, window.innerWidth - 32))
-    const spaceAbove = sparkle.anchor.top - 16
-    const spaceBelow = window.innerHeight - sparkle.anchor.bottom - 16
-    const above = spaceAbove > spaceBelow && spaceAbove >= 160
-    return {
-      width,
-      above,
-      left: Math.min(window.innerWidth - width / 2 - 12, Math.max(width / 2 + 12, sparkle.anchor.left)),
-      top: above ? sparkle.anchor.top - 10 : sparkle.anchor.bottom + 10,
-    }
-  })
+  const TALK_SELECTION_ACTIONS: Array<{ id: Exclude<SparkleAction, 'ask'>; label: string; hint: string }> = [
+    { id: 'explain', label: 'Explain', hint: 'What does this mean?' },
+    { id: 'summarize', label: 'Summarize', hint: 'Condense into bullets' },
+    { id: 'shorten', label: 'Shorten', hint: 'Tighten the wording' },
+    { id: 'rewrite', label: 'Rewrite', hint: 'Polish and compare' },
+  ]
+  const activeTalkSelection = $derived<{ text: string; from?: number; to?: number } | null>(
+    selectedRange ?? (talkPinnedSelection ? { text: talkPinnedSelection, from: undefined, to: undefined } : null),
+  )
   let exportMenuOpen = $state(false)
   let exporting = $state(false)
   let favorites = $state<string[]>([])
@@ -183,6 +205,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let quitOpen = $state(false)
   let shuttingDown = $state(false)
   let contextMenu = $state<{ x: number; y: number; path: string; isDir: boolean } | null>(null)
+  let contextMenuHasAssets = $state(false)
+  let currentHasAssets = $state(false)
   let pendingDelete = $state<{ path: string; isDir: boolean } | null>(null)
   let deleteDialogEl = $state<HTMLDialogElement | null>(null)
   let pendingRename = $state<{ path: string; isDir: boolean } | null>(null)
@@ -404,7 +428,12 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       onChange: handleEditorChange,
       onSelectionChange: (info) => {
         cursor = info
-        scheduleSparkle(info)
+        if (info.selectedChars > 0) {
+          const text = editor?.getSelection() ?? ''
+          selectedRange = text.trim() ? { text, from: info.from, to: info.to } : null
+        } else {
+          selectedRange = null
+        }
       },
       onOpenPath: (path) => {
         void openFile(path)
@@ -472,7 +501,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       if (toastTimer) clearTimeout(toastTimer)
       if (saveTimer) clearTimeout(saveTimer)
       if (recentSaveTimer) clearTimeout(recentSaveTimer)
-      if (sparkleTimer) clearTimeout(sparkleTimer)
       editor?.destroy()
       editor = null
     }
@@ -480,7 +508,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   async function initialLoad() {
     await refreshTree()
-    await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents()])
+    await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents(false)])
+    confirmAgentsInBackground()
     const storedScope = localStorage.getItem(SCOPE_KEY)
     if (storedScope && findFolder(tree, storedScope)) scopePath = storedScope
     const params = new URLSearchParams(window.location.search)
@@ -539,7 +568,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
-    closeSparkle()
+    selectedRange = null
     talkPinnedSelection = ''
     const decoded = decodeForEditor(data.content)
     currentPath = data.path
@@ -557,6 +586,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null }
     rememberRecent(data.path)
+    void refreshCurrentAssets(data.path)
     if (line) {
       setTimeout(() => editor?.scrollToLine(line), 0)
     } else if (headingSlug) {
@@ -721,6 +751,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         saveState = 'unsaved'
         scheduleSave()
       }
+      void refreshCurrentAssets(currentPath)
       return true
     } catch (err) {
       if (err instanceof ConflictError) {
@@ -813,6 +844,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function startSidebarResize(event: PointerEvent) {
     if (event.button !== 0) return
     event.preventDefault()
+    ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
     const startX = event.clientX
     const startWidth = sidebarWidth
     document.body.classList.add('resizing-sidebar')
@@ -849,6 +881,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function startTalkResize(event: PointerEvent) {
     if (event.button !== 0) return
     event.preventDefault()
+    ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
     const startX = event.clientX
     const startWidth = talkWidth
     document.body.classList.add('resizing-talk')
@@ -897,6 +930,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         ctrlClickLink,
         spellCheck,
         agentModels: agentPins,
+        disabledAgents,
       })
     } catch (err) {
       flash(`Could not save settings: ${err instanceof Error ? err.message : String(err)}`, true)
@@ -941,8 +975,28 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       spellCheck = patch.spellCheck
       editor?.setSpellcheck(spellCheck)
     }
+    if (patch.disabledAgents !== undefined) {
+      const prevDisabled = new Set(disabledAgents)
+      disabledAgents = patch.disabledAgents
+      const nextDisabled = new Set(disabledAgents)
+      for (const agent of allAgents) {
+        if (agent.available && prevDisabled.has(agent.id) && !nextDisabled.has(agent.id)) {
+          void runAgentTest(agent.id)
+        }
+      }
+    }
     if (patch.agentModels !== undefined) {
+      const prevPins = agentPins
       agentPins = patch.agentModels
+      for (const agent of allAgents) {
+        if (
+          agent.available &&
+          isAgentEnabled(agent.id) &&
+          (prevPins[agent.id] ?? '') !== (agentPins[agent.id] ?? '')
+        ) {
+          void runAgentTest(agent.id, agentPins[agent.id] ?? '')
+        }
+      }
     }
     void persistSettings()
   }
@@ -983,6 +1037,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         ctrlClickLink = response.settings.ctrlClickLink
         spellCheck = response.settings.spellCheck
         agentPins = response.settings.agentModels ?? {}
+        disabledAgents = response.settings.disabledAgents ?? []
         applyTheme(themeMode, lightTheme, darkTheme)
         storeThemeMode(themeMode)
         storePalettes(lightTheme, darkTheme)
@@ -1001,6 +1056,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           ctrlClickLink,
           spellCheck,
           agentModels: agentPins,
+          disabledAgents,
         })
       }
     } catch (err) {
@@ -1071,39 +1127,71 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         flash(`Image upload failed: ${err instanceof Error ? err.message : String(err)}`, true)
       }
     }
-    if (uploaded > 0) flash(`Uploaded ${uploaded} image${uploaded === 1 ? '' : 's'}`)
+    if (uploaded > 0) {
+      flash(`Uploaded ${uploaded} image${uploaded === 1 ? '' : 's'}`)
+      void refreshCurrentAssets(currentPath)
+    }
   }
 
-  async function loadAgents() {
+  async function refreshCurrentAssets(path: string) {
+    currentHasAssets = false
+    if (!path) return
+    try {
+      const res = await api.fileAssets(path)
+      if (currentPath === path) currentHasAssets = res.hasAssets
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function confirmAgentsInBackground() {
+    for (const agent of allAgents) {
+      if (agent.available && isAgentEnabled(agent.id)) {
+        void runAgentTest(agent.id)
+      }
+    }
+  }
+
+  async function loadAgents(confirm = true) {
     try {
       const response = await api.agents()
       allAgents = response.agents
       agentPathEnv = response.pathEnv ?? ''
-      agents = response.agents.filter((agent) => agent.available)
-      if (!talkAgent && agents.length > 0) talkAgent = agents[0].id
+      if (confirm) confirmAgentsInBackground()
     } catch (err) {
       flash(`Could not detect CLI agents: ${err instanceof Error ? err.message : String(err)}`, true)
     }
   }
 
-  async function runAgentTest(id: string) {
+  async function runAgentTest(id: string, modelOverride?: string) {
+    const model = modelOverride !== undefined ? modelOverride : (agentPins[id] ?? '')
+    if (agentTesting[id] && agentTestInFlightModel[id] === model) return
+    const seq = (agentTestSeq[id] ?? 0) + 1
+    agentTestSeq[id] = seq
+    agentTestInFlightModel[id] = model
     agentTesting = { ...agentTesting, [id]: true }
     try {
-      const res = await api.testAgent(id)
+      const res = await api.testAgent(id, model)
+      if (agentTestSeq[id] !== seq) return
       agentTests = { ...agentTests, [id]: res }
       if (res.pathEnv) agentPathEnv = res.pathEnv
     } catch (err) {
+      if (agentTestSeq[id] !== seq) return
       agentTests = {
         ...agentTests,
         [id]: {
           agent: id,
           available: false,
+          confirmed: false,
           exitCode: -1,
           error: err instanceof Error ? err.message : String(err),
         },
       }
     } finally {
-      agentTesting = { ...agentTesting, [id]: false }
+      if (agentTestSeq[id] === seq) {
+        delete agentTestInFlightModel[id]
+        agentTesting = { ...agentTesting, [id]: false }
+      }
     }
   }
 
@@ -1258,7 +1346,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     const prompt = talkInput.trim()
     if (!prompt || talkStreaming || !talkAgent) return
     talkInput = ''
-    const selection = editor?.getSelection().trim() ? editor.getSelection() : talkPinnedSelection
+    const selection = selectedRange?.text || talkPinnedSelection
+    if (selectedRange?.text) talkPinnedSelection = selectedRange.text
     await streamTalk({ prompt, display: prompt, selection })
   }
 
@@ -1269,64 +1358,40 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (element) element.scrollTop = element.scrollHeight
   })
 
-  // ------------------------------------------------------- selection sparkle bar
+  // ------------------------------------------------------- selection actions in Talk
 
-  const sparkleEnabled = $derived(agents.length > 0)
-
-  function scheduleSparkle(info: SelectionInfo) {
-    if (sparkleTimer) {
-      clearTimeout(sparkleTimer)
-      sparkleTimer = null
-    }
-    if (!sparkleEnabled || !info.anchor || info.selectedChars === 0) {
-      if (sparkle) closeSparkle()
-      return
-    }
-    // Give a drag-selection time to settle before showing the bar.
-    sparkleTimer = setTimeout(() => {
-      sparkleTimer = null
-      if (!sparkleEnabled || !info.anchor) return
-      const text = editor?.getSelection() ?? ''
-      if (!text.trim()) return
-      sparkle = { text, from: info.from, to: info.to, anchor: info.anchor }
-    }, 180)
-  }
-
-  function sendSparkleToTalk(action: SparkleAction, question?: string) {
-    if (!sparkle || !talkAgent) return
+  function runTalkSelectionAction(action: Exclude<SparkleAction, 'ask'>) {
+    const sel = activeTalkSelection
+    if (!sel || !talkAgent) return
     if (talkStreaming) {
       flash('Talk is still answering — try again in a moment.', true)
       return
     }
-    const prompt = action === 'ask' ? (question ?? '').trim() : SPARKLE_PROMPTS[action]
-    if (!prompt) return
-    const selected = sparkle
-    const display = action === 'ask' ? prompt : `${SPARKLE_LABELS[action]} the selection`
-    closeSparkle()
+    const prompt = SPARKLE_PROMPTS[action]
+    const display = `${SPARKLE_LABELS[action]} the selection`
     talkOpen = true
     talkMode = 'ask'
-    talkPinnedSelection = selected.text
+    talkPinnedSelection = sel.text
     void streamTalk({
       prompt,
       display,
-      selection: selected.text,
+      selection: sel.text,
       action,
       mode: 'ask',
-      range: { from: selected.from, to: selected.to },
+      range: sel.from !== undefined && sel.to !== undefined ? { from: sel.from, to: sel.to } : undefined,
     })
   }
 
   function openSelectionInTalk() {
-    if (!sparkle) return
-    const selected = sparkle
-    closeSparkle()
+    if (!selectedRange) return
     talkOpen = true
     talkMode = 'ask'
-    talkPinnedSelection = selected.text
+    talkPinnedSelection = selectedRange.text
   }
 
   function clearTalkSelection() {
     talkPinnedSelection = ''
+    selectedRange = null
   }
 
   function talkRangeValid(message: TalkMessage): boolean {
@@ -1381,14 +1446,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   function selectionWords(text: string): number {
     return text.trim() ? text.trim().split(/\s+/).length : 0
-  }
-
-  function closeSparkle() {
-    if (sparkleTimer) {
-      clearTimeout(sparkleTimer)
-      sparkleTimer = null
-    }
-    sparkle = null
   }
 
   async function loadRecent() {
@@ -1465,14 +1522,37 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   function showContextMenu(event: MouseEvent, path: string, isDir: boolean) {
     event.preventDefault()
-    const width = 210
-    const height = isDir ? (scopePath ? 210 : 175) : 125
+    const width = 225
+    const height = isDir ? (scopePath ? 210 : 175) : 195
+    contextMenuHasAssets = false
     contextMenu = {
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
       path,
       isDir,
     }
+    if (!isDir) {
+      void api
+        .fileAssets(path)
+        .then((res) => {
+          if (contextMenu && !contextMenu.isDir && contextMenu.path === path) {
+            contextMenuHasAssets = res.hasAssets
+          }
+        })
+        .catch(() => {})
+    }
+  }
+
+  function downloadNote(path: string, withAssets = false) {
+    contextMenu = null
+    exportMenuOpen = false
+    if (!path) return
+    const link = document.createElement('a')
+    link.href = api.downloadUrl(path, withAssets)
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
   }
 
   function scopeToFolder() {
@@ -1491,7 +1571,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function handleWindowPointerDown(event: PointerEvent) {
     const target = event.target as HTMLElement | null
     if (exportMenuOpen && !target?.closest('.export-wrap')) exportMenuOpen = false
-    if (sparkle && !target?.closest('.sparkle-popover')) closeSparkle()
     if (!contextMenu) return
     if (target?.closest('.context-menu')) return
     contextMenu = null
@@ -1686,6 +1765,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   function clearCurrentFile() {
     currentPath = ''
+    currentHasAssets = false
+    selectedRange = null
+    talkPinnedSelection = ''
     content = ''
     hash = ''
     modTime = 0
@@ -1815,12 +1897,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       contextMenu = null
       return
     }
-    if (event.key === 'Escape' && sparkle) {
-      event.preventDefault()
-      closeSparkle()
-      return
-    }
-    if (event.altKey && event.key === 'Enter' && sparkle) {
+    if (event.altKey && event.key === 'Enter' && selectedRange) {
       event.preventDefault()
       openSelectionInTalk()
       return
@@ -1919,11 +1996,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <span class="brand-mark" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
             <rect width="32" height="32" rx="7" fill="#c2410c" />
-            <path d="M2 13.5 Q16 10.5 30 13.5 L30 25.5 Q16 22.5 2 25.5 Z" fill="#fff7ed" opacity="0.16" />
-            <rect x="4.5" y="21" width="8.5" height="4.5" rx="2.25" fill="#fff7ed" />
-            <rect x="11.5" y="16" width="7" height="3.8" rx="1.9" fill="#fff7ed" opacity="0.95" />
-            <rect x="17" y="11.8" width="5.6" height="3.1" rx="1.55" fill="#fff7ed" opacity="0.9" />
-            <rect x="21.5" y="8.4" width="4.2" height="2.4" rx="1.2" fill="#fff7ed" opacity="0.85" />
+            <path d="M1 13.5 C10 9.5 22 17.5 31 13.5 L31 24.5 C22 28.5 10 20.5 1 24.5 Z" fill="#fff7ed" opacity="0.18" />
+            <path d="M2.5 19 C10.5 15.5 21.5 22.5 29.5 19" stroke="#fff7ed" stroke-width="1.3" stroke-linecap="round" opacity="0.22" />
+            <rect x="4.5" y="20.5" width="9" height="4.8" rx="2.4" fill="#fff7ed" />
+            <rect x="12" y="14.5" width="7.4" height="4" rx="2" fill="#fff7ed" opacity="0.94" />
+            <rect x="18.8" y="9.2" width="5.8" height="3.2" rx="1.6" fill="#fff7ed" opacity="0.88" />
           </svg>
         </span>
         <span class="brand-name">Burley</span>
@@ -1981,6 +2058,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           <div class="export-menu" role="menu" aria-label="Export note">
             <button class="export-item" role="menuitem" onclick={() => void runExport('html')}>Export as HTML</button>
             <button class="export-item" role="menuitem" onclick={() => void runExport('pdf')}>Export as PDF</button>
+            <button class="export-item" role="menuitem" onclick={() => downloadNote(currentPath, false)}>Download (.md)</button>
+            {#if currentHasAssets}
+              <button class="export-item" role="menuitem" onclick={() => downloadNote(currentPath, true)}>Download with Assets (.zip)</button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -2282,15 +2363,6 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
     {#if talkOpen}
       <aside class="talk-panel" aria-label="Talk">
-        <button
-          type="button"
-          class="talk-resizer"
-          aria-label="Resize Talk panel"
-          title="Drag to resize — double-click to reset"
-          onpointerdown={startTalkResize}
-          onkeydown={handleTalkResizerKeydown}
-          ondblclick={() => setTalkWidth(TALK_DEFAULT)}
-        ></button>
         <header class="talk-head">
           <span class="talk-title">Talk</span>
           {#if agents.length > 1}
@@ -2323,28 +2395,48 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           <div class="talk-diag">
             <div class="talk-diag-head">
               <strong>Agent diagnostics</strong>
-              <button class="talk-insert" onclick={() => void loadAgents()}>Re-detect</button>
+              <button class="talk-insert" onclick={() => void loadAgents(true)}>Re-detect</button>
             </div>
             <ul class="talk-diag-list">
-              {#each allAgents as item (item.id)}
+              {#each sortedAllAgents as item (item.id)}
                 {@const testRes = agentTests[item.id]}
-                <li class="talk-diag-row">
-                  <div class="talk-diag-main">
-                    <span class="talk-diag-dot" class:ok={item.available}></span>
-                    <span class="talk-diag-name">{item.name}</span>
-                    <code class="talk-diag-path">{item.available ? item.path : 'not found'}</code>
-                    <button
-                      class="talk-insert"
-                      disabled={agentTesting[item.id]}
-                      onclick={() => void runAgentTest(item.id)}
-                    >
-                      {agentTesting[item.id] ? 'Testing…' : 'Test'}
-                    </button>
-                  </div>
-                  {#if testRes}
-                    <pre class="talk-diag-out">{`exit ${testRes.exitCode}${testRes.durationMs != null ? ` (${testRes.durationMs}ms)` : ''}${testRes.stdout ? `\nstdout: ${testRes.stdout}` : ''}${testRes.stderr ? `\nstderr: ${testRes.stderr}` : ''}${testRes.error && !testRes.stderr ? `\nerror: ${testRes.error}` : ''}`}</pre>
-                  {/if}
-                </li>
+                {@const testing = !!agentTesting[item.id]}
+                {@const enabled = isAgentEnabled(item.id)}
+                {#if !item.available}
+                  <li class="talk-diag-row not-found">
+                    <div class="talk-diag-main">
+                      <span class="talk-diag-dot missing"></span>
+                      <span class="talk-diag-name">{item.name}</span>
+                      <code class="talk-diag-path">{item.id}</code>
+                      <span class="talk-diag-badge">not found</span>
+                    </div>
+                  </li>
+                {:else}
+                  <li class="talk-diag-row" class:disabled={!enabled}>
+                    <div class="talk-diag-main">
+                      <span
+                        class="talk-diag-dot"
+                        class:ok={!!testRes?.confirmed && !testing}
+                        class:testing={testing}
+                      ></span>
+                      <span class="talk-diag-name">{item.name}</span>
+                      <code class="talk-diag-path" title={item.path}>{item.path}</code>
+                      {#if !enabled}
+                        <span class="talk-diag-badge">disabled</span>
+                      {/if}
+                      <button
+                        class="talk-insert"
+                        disabled={testing}
+                        onclick={() => void runAgentTest(item.id)}
+                      >
+                        {testing ? 'Testing…' : 'Test'}
+                      </button>
+                    </div>
+                    {#if testRes}
+                      <pre class="talk-diag-out">{`${testRes.confirmed ? 'confirmed' : 'failed'} · exit ${testRes.exitCode}${testRes.durationMs != null ? ` (${testRes.durationMs}ms)` : ''}${testRes.reply ? `\nreply: ${testRes.reply}` : ''}${testRes.stderr && testRes.stderr !== testRes.error ? `\nstderr: ${testRes.stderr}` : ''}${testRes.error ? `\nerror: ${testRes.error}` : ''}`}</pre>
+                    {/if}
+                  </li>
+                {/if}
               {/each}
             </ul>
             {#if agentPathEnv}
@@ -2441,6 +2533,36 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
           {#if talkError}<p class="talk-error">{talkError}</p>{/if}
 
+          {#if activeTalkSelection}
+            <div class="talk-selection-bar">
+              <div class="talk-selection-head">
+                <span class="talk-selection-badge">Selection · {selectionWords(activeTalkSelection.text)}w</span>
+                <span class="talk-selection-preview" title={activeTalkSelection.text}>{excerpt(activeTalkSelection.text, 64)}</span>
+                <button
+                  class="talk-selection-clear"
+                  title="Clear selection context"
+                  aria-label="Clear selection context"
+                  onmousedown={(event) => event.preventDefault()}
+                  onclick={clearTalkSelection}
+                >×</button>
+              </div>
+              <div class="talk-selection-actions">
+                {#each TALK_SELECTION_ACTIONS as item (item.id)}
+                  <button
+                    type="button"
+                    class="talk-selection-btn"
+                    title={item.hint}
+                    disabled={talkStreaming || !talkAgent}
+                    onmousedown={(event) => event.preventDefault()}
+                    onclick={() => runTalkSelectionAction(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
           <div class="talk-compose">
             <textarea
               bind:value={talkInput}
@@ -2454,6 +2576,15 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             >Send</button>
           </div>
         {/if}
+        <button
+          type="button"
+          class="talk-resizer"
+          aria-label="Resize Talk panel"
+          title="Drag to resize — double-click to reset"
+          onpointerdown={startTalkResize}
+          onkeydown={handleTalkResizerKeydown}
+          ondblclick={() => setTalkWidth(TALK_DEFAULT)}
+        ></button>
       </aside>
     {/if}
   </main>
@@ -2573,6 +2704,17 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         <span>Add document</span>
       </button>
+    {:else}
+      <button class="context-menu-item" role="menuitem" onclick={() => downloadNote(contextMenu!.path, false)}>
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 3.2v8.8M6.8 9l3.2 3.2L13.2 9M4 13.8v2.5h12v-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <span>Download</span>
+      </button>
+      {#if contextMenuHasAssets}
+        <button class="context-menu-item" role="menuitem" onclick={() => downloadNote(contextMenu!.path, true)}>
+          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 3.2v8.8M6.8 9l3.2 3.2L13.2 9M4 13.8v2.5h12v-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>Download with Assets</span>
+        </button>
+      {/if}
     {/if}
     <button class="context-menu-item" role="menuitem" onclick={() => void requestRename()}>
       <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M13.8 3.8l2.4 2.4-8.8 8.8H5v-2.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
@@ -2706,28 +2848,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   </div>
 </dialog>
 
-{#if sparkle && sparklePlacement && sparkleEnabled}
-  <SelectionSparkle
-    left={sparklePlacement.left}
-    top={sparklePlacement.top}
-    above={sparklePlacement.above}
-    width={sparklePlacement.width}
-    selection={sparkle.text}
-    agentName={sparkleAgentName}
-    model={sparkleModel}
-    onaction={sendSparkleToTalk}
-    onclose={closeSparkle}
-  />
-{/if}
-
 {#if shortcutsOpen}
   <ShortcutsModal onclose={() => (shortcutsOpen = false)} />
 {/if}
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, agentModels: agentPins }}
-    agents={agents}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, agentModels: agentPins, disabledAgents }}
+    agents={sortedAllAgents}
+    agentTests={agentTests}
+    agentTesting={agentTesting}
+    ontest={(id) => void runAgentTest(id)}
+    onredetect={() => void loadAgents(true)}
     version={appVersion}
     repo={repoUrl}
     release={releaseInfo}
@@ -3132,6 +3264,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     border-left: 1px solid var(--border-soft);
     background: var(--bg-sidebar);
   }
@@ -3141,7 +3274,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     left: -4px;
     bottom: 0;
     width: 9px;
-    z-index: 20;
+    z-index: 30;
     padding: 0;
     border: 0;
     background: transparent;
@@ -3365,6 +3498,12 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     flex-direction: column;
     gap: 4px;
   }
+  .talk-diag-row.not-found {
+    opacity: 0.6;
+  }
+  .talk-diag-row.disabled {
+    opacity: 0.8;
+  }
   .talk-diag-main {
     display: flex;
     align-items: center;
@@ -3380,6 +3519,17 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
   .talk-diag-dot.ok {
     background: #16a34a;
+  }
+  .talk-diag-dot.testing {
+    background: var(--accent);
+  }
+  .talk-diag-dot.missing {
+    background: var(--border-strong);
+  }
+  .talk-diag-badge {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
   .talk-diag-name {
     font-weight: 600;
@@ -3499,6 +3649,78 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     padding: 4px 10px;
     color: var(--danger-fg);
     font-size: 11px;
+  }
+  .talk-selection-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 7px 10px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-app);
+  }
+  .talk-selection-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+  .talk-selection-badge {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .talk-selection-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .talk-selection-clear {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .talk-selection-clear:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .talk-selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .talk-selection-btn {
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    cursor: pointer;
+  }
+  .talk-selection-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--active);
+  }
+  .talk-selection-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
   .talk-compose {
     display: flex;
@@ -3658,7 +3880,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     right: -4px;
     bottom: 0;
     width: 9px;
-    z-index: 20;
+    z-index: 30;
     padding: 0;
     border: 0;
     background: transparent;

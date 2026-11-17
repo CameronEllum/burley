@@ -52,6 +52,7 @@ type Vault interface {
 	Delete(ctx context.Context, relPath string) error
 	ReadAsset(ctx context.Context, relPath string) ([]byte, string, error)
 	SaveAsset(ctx context.Context, notePath, filename string, data []byte, mimeType string) (string, error)
+	NoteAssets(ctx context.Context, notePath string) ([]string, error)
 	ReadFavorites(ctx context.Context) ([]string, error)
 	WriteFavorites(ctx context.Context, paths []string) error
 	ReadSettings(ctx context.Context) (Settings, bool, error)

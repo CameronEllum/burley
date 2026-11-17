@@ -23,6 +23,10 @@ interface TableData {
 
 const SEPARATOR = /^:?-{2,}:?$/
 
+function hasInlineSyntax(raw: string): boolean {
+  return /[*_`[\]$<>~\\]/.test(raw)
+}
+
 function splitRow(line: string): string[] {
   let text = line.trim()
   if (text.startsWith('|')) text = text.slice(1)
@@ -242,7 +246,10 @@ class TableWidget extends WidgetType {
         activeCol = column
         if (this.readOnly) return
         textSpan.dataset.editing = '1'
-        textSpan.textContent = textSpan.dataset.raw ?? text
+        const raw = textSpan.dataset.raw ?? text
+        if (hasInlineSyntax(raw)) {
+          textSpan.textContent = raw
+        }
       })
       textSpan.addEventListener('blur', () => {
         if (this.readOnly || textSpan.dataset.editing !== '1') return
@@ -324,6 +331,19 @@ class TableWidget extends WidgetType {
           cycleAlignment(column)
         })
         cell.appendChild(alignButton)
+      }
+      if (!this.readOnly) {
+        cell.addEventListener('mousedown', (event) => {
+          if (event.target !== cell) return
+          event.preventDefault()
+          textSpan.focus()
+          const range = document.createRange()
+          range.selectNodeContents(textSpan)
+          range.collapse(false)
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+        })
       }
       return cell
     }

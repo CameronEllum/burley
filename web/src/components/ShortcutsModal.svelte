@@ -20,7 +20,7 @@
       items: [
         ['Ctrl S', 'Save now (autosave is debounced)'],
         ['Escape', 'Close a dialog, or exit the element under the caret'],
-        ['Select text', 'AI actions in the sparkle bar (when an agent is installed)'],
+        ['Select text', 'Selection action buttons in Talk (Explain, Summarize, Shorten, Rewrite)'],
         ['/', 'Slash commands: plotly, mermaid, math, table, callout, code, date, lua'],
         ['Ctrl B', 'Toggle the file tree'],
         ['Ctrl Shift R', 'Reload the file tree'],
@@ -34,7 +34,7 @@
       items: [
         ['Right-click a file', 'Delete the note (with confirmation)'],
         ['Alt-click an image', 'Open the figure viewer (arrows browse)'],
-        ['Drag the divider', 'Resize the sidebar'],
+        ['Drag the divider', 'Resize the file tree or Talk sidebar'],
         ['Double-click the divider', 'Reset the sidebar width'],
       ],
     },

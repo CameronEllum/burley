@@ -35,6 +35,7 @@ import { listMarkerStyler } from './lists'
 import { tableEditorField } from './tables'
 import { frontmatterField } from './frontmatter'
 import { detailsField } from './details'
+import { commentsField } from './comments'
 import { luaCellsField, setLuaCellRunHandler } from './luaCells'
 import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
@@ -178,6 +179,7 @@ function previewExtensions(): Extension[] {
     mouseSelectingField,
     frontmatterField(),
     detailsField(),
+    commentsField(),
     luaCellsField(),
     livePreviewPlugin,
     markdownStylePlugin,
@@ -260,6 +262,8 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     parseRefreshTimer = setTimeout(tick, 0)
   }
 
+  let pointerDown = false
+
   const listener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       opts.onChange(update.state.doc.toString())
@@ -320,12 +324,18 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     if (target?.closest('.cm-burley-table-widget, .cm-burley-details-wrap, .cm-burley-block, .cm-burley-lua-cell')) {
       return
     }
+    pointerDown = true
     view.dispatch({ effects: setMouseSelecting.of(true) })
   }
-  view.contentDOM.addEventListener('mousedown', onMouseDown)
+  view.contentDOM.addEventListener('mousedown', onMouseDown, true)
   const onMouseUp = () => {
+    pointerDown = false
     requestAnimationFrame(() => {
-      if (view.contentDOM.isConnected) {
+      if (
+        !pointerDown &&
+        view.contentDOM.isConnected &&
+        view.state.field(mouseSelectingField, false)
+      ) {
         view.dispatch({ effects: setMouseSelecting.of(false) })
       }
     })
@@ -514,7 +524,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     },
 
     destroy() {
-      view.contentDOM.removeEventListener('mousedown', onMouseDown)
+      view.contentDOM.removeEventListener('mousedown', onMouseDown, true)
       view.contentDOM.removeEventListener('click', onClick)
       view.contentDOM.removeEventListener('paste', onPaste)
       view.contentDOM.removeEventListener('dragover', onDragOver)

@@ -55,6 +55,8 @@ export interface AppSettings {
   spellCheck: boolean
   /** Pinned CLI model per agent ID; missing means the agent's own default. */
   agentModels: Record<string, string>
+  /** Agent IDs explicitly disabled by the user. */
+  disabledAgents: string[]
 }
 
 export interface AppMeta {
@@ -104,7 +106,11 @@ export interface AgentModelsResponse {
 export interface AgentTestResult {
   agent: string
   available: boolean
+  confirmed?: boolean
   executable?: string
+  model?: string
+  prompt?: string
+  reply?: string
   exitCode: number
   stdout?: string
   stderr?: string
@@ -229,8 +235,9 @@ export const api = {
     return request<{ agents: AgentInfo[]; pathEnv?: string }>('/api/agents')
   },
 
-  async testAgent(agent: string): Promise<AgentTestResult> {
-    return request<AgentTestResult>(`/api/agent/test?agent=${encodeURIComponent(agent)}`, {
+  async testAgent(agent: string, model?: string): Promise<AgentTestResult> {
+    const query = `agent=${encodeURIComponent(agent)}${model ? `&model=${encodeURIComponent(model)}` : ''}`
+    return request<AgentTestResult>(`/api/agent/test?${query}`, {
       method: 'POST',
     })
   },
@@ -286,6 +293,20 @@ export const api = {
 
   assetUrl(path: string): string {
     return `/api/asset?path=${encodeURIComponent(path)}`
+  },
+
+  async fileAssets(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<{ path: string; assets: string[]; hasAssets: boolean }> {
+    return request<{ path: string; assets: string[]; hasAssets: boolean }>(
+      `/api/file/assets?path=${encodeURIComponent(path)}`,
+      { signal },
+    )
+  },
+
+  downloadUrl(path: string, withAssets = false): string {
+    return `/api/download?path=${encodeURIComponent(path)}${withAssets ? '&assets=1' : ''}`
   },
 }
 

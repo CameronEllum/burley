@@ -19,6 +19,7 @@
 import { errorBox, registerBlockRenderer, type BlockContext, type BlockRenderer } from '../blockPlugins'
 import { assetUrlFor } from '../blockPlugins'
 import { openFigureAt } from '../figures'
+import { getActiveView } from '../viewRef'
 
 let plotlyPromise: Promise<any> | null = null
 
@@ -151,6 +152,7 @@ const plotlyRenderer: BlockRenderer = {
           return
         }
         status.remove()
+        getActiveView()?.requestMeasure()
 
         observer = new ResizeObserver(() => {
           if (disposed || !Plotly) return
@@ -165,6 +167,7 @@ const plotlyRenderer: BlockRenderer = {
         if (disposed) return
         status.remove()
         root.appendChild(errorBox(err))
+        getActiveView()?.requestMeasure()
       }
     })()
 
