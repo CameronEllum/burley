@@ -362,7 +362,7 @@ func (s *server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
-	s.invalidateTree()
+	s.deleteTreeEntries(p)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": p})
 }
 

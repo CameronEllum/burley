@@ -49,3 +49,45 @@ func TestTreeEndpointReportsCompletion(t *testing.T) {
 		t.Fatalf("refresh payload = %+v", payload)
 	}
 }
+
+func TestDeleteUpdatesTreeWithoutRescan(t *testing.T) {
+	h := newHarness(t)
+	h.write(t, "keep.md", "# Keep\n")
+	h.write(t, "folder/one.md", "# One\n")
+	h.write(t, "folder/sub/two.md", "# Two\n")
+
+	// Prime the tree cache.
+	resp, data := h.do(t, "GET", "/api/tree", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("tree = %d %s", resp.StatusCode, data)
+	}
+
+	// Deleting a folder removes its entries in place while keeping done=true.
+	resp, data = h.do(t, "DELETE", "/api/file?path=folder", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("delete = %d %s", resp.StatusCode, data)
+	}
+
+	// Even if another file exists on disk untracked, /api/tree (without refresh=1)
+	// should serve the updated cache without triggering a full rescan.
+	h.write(t, "unscanned.md", "# Unscanned\n")
+
+	var payload struct {
+		Files    []flatFile `json:"files"`
+		Done     bool       `json:"done"`
+		Scanning bool       `json:"scanning"`
+	}
+	resp, data = h.do(t, "GET", "/api/tree", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("tree after delete = %d %s", resp.StatusCode, data)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Done || payload.Scanning {
+		t.Fatalf("expected cached done=true scanning=false, got %+v", payload)
+	}
+	if len(payload.Files) != 1 || payload.Files[0].Path != "keep.md" {
+		t.Fatalf("files = %+v, want only keep.md", payload.Files)
+	}
+}

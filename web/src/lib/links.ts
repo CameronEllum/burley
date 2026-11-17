@@ -9,6 +9,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
+import { setMouseSelecting } from 'codemirror-live-markdown'
 import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
@@ -57,26 +58,36 @@ class LinkWidget extends WidgetType {
     anchor.textContent = this.label || this.url || 'link'
     anchor.title = `${this.internalPath || this.title || this.url} — Ctrl/Cmd-click to edit`
 
+    let downX = 0
+    let downY = 0
+    anchor.addEventListener('mousedown', (event) => {
+      downX = event.clientX
+      downY = event.clientY
+    })
+
     anchor.addEventListener('click', (event) => {
-      const view = getActiveView()
-      if (view && !view.state.selection.main.empty) {
+      if (Math.hypot(event.clientX - downX, event.clientY - downY) > 4) {
         event.preventDefault()
-        event.stopPropagation()
         return
       }
+      const view = getActiveView()
       if ((event.ctrlKey || event.metaKey) && linkClickBehavior === 'toggle') {
         event.preventDefault()
         event.stopPropagation()
         if (!view) return
         const pos = Math.min(this.editPos, view.state.doc.length)
-        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+        view.dispatch({
+          selection: { anchor: pos },
+          effects: setMouseSelecting.of(false),
+          scrollIntoView: true,
+        })
         view.focus()
         return
       }
       if (this.internalPath) {
         event.preventDefault()
         event.stopPropagation()
-        if (openPathHandler && this.internalPath) openPathHandler(this.internalPath)
+        if (openPathHandler) openPathHandler(this.internalPath)
       }
     })
 
@@ -117,10 +128,15 @@ function buildLinkDecorations(state: EditorState): DecorationSet {
 
       let internalPath: string | null = null
       let url = href
-      if (!isExternalRef(href)) {
+      if (href.startsWith('#')) {
+        internalPath = `${currentFile}${href}`
+        url = ''
+      } else if (!isExternalRef(href)) {
+        const hashIdx = href.indexOf('#')
+        const hashPart = hashIdx >= 0 ? href.slice(hashIdx) : ''
         const resolved = resolveRelative(currentFile, href.split('#')[0])
         if (resolved && MD_FILE.test(resolved)) {
-          internalPath = resolved
+          internalPath = `${resolved}${hashPart}`
           url = ''
         } else if (resolved) {
           url = api.assetUrl(resolved)

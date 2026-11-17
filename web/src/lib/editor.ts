@@ -330,15 +330,17 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   view.contentDOM.addEventListener('mousedown', onMouseDown, true)
   const onMouseUp = () => {
     pointerDown = false
-    requestAnimationFrame(() => {
-      if (
-        !pointerDown &&
-        view.contentDOM.isConnected &&
-        view.state.field(mouseSelectingField, false)
-      ) {
-        view.dispatch({ effects: setMouseSelecting.of(false) })
-      }
-    })
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        if (
+          !pointerDown &&
+          view.contentDOM.isConnected &&
+          view.state.field(mouseSelectingField, false)
+        ) {
+          view.dispatch({ effects: setMouseSelecting.of(false) })
+        }
+      })
+    }, 0)
   }
   document.addEventListener('mouseup', onMouseUp)
 

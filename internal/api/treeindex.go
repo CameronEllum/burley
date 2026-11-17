@@ -197,6 +197,30 @@ func (s *server) renameTreeEntries(fromPath, toPath string) {
 	}
 }
 
+// deleteTreeEntries removes deleted file or folder entries from the cached
+// index in place so deletions do not trigger a full vault rescan.
+func (s *server) deleteTreeEntries(targetPath string) {
+	clean, err := vault.NormalizeRel(targetPath)
+	if err != nil {
+		return
+	}
+
+	s.tree.mu.Lock()
+	defer s.tree.mu.Unlock()
+	if len(s.tree.files) == 0 {
+		return
+	}
+	prefix := clean + "/"
+	kept := s.tree.files[:0]
+	for _, entry := range s.tree.files {
+		if entry.Path == clean || strings.HasPrefix(entry.Path, prefix) {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	s.tree.files = kept
+}
+
 type treeNode struct {
 	entry    vault.Entry
 	children []*treeNode

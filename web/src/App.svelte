@@ -436,7 +436,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         }
       },
       onOpenPath: (path) => {
-        void openFile(path)
+        const hashIdx = path.indexOf('#')
+        if (hashIdx >= 0) {
+          const targetPath = path.slice(0, hashIdx) || currentPath
+          const hash = path.slice(hashIdx + 1)
+          void openFile(targetPath, undefined, hash ? { hash } : {})
+        } else {
+          void openFile(path)
+        }
       },
       onFiles: (files, pos) => {
         void uploadImages(files, pos)
@@ -556,7 +563,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         treePollTimer = setTimeout(() => {
           treePollTimer = null
           void refreshTree(false, true)
-        }, 1000)
+        }, 250)
       }
     } catch (err) {
       if (requestId !== treeRequestId) return
@@ -1755,7 +1762,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         scopePath = null
         localStorage.removeItem(SCOPE_KEY)
       }
-      await refreshTree(true)
+      await refreshTree(false, true)
       if (currentPath && matchesDeleted(currentPath)) clearCurrentFile()
       flash(`Deleted ${path}`)
     } catch (err) {
@@ -1995,12 +2002,19 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       <a class="brand" href={repoUrl} target="_blank" rel="noopener noreferrer" title="Burley on GitHub">
         <span class="brand-mark" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="26" height="26" fill="none">
+            <defs>
+              <clipPath id="burley-brand-clip">
+                <rect width="32" height="32" rx="7" />
+              </clipPath>
+            </defs>
             <rect width="32" height="32" rx="7" fill="#c2410c" />
-            <path d="M1 13.5 C10 9.5 22 17.5 31 13.5 L31 24.5 C22 28.5 10 20.5 1 24.5 Z" fill="#fff7ed" opacity="0.18" />
-            <path d="M2.5 19 C10.5 15.5 21.5 22.5 29.5 19" stroke="#fff7ed" stroke-width="1.3" stroke-linecap="round" opacity="0.22" />
-            <rect x="4.5" y="20.5" width="9" height="4.8" rx="2.4" fill="#fff7ed" />
-            <rect x="12" y="14.5" width="7.4" height="4" rx="2" fill="#fff7ed" opacity="0.94" />
-            <rect x="18.8" y="9.2" width="5.8" height="3.2" rx="1.6" fill="#fff7ed" opacity="0.88" />
+            <g clip-path="url(#burley-brand-clip)">
+              <path d="M0 9.5 C6 4.5 12 13.5 18 9.5 C24 5.5 28 11.5 32 8.5 L32 23.5 C27 27.5 22 20.5 16 24.5 C10 28.5 5 21.5 0 25 Z" fill="#fff7ed" opacity="0.22" />
+              <path d="M1.5 17.5 C7.5 13.5 13.5 21.5 19.5 17.5 C24.5 14 28.5 18.5 30.5 16.5" stroke="#fff7ed" stroke-width="1.3" stroke-linecap="round" opacity="0.26" />
+              <rect x="4.5" y="18.2" width="8.2" height="4.4" rx="2.2" fill="#fff7ed" />
+              <rect x="12.2" y="13.8" width="7.2" height="4" rx="2" fill="#fff7ed" opacity="0.95" />
+              <rect x="19.6" y="10.2" width="6" height="3.4" rx="1.7" fill="#fff7ed" opacity="0.9" />
+            </g>
           </svg>
         </span>
         <span class="brand-name">Burley</span>
@@ -4395,6 +4409,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     gap: 12px;
     padding: 20px 20px 8px;
   }
+  .delete-head > div {
+    flex: 1;
+    min-width: 0;
+  }
   .delete-icon {
     display: grid;
     place-items: center;
@@ -4415,6 +4433,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     color: var(--text-muted);
     font-size: 12.5px;
     line-height: 1.55;
+    overflow-wrap: anywhere;
   }
   .delete-dialog code {
     font-family: var(--font-mono);
@@ -4423,6 +4442,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     padding: 1px 5px;
     border-radius: 4px;
     color: var(--text-primary);
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .delete-actions {
     display: flex;
