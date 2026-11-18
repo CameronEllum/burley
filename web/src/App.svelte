@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo } from './lib/api'
+  import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf, stripMdExt } from './lib/paths'
+  import { baseName, dirOf, isHtmlPath, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
@@ -82,9 +82,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let autoSave = $state(true)
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let spellCheck = $state(false)
+  let fileTypes = $state<string[]>(['markdown', 'html'])
+  let backgroundScan = $state(false)
   let agentPins = $state<Record<string, string>>({})
   let disabledAgents = $state<string[]>([])
   let rawMode = $state(false)
+  let htmlFrameNonce = $state(0)
+  const isCurrentHtml = $derived(isHtmlPath(currentPath))
+  const htmlFrameSrc = $derived(
+    isCurrentHtml ? `/raw/${encodeURI(currentPath)}?v=${htmlFrameNonce}` : '',
+  )
   let zenMode = $state(false)
   let scrollProgress = $state(0)
   let figureOpen = $state(false)
@@ -541,7 +548,133 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
   }
 
-  async function refreshTree(refresh = false, quiet = false) {
+  let treeVersion = 0
+
+  function compareTreeEntries(a: Entry, b: Entry): number {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  }
+
+  function insertSortedEntry(list: Entry[], item: Entry) {
+    let idx = list.findIndex((existing) => compareTreeEntries(item, existing) < 0)
+    if (idx === -1) idx = list.length
+    list.splice(idx, 0, item)
+  }
+
+  function removeTreeNode(entries: Entry[], targetPath: string): boolean {
+    const slash = targetPath.lastIndexOf('/')
+    if (slash === -1) {
+      const idx = entries.findIndex((e) => !e.isDir && e.path === targetPath)
+      if (idx === -1) return false
+      entries.splice(idx, 1)
+      return true
+    }
+    const parentPath = targetPath.slice(0, slash)
+    const parts = parentPath.split('/')
+    const chain: { list: Entry[]; idx: number }[] = []
+    let list = entries
+    let prefix = ''
+    for (const part of parts) {
+      prefix = prefix ? `${prefix}/${part}` : part
+      const dirIdx = list.findIndex((e) => e.isDir && e.path === prefix)
+      if (dirIdx === -1) return false
+      chain.push({ list, idx: dirIdx })
+      list = list[dirIdx].children ?? []
+    }
+    const fileIdx = list.findIndex((e) => !e.isDir && e.path === targetPath)
+    if (fileIdx === -1) return false
+    list.splice(fileIdx, 1)
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const { list: parentList, idx } = chain[i]
+      if ((parentList[idx].children?.length ?? 0) === 0) {
+        parentList.splice(idx, 1)
+      } else {
+        break
+      }
+    }
+    return true
+  }
+
+  function insertTreeNode(entries: Entry[], file: FlatFile) {
+    const parts = file.path.split('/')
+    let list = entries
+    let prefix = ''
+    for (let i = 0; i < parts.length - 1; i++) {
+      const name = parts[i]
+      prefix = prefix ? `${prefix}/${name}` : name
+      let dir = list.find((e) => e.isDir && e.path === prefix)
+      if (!dir) {
+        dir = { name, path: prefix, isDir: true, modTime: 0, size: 0, children: [] }
+        insertSortedEntry(list, dir)
+      }
+      const children = dir.children ?? (dir.children = [])
+      list = children
+    }
+    const existing = list.find((e) => !e.isDir && e.path === file.path)
+    if (existing) {
+      existing.modTime = file.modTime
+      existing.size = file.size
+      return
+    }
+    insertSortedEntry(list, {
+      name: file.name,
+      path: file.path,
+      isDir: false,
+      modTime: file.modTime,
+      size: file.size,
+    })
+  }
+
+  function updateTreeNode(entries: Entry[], file: FlatFile) {
+    const parts = file.path.split('/')
+    let list = entries
+    let prefix = ''
+    for (let i = 0; i < parts.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i]
+      const dir = list.find((e) => e.isDir && e.path === prefix)
+      if (!dir || !dir.children) {
+        insertTreeNode(entries, file)
+        return
+      }
+      list = dir.children
+    }
+    const existing = list.find((e) => !e.isDir && e.path === file.path)
+    if (existing) {
+      existing.modTime = file.modTime
+      existing.size = file.size
+    } else {
+      insertTreeNode(entries, file)
+    }
+  }
+
+  function applyTreeDelta(response: TreeResponse) {
+    for (const removedPath of response.removed ?? []) {
+      removeTreeNode(tree, removedPath)
+      const idx = files.findIndex((f) => f.path === removedPath)
+      if (idx !== -1) files.splice(idx, 1)
+    }
+    for (const updatedFile of response.updated ?? []) {
+      updateTreeNode(tree, updatedFile)
+      const existing = files.find((f) => f.path === updatedFile.path)
+      if (existing) {
+        existing.modTime = updatedFile.modTime
+        existing.size = updatedFile.size
+      } else {
+        files.push(updatedFile)
+      }
+    }
+    for (const addedFile of response.added ?? []) {
+      insertTreeNode(tree, addedFile)
+      if (!files.some((f) => f.path === addedFile.path)) {
+        files.push(addedFile)
+      }
+    }
+    if ((response.added?.length ?? 0) > 0) {
+      files.sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase()))
+    }
+  }
+
+  async function refreshTree(refresh = false, quiet = false, since?: number) {
     const requestId = ++treeRequestId
     if (treePollTimer) {
       clearTimeout(treePollTimer)
@@ -549,8 +682,26 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
     if (!quiet) loading = true
     try {
-      const response = await api.tree(undefined, refresh)
+      const response = await api.tree(undefined, refresh, since)
       if (requestId !== treeRequestId) return
+      if (response.unchanged) {
+        treeVersion = response.version ?? treeVersion
+        treeComplete = response.done
+        loading = false
+        return
+      }
+      if (response.delta) {
+        treeVersion = response.version ?? treeVersion
+        applyTreeDelta(response)
+        treeComplete = response.done
+        loading = false
+        if (scopePath && !findFolder(tree, scopePath)) {
+          scopePath = null
+          localStorage.removeItem(SCOPE_KEY)
+        }
+        return
+      }
+      treeVersion = response.version ?? 0
       tree = response.tree
       files = response.files
       root = response.root
@@ -575,6 +726,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       treeComplete = true
     }
   }
+
+  $effect(() => {
+    if (!backgroundScan) return
+    const timer = setInterval(() => {
+      if (treeComplete && !loading && !document.hidden) {
+        void refreshTree(false, true, treeVersion)
+      }
+    }, 30_000)
+    return () => clearInterval(timer)
+  })
 
   async function rescanFolder(path: string) {
     if (!path || rescanningFolder === path) return
@@ -623,6 +784,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     conflictData = null
     conflictOpen = false
     editor?.setDoc(data.path, decoded.text)
+    htmlFrameNonce += 1
     setLuaDocument(data.path)
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null }
@@ -727,6 +889,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         saveState = 'saved'
         saveError = ''
         editor?.reloadDoc(remote.path, decoded.text)
+        htmlFrameNonce += 1
         flash(`Reloaded ${baseName(remote.path)} (changed on disk)`)
       } else {
         conflictData = remote
@@ -970,6 +1133,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         autoSave,
         ctrlClickLink,
         spellCheck,
+        fileTypes,
+        backgroundScan,
         agentModels: agentPins,
         disabledAgents,
       })
@@ -1016,6 +1181,12 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       spellCheck = patch.spellCheck
       editor?.setSpellcheck(spellCheck)
     }
+    if (patch.fileTypes !== undefined) {
+      fileTypes = patch.fileTypes
+    }
+    if (patch.backgroundScan !== undefined) {
+      backgroundScan = patch.backgroundScan
+    }
     if (patch.disabledAgents !== undefined) {
       const prevDisabled = new Set(disabledAgents)
       disabledAgents = patch.disabledAgents
@@ -1039,13 +1210,26 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         }
       }
     }
-    void persistSettings()
+    if (patch.fileTypes !== undefined) {
+      void persistSettings().then(() => refreshTree(true))
+    } else {
+      void persistSettings()
+    }
   }
 
   function toggleRawMode() {
     rawMode = !rawMode
     localStorage.setItem(RAW_MODE_KEY, rawMode ? '1' : '0')
     editor?.setRawMode(rawMode)
+    if (!rawMode && isCurrentHtml) {
+      if (dirty) {
+        void saveNow().then(() => {
+          htmlFrameNonce += 1
+        })
+      } else {
+        htmlFrameNonce += 1
+      }
+    }
   }
 
   function toggleZenMode() {
@@ -1077,6 +1261,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         autoSave = response.settings.autoSave
         ctrlClickLink = response.settings.ctrlClickLink
         spellCheck = response.settings.spellCheck
+        fileTypes = response.settings.fileTypes ?? ['markdown', 'html']
+        backgroundScan = response.settings.backgroundScan ?? false
         agentPins = response.settings.agentModels ?? {}
         disabledAgents = response.settings.disabledAgents ?? []
         applyTheme(themeMode, lightTheme, darkTheme)
@@ -1096,6 +1282,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           autoSave,
           ctrlClickLink,
           spellCheck,
+          fileTypes,
+          backgroundScan,
           agentModels: agentPins,
           disabledAgents,
         })
@@ -2380,10 +2568,19 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         class="editor-host"
         class:wide={wideMode}
         class:raw={rawMode}
+        hidden={isCurrentHtml && !rawMode}
         data-md-style={markdownStyle}
         bind:this={editorHost}
         style={`--editor-measure: ${zenMode ? '760px' : wideMode ? '1200px' : '820px'}; --editor-gutter: ${zenMode ? '32px' : wideMode ? '28px' : '48px'}`}
       ></div>
+      {#if isCurrentHtml && !rawMode}
+        <iframe
+          class="html-frame"
+          title={currentPath}
+          src={htmlFrameSrc}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+      {/if}
 
       {#if !currentPath}
         <div class="empty-state">
@@ -2907,7 +3104,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, agentModels: agentPins, disabledAgents }}
     agents={sortedAllAgents}
     agentTests={agentTests}
     agentTesting={agentTesting}
@@ -3822,6 +4019,14 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
   .editor-host.wide {
     background: var(--bg-app);
+  }
+  .html-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
   }
   .loading-bar {
     position: absolute;

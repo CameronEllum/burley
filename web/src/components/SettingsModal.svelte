@@ -37,11 +37,11 @@
   const featureUrl = $derived(featureRequestUrl(repo))
   const releasesUrl = $derived(`${repo}/releases`)
 
-  type Tab = 'behaviour' | 'appearance' | 'agents' | 'about'
+  type Tab = 'behaviour' | 'appearance' | 'filetypes' | 'agents' | 'about'
 
   const storedTab = localStorage.getItem('burley:settings-tab')
   let tab = $state<Tab>(
-    storedTab === 'appearance' || storedTab === 'agents' || storedTab === 'about'
+    storedTab === 'appearance' || storedTab === 'filetypes' || storedTab === 'agents' || storedTab === 'about'
       ? storedTab
       : 'behaviour',
   )
@@ -86,6 +86,33 @@
     const current = settings.disabledAgents ?? []
     const next = enabled ? current.filter((item) => item !== id) : current.includes(id) ? current : [...current, id]
     onchange({ disabledAgents: next })
+  }
+
+  const supportedFileTypes = [
+    {
+      id: 'markdown',
+      name: 'Markdown',
+      extensions: '.md, .markdown, .mdown, .mkd',
+      description: 'Live-preview editor with math, tables, diagrams, and Lua cells.',
+    },
+    {
+      id: 'html',
+      name: 'HTML',
+      extensions: '.html, .htm',
+      description: 'Rendered in an embedded frame with scripts and local assets enabled. Toggle Raw to edit source.',
+    },
+  ] as const
+
+  function isFileTypeEnabled(id: string): boolean {
+    return (settings.fileTypes ?? ['markdown', 'html']).includes(id)
+  }
+
+  function toggleFileType(id: string, enabled: boolean) {
+    const current = settings.fileTypes ?? ['markdown', 'html']
+    const next = enabled
+      ? current.includes(id) ? current : [...current, id]
+      : current.filter((item) => item !== id)
+    onchange({ fileTypes: next })
   }
 
   $effect(() => {
@@ -169,6 +196,13 @@
       >
       <button
         class="settings-tab"
+        class:active={tab === 'filetypes'}
+        role="tab"
+        aria-selected={tab === 'filetypes'}
+        onclick={() => switchTab('filetypes')}>File Types</button
+      >
+      <button
+        class="settings-tab"
         class:active={tab === 'agents'}
         role="tab"
         aria-selected={tab === 'agents'}
@@ -224,6 +258,19 @@
               class="switch"
               checked={settings.spellCheck}
               onchange={(event) => onchange({ spellCheck: event.currentTarget.checked })}
+            />
+          </label>
+          <h3>Vault</h3>
+          <label class="setting-row">
+            <span>
+              <strong>Background file scan</strong>
+              <small>Periodically rescan the vault at very low priority so external file changes appear automatically.</small>
+            </span>
+            <input
+              type="checkbox"
+              class="switch"
+              checked={settings.backgroundScan}
+              onchange={(event) => onchange({ backgroundScan: event.currentTarget.checked })}
             />
           </label>
         </section>
@@ -318,6 +365,24 @@
               </button>
             {/each}
           </div>
+        </section>
+      {:else if tab === 'filetypes'}
+        <section class="settings-section">
+          <h3>Supported file types</h3>
+          <p class="section-lead">Choose which file types appear in the file browser and full-text search.</p>
+          {#each supportedFileTypes as ft (ft.id)}
+            <label class="setting-row">
+              <span>
+                <strong>{ft.name} <code class="ext-tag">{ft.extensions}</code></strong>
+                <small>{ft.description}</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={isFileTypeEnabled(ft.id)}
+                onchange={(event) => toggleFileType(ft.id, event.currentTarget.checked)}
+              />
+            </label>
+          {/each}
         </section>
       {:else if tab === 'agents'}
         <section class="settings-section">
@@ -1165,5 +1230,23 @@
   }
   .agent-status.error {
     color: var(--danger-fg);
+  }
+  .section-lead {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .ext-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    vertical-align: 1px;
   }
 </style>

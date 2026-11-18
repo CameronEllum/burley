@@ -375,7 +375,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     const href = anchor.getAttribute('href') ?? ''
     if (!href || href.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(href)) return
     const resolved = resolveRelative(currentPath || view.state.facet(filePathFacet), href)
-    if (resolved && /\.(md|markdown|mdown|mkd)$/i.test(resolved)) {
+    if (resolved && /\.(md|markdown|mdown|mkd|html|htm)$/i.test(resolved)) {
       event.preventDefault()
       opts.onOpenPath?.(resolved)
     }

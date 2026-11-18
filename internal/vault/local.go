@@ -129,10 +129,19 @@ func notFoundIfNeeded(err error) error {
 	return err
 }
 
-// Tree returns the recursive directory tree of Markdown files. Directories that
-// contain no Markdown files (recursively) are omitted, as are hidden folders.
+func (v *LocalVault) enabledFileTypes(ctx context.Context) []string {
+	settings, _, err := v.ReadSettings(ctx)
+	if err != nil {
+		return defaultFileTypes()
+	}
+	return normalizeFileTypes(settings.FileTypes)
+}
+
+// Tree returns the recursive directory tree of enabled files. Directories that
+// contain no matching files (recursively) are omitted, as are hidden folders.
 func (v *LocalVault) Tree(ctx context.Context) ([]Entry, error) {
-	entries, _, err := v.walk(ctx, v.root, "")
+	types := v.enabledFileTypes(ctx)
+	entries, _, err := v.walk(ctx, v.root, "", types)
 	if err != nil {
 		return nil, err
 	}
@@ -142,15 +151,15 @@ func (v *LocalVault) Tree(ctx context.Context) ([]Entry, error) {
 	return entries, nil
 }
 
-// ScanTree walks every visible folder and calls visit for each Markdown file.
+// ScanTree walks every visible folder and calls visit for each enabled file.
 // The HTTP layer uses this to publish a progressively populated tree for large
 // vaults; directories are derived from the file paths.
 func (v *LocalVault) ScanTree(ctx context.Context, visit func(Entry) error) error {
-	return v.scanDir(ctx, v.root, "", visit)
+	return v.scanDir(ctx, v.root, "", v.enabledFileTypes(ctx), visit)
 }
 
 // ScanFolder walks a single vault-relative subfolder and calls visit for each
-// Markdown file inside it.
+// enabled file inside it.
 func (v *LocalVault) ScanFolder(ctx context.Context, relDir string, visit func(Entry) error) error {
 	if strings.TrimSpace(relDir) == "" {
 		return v.ScanTree(ctx, visit)
@@ -166,10 +175,10 @@ func (v *LocalVault) ScanFolder(ctx context.Context, relDir string, visit func(E
 	if !info.IsDir() {
 		return ErrInvalidPath
 	}
-	return v.scanDir(ctx, abs, clean, visit)
+	return v.scanDir(ctx, abs, clean, v.enabledFileTypes(ctx), visit)
 }
 
-func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, visit func(Entry) error) error {
+func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, types []string, visit func(Entry) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -194,12 +203,12 @@ func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, visit f
 			if name == "node_modules" || name == "vendor" {
 				continue
 			}
-			if err := v.scanDir(ctx, filepath.Join(dirAbs, name), rel, visit); err != nil {
+			if err := v.scanDir(ctx, filepath.Join(dirAbs, name), rel, types, visit); err != nil {
 				return err
 			}
 			continue
 		}
-		if !IsMarkdownPath(name) {
+		if !IsEnabledFile(name, types) {
 			continue
 		}
 		info, err := de.Info()
@@ -219,7 +228,7 @@ func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, visit f
 	return nil
 }
 
-func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string) ([]Entry, bool, error) {
+func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string, types []string) ([]Entry, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -249,7 +258,7 @@ func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string) ([]Entry, 
 			if name == "node_modules" || name == "vendor" {
 				continue
 			}
-			children, childMD, err := v.walk(ctx, filepath.Join(dirAbs, name), rel)
+			children, childMD, err := v.walk(ctx, filepath.Join(dirAbs, name), rel, types)
 			if err != nil {
 				return nil, false, err
 			}
@@ -265,7 +274,7 @@ func (v *LocalVault) walk(ctx context.Context, dirAbs, relDir string) ([]Entry, 
 			}
 			continue
 		}
-		if !info.Mode().IsRegular() || !IsMarkdownPath(name) {
+		if !info.Mode().IsRegular() || !IsEnabledFile(name, types) {
 			continue
 		}
 		hasMarkdown = true
@@ -290,7 +299,7 @@ func (v *LocalVault) Read(ctx context.Context, relPath string) (FileData, error)
 	if err != nil {
 		return FileData{}, err
 	}
-	if !IsMarkdownPath(clean) {
+	if !IsSupportedPath(clean) {
 		return FileData{}, ErrInvalidPath
 	}
 	info, err := os.Stat(abs)
@@ -325,7 +334,7 @@ func (v *LocalVault) Write(ctx context.Context, relPath string, content []byte, 
 	if err != nil {
 		return FileData{}, err
 	}
-	if !IsMarkdownPath(clean) {
+	if !IsSupportedPath(clean) {
 		return FileData{}, ErrInvalidPath
 	}
 	if err := ctx.Err(); err != nil {
@@ -489,7 +498,7 @@ func (v *LocalVault) Rename(ctx context.Context, fromPath, toPath string) error 
 			return ErrInvalidPath
 		}
 	} else {
-		if !IsMarkdownPath(fromClean) || !IsMarkdownPath(toClean) {
+		if !IsSupportedPath(fromClean) || !IsSupportedPath(toClean) {
 			return ErrInvalidPath
 		}
 	}
@@ -526,7 +535,7 @@ func (v *LocalVault) Delete(ctx context.Context, relPath string) error {
 	if info.IsDir() {
 		return os.RemoveAll(abs)
 	}
-	if !IsMarkdownPath(clean) {
+	if !IsSupportedPath(clean) {
 		return ErrInvalidPath
 	}
 	return os.Remove(abs)
@@ -551,6 +560,62 @@ var assetTypes = map[string]string{
 	".pdf":  "application/pdf",
 	".mp4":  "video/mp4",
 	".webm": "video/webm",
+}
+
+var rawTypes = map[string]string{
+	".html":     "text/html; charset=utf-8",
+	".htm":      "text/html; charset=utf-8",
+	".css":      "text/css; charset=utf-8",
+	".js":       "application/javascript; charset=utf-8",
+	".mjs":      "application/javascript; charset=utf-8",
+	".wasm":     "application/wasm",
+	".woff":     "font/woff",
+	".woff2":    "font/woff2",
+	".ttf":      "font/ttf",
+	".otf":      "font/otf",
+	".xml":      "application/xml; charset=utf-8",
+	".map":      "application/json",
+	".md":       "text/markdown; charset=utf-8",
+	".markdown": "text/markdown; charset=utf-8",
+	".mdown":    "text/markdown; charset=utf-8",
+	".mkd":      "text/markdown; charset=utf-8",
+}
+
+// ReadRaw returns raw bytes plus a MIME type for serving HTML files and their
+// relative scripts, stylesheets, fonts, and assets inside an iframe.
+func (v *LocalVault) ReadRaw(ctx context.Context, relPath string) ([]byte, string, error) {
+	abs, clean, err := v.resolve(relPath)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, seg := range strings.Split(clean, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return nil, "", ErrInvalidPath
+		}
+	}
+	ext := strings.ToLower(path.Ext(clean))
+	mimeType, ok := rawTypes[ext]
+	if !ok {
+		mimeType, ok = assetTypes[ext]
+	}
+	if !ok {
+		mimeType = "application/octet-stream"
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, "", notFoundIfNeeded(err)
+	}
+	if info.IsDir() {
+		return nil, "", ErrInvalidPath
+	}
+	if info.Size() > maxAssetBytes {
+		return nil, "", ErrTooLarge
+	}
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, "", notFoundIfNeeded(err)
+	}
+	return b, mimeType, nil
 }
 
 // ReadAsset returns raw bytes plus a MIME type for a non-Markdown asset.
@@ -648,6 +713,10 @@ func rgNoMatches(err error) bool {
 }
 
 func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max int) ([]SearchMatch, error) {
+	types := v.enabledFileTypes(ctx)
+	if len(types) == 0 {
+		return []SearchMatch{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -656,13 +725,21 @@ func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max in
 		"--max-count", "50",
 		"--smart-case",
 		"--no-messages",
-		"--glob", "*.md",
-		"--glob", "*.markdown",
+	}
+	for _, ft := range types {
+		switch ft {
+		case "markdown":
+			args = append(args, "--glob", "*.md", "--glob", "*.markdown", "--glob", "*.mdown", "--glob", "*.mkd")
+		case "html":
+			args = append(args, "--glob", "*.html", "--glob", "*.htm")
+		}
+	}
+	args = append(args,
 		"--glob", "!.*",
 		"--",
 		query,
 		v.root,
-	}
+	)
 	cmd := exec.CommandContext(ctx, rg, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -751,6 +828,10 @@ func (v *LocalVault) searchRipgrep(ctx context.Context, rg, query string, max in
 }
 
 func (v *LocalVault) searchGo(ctx context.Context, query string, max int) ([]SearchMatch, error) {
+	types := v.enabledFileTypes(ctx)
+	if len(types) == 0 {
+		return []SearchMatch{}, nil
+	}
 	matches := make([]SearchMatch, 0, max)
 	needle := strings.ToLower(query)
 
@@ -771,7 +852,7 @@ func (v *LocalVault) searchGo(ctx context.Context, query string, max int) ([]Sea
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() || !IsMarkdownPath(name) {
+		if !d.Type().IsRegular() || !IsEnabledFile(name, types) {
 			return nil
 		}
 		info, infoErr := d.Info()

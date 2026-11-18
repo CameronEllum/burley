@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Entry } from '../lib/api'
-  import { stripMdExt } from '../lib/paths'
+  import { isHtmlPath, stripMdExt } from '../lib/paths'
   import TreeItem from './TreeItem.svelte'
 
   let {
@@ -105,6 +105,9 @@
     >
       <span class="file-dot" aria-hidden="true"></span>
       <span class="label">{stripMdExt(entry.name)}</span>
+      {#if isHtmlPath(entry.path)}
+        <span class="file-type-tag">HTML</span>
+      {/if}
     </button>
     <button
       class="row-star"
@@ -200,6 +203,18 @@
   }
   .file-row.active .file-dot {
     background: var(--accent);
+  }
+  .file-type-tag {
+    margin-left: auto;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--panel);
+    border: 1px solid var(--border-soft);
+    color: var(--text-muted);
+    flex: 0 0 auto;
   }
   .dir-item {
     position: relative;

@@ -17,6 +17,11 @@ export function stripMdExt(name: string): string {
   return name.replace(/\.(md|markdown|mdown|mkd)$/i, '')
 }
 
+/** True for HTML files (.html / .htm). */
+export function isHtmlPath(filePath: string): boolean {
+  return /\.(html|htm)$/i.test(filePath)
+}
+
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
 
 /** True for absolute URLs / data URIs that should be left untouched. */

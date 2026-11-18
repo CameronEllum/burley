@@ -26,6 +26,12 @@ type Settings struct {
 	// missing entry means "use the agent's own default".
 	AgentModels    map[string]string `json:"agentModels"`
 	DisabledAgents []string          `json:"disabledAgents"`
+	FileTypes      []string          `json:"fileTypes"`
+	BackgroundScan bool              `json:"backgroundScan"`
+}
+
+func defaultFileTypes() []string {
+	return []string{"markdown", "html"}
 }
 
 func defaultSettings() Settings {
@@ -40,6 +46,7 @@ func defaultSettings() Settings {
 		SpellCheck:     false,
 		AgentModels:    map[string]string{},
 		DisabledAgents: []string{},
+		FileTypes:      defaultFileTypes(),
 	}
 }
 
@@ -140,7 +147,33 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		SpellCheck:     settings.SpellCheck,
 		AgentModels:    normalizeAgentModels(settings.AgentModels),
 		DisabledAgents: normalizeDisabledAgents(settings.DisabledAgents),
+		FileTypes:      normalizeFileTypes(settings.FileTypes),
+		BackgroundScan: settings.BackgroundScan,
 	}, nil
+}
+
+// normalizeFileTypes keeps only known file type IDs. A nil slice (omitted in
+// partial payloads or legacy configs) defaults to markdown + html.
+func normalizeFileTypes(types []string) []string {
+	if types == nil {
+		return defaultFileTypes()
+	}
+	seen := make(map[string]bool, len(types))
+	for _, ft := range types {
+		switch strings.ToLower(strings.TrimSpace(ft)) {
+		case "markdown":
+			seen["markdown"] = true
+		case "html":
+			seen["html"] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for _, ft := range []string{"markdown", "html"} {
+		if seen[ft] {
+			out = append(out, ft)
+		}
+	}
+	return out
 }
 
 // normalizeDisabledAgents keeps only valid, unique, sorted agent IDs.
@@ -222,6 +255,21 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(yamlQuote(settings.CtrlClickLink))
 	b.WriteString("\nspell_check: ")
 	b.WriteString(boolYAML(settings.SpellCheck))
+	hasMD := false
+	hasHTML := false
+	for _, ft := range settings.FileTypes {
+		if ft == "markdown" {
+			hasMD = true
+		} else if ft == "html" {
+			hasHTML = true
+		}
+	}
+	b.WriteString("\nfile_type_markdown: ")
+	b.WriteString(boolYAML(hasMD))
+	b.WriteString("\nfile_type_html: ")
+	b.WriteString(boolYAML(hasHTML))
+	b.WriteString("\nbackground_scan: ")
+	b.WriteString(boolYAML(settings.BackgroundScan))
 	if len(settings.AgentModels) > 0 {
 		ids := make([]string, 0, len(settings.AgentModels))
 		for id := range settings.AgentModels {
@@ -250,6 +298,8 @@ func settingsYAML(settings Settings) string {
 
 func parseSettingsYAML(content string) Settings {
 	settings := defaultSettings()
+	mdEnabled := true
+	htmlEnabled := true
 	for _, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -314,8 +364,28 @@ func parseSettingsYAML(content string) Settings {
 			if parsedBool, ok := parseYAMLBool(parsed); ok {
 				settings.SpellCheck = parsedBool
 			}
+		case "file_type_markdown":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				mdEnabled = parsedBool
+			}
+		case "file_type_html":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				htmlEnabled = parsedBool
+			}
+		case "background_scan", "backgroundscan":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.BackgroundScan = parsedBool
+			}
 		}
 	}
+	fileTypes := make([]string, 0, 2)
+	if mdEnabled {
+		fileTypes = append(fileTypes, "markdown")
+	}
+	if htmlEnabled {
+		fileTypes = append(fileTypes, "html")
+	}
+	settings.FileTypes = fileTypes
 	settings.DisabledAgents = normalizeDisabledAgents(settings.DisabledAgents)
 	return settings
 }

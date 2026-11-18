@@ -16,7 +16,7 @@ import { api } from './api'
 import { getActiveView } from './viewRef'
 
 const LINK_SYNTAX = /^\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)$/
-const MD_FILE = /\.(md|markdown|mdown|mkd)$/i
+const NOTE_FILE = /\.(md|markdown|mdown|mkd|html|htm)$/i
 
 let openPathHandler: ((path: string) => void) | null = null
 let linkClickBehavior: 'toggle' | 'open' = 'toggle'
@@ -135,7 +135,7 @@ function buildLinkDecorations(state: EditorState): DecorationSet {
         const hashIdx = href.indexOf('#')
         const hashPart = hashIdx >= 0 ? href.slice(hashIdx) : ''
         const resolved = resolveRelative(currentFile, href.split('#')[0])
-        if (resolved && MD_FILE.test(resolved)) {
+        if (resolved && NOTE_FILE.test(resolved)) {
           internalPath = `${resolved}${hashPart}`
           url = ''
         } else if (resolved) {

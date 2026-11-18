@@ -26,6 +26,12 @@ export interface TreeResponse {
   done: boolean
   scanning?: boolean
   scanned?: number
+  version?: number
+  unchanged?: boolean
+  delta?: boolean
+  added?: FlatFile[]
+  updated?: FlatFile[]
+  removed?: string[]
   error?: string
 }
 
@@ -57,6 +63,9 @@ export interface AppSettings {
   agentModels: Record<string, string>
   /** Agent IDs explicitly disabled by the user. */
   disabledAgents: string[]
+  /** Enabled viewable/searchable file type IDs ("markdown", "html"). */
+  fileTypes: string[]
+  backgroundScan: boolean
 }
 
 export interface AppMeta {
@@ -161,8 +170,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async tree(signal?: AbortSignal, refresh = false): Promise<TreeResponse> {
-    return request<TreeResponse>(`/api/tree${refresh ? '?refresh=1' : ''}`, { signal })
+  async tree(signal?: AbortSignal, refresh = false, since?: number): Promise<TreeResponse> {
+    const params = new URLSearchParams()
+    if (refresh) params.set('refresh', '1')
+    if (since !== undefined && since > 0) params.set('since', String(since))
+    const qs = params.toString()
+    return request<TreeResponse>(`/api/tree${qs ? `?${qs}` : ''}`, { signal })
   },
 
   async rescanFolder(path: string, signal?: AbortSignal): Promise<TreeResponse> {

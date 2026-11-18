@@ -5,6 +5,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -52,6 +53,9 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	if s.opts.Logger == nil {
 		s.opts.Logger = log.Default()
 	}
+	if initialSettings, _, err := v.ReadSettings(context.Background()); err == nil && initialSettings.BackgroundScan {
+		s.configureBackgroundScan(true)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
@@ -66,6 +70,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("DELETE /api/file", s.handleDeleteFile)
 	mux.HandleFunc("GET /api/asset", s.handleAsset)
 	mux.HandleFunc("POST /api/asset", s.handleUploadAsset)
+	mux.HandleFunc("GET /raw/", s.handleRawFile)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/favorites", s.handleGetFavorites)
 	mux.HandleFunc("PUT /api/favorites", s.handlePutFavorites)
@@ -105,6 +110,9 @@ func withCommonHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
+		} else if strings.HasPrefix(r.URL.Path, "/raw/") {
+			h.Set("Cache-Control", "no-store")
+			h.Set("Content-Security-Policy", "frame-ancestors 'self'")
 		} else {
 			h.Set("Content-Security-Policy",
 				"default-src 'self'; "+
@@ -420,6 +428,29 @@ func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {	p := r.UR
 	}
 }
 
+func (s *server) handleRawFile(w http.ResponseWriter, r *http.Request) {
+	relPath := strings.TrimPrefix(r.URL.Path, "/raw/")
+	reader, ok := s.vault.(interface {
+		ReadRaw(context.Context, string) ([]byte, string, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotFound, "raw file serving not supported")
+		return
+	}
+	b, mimeType, err := reader.ReadRaw(r.Context(), relPath)
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", mimeType)
+	h.Set("Content-Length", strconv.Itoa(len(b)))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(b)
+	}
+}
+
 func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {	q := r.URL.Query().Get("q")
 	if strings.TrimSpace(q) == "" {
 		writeJSON(w, http.StatusOK, []vault.SearchMatch{})
@@ -537,6 +568,7 @@ func (s *server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
+	prev, _, _ := s.vault.ReadSettings(r.Context())
 	if err := s.vault.WriteSettings(r.Context(), req); err != nil {
 		vaultError(w, err)
 		return
@@ -546,7 +578,25 @@ func (s *server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
+	if !sameStringSlice(prev.FileTypes, settings.FileTypes) {
+		s.invalidateTree()
+	}
+	if prev.BackgroundScan != settings.BackgroundScan {
+		s.configureBackgroundScan(settings.BackgroundScan)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "exists": exists})
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ------------------------------------------------------------- file lifecycle

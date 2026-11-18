@@ -103,6 +103,37 @@ func IsMarkdownPath(p string) bool {
 	return false
 }
 
+// IsHTMLPath reports whether p has an HTML extension.
+func IsHTMLPath(p string) bool {
+	switch strings.ToLower(path.Ext(p)) {
+	case ".html", ".htm":
+		return true
+	}
+	return false
+}
+
+// IsSupportedPath reports whether p is a viewable/editable note type (Markdown or HTML).
+func IsSupportedPath(p string) bool {
+	return IsMarkdownPath(p) || IsHTMLPath(p)
+}
+
+// IsEnabledFile reports whether p matches one of the enabled file type IDs.
+func IsEnabledFile(p string, enabled []string) bool {
+	for _, ft := range enabled {
+		switch ft {
+		case "markdown":
+			if IsMarkdownPath(p) {
+				return true
+			}
+		case "html":
+			if IsHTMLPath(p) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // NormalizeRel converts a client supplied relative path to a clean,
 // forward-slash path, rejecting absolute paths, drive letters, NUL bytes and any
 // ".." traversal.
