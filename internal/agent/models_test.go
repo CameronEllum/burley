@@ -71,6 +71,17 @@ func TestAdapterArgsPinModel(t *testing.T) {
 	}
 }
 
+func TestClaudeStreamJSONIncludesVerbose(t *testing.T) {
+	adapter, ok := adapterByID("claude")
+	if !ok {
+		t.Fatal("claude adapter missing")
+	}
+	args := adapter.Args("hello", "")
+	if !contains(args, "--verbose") {
+		t.Fatalf("claude args missing --verbose for stream-json: %v", args)
+	}
+}
+
 func TestOpenCodePromptsViaStdin(t *testing.T) {
 	adapter, _ := adapterByID("opencode")
 	if !adapter.StdinPrompt {

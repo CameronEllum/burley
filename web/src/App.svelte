@@ -187,6 +187,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
   let treeFilter = $state('')
+  let treeScrollEl = $state<HTMLElement | null>(null)
+  let rescanningFolder = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
   let lightTheme = $state<LightPalette>(storedLightPalette())
   let darkTheme = $state<DarkPalette>(storedDarkPalette())
@@ -571,6 +573,38 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       flash(loadError, true)
       loading = false
       treeComplete = true
+    }
+  }
+
+  async function rescanFolder(path: string) {
+    if (!path || rescanningFolder === path) return
+    rescanningFolder = path
+    try {
+      const response = await api.rescanFolder(path)
+      tree = response.tree
+      files = response.files
+      root = response.root
+      treeComplete = response.done
+      loadError = response.error ?? ''
+      flash(`Rescanned ${path}`)
+    } catch (err) {
+      flash(`Could not rescan ${path}: ${err instanceof Error ? err.message : String(err)}`, true)
+    } finally {
+      if (rescanningFolder === path) rescanningFolder = ''
+    }
+  }
+
+  async function scrollTreeToPath(targetPath: string) {
+    await tick()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const container = treeScrollEl
+    if (!container) return
+    const rows = container.querySelectorAll<HTMLElement>('.file-row[data-path]')
+    for (const row of rows) {
+      if (row.dataset.path === targetPath) {
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        break
+      }
     }
   }
 
@@ -2242,7 +2276,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
                       <button
                         class="favorite-row"
                         title={favorite.exists ? favorite.path : `Missing: ${favorite.path}`}
-                        onclick={() => favorite.exists && void openFile(favorite.path)}
+                        onclick={() => {
+                          if (!favorite.exists) return
+                          void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
+                        }}
                       >
                         <span class="favorite-pin" aria-hidden="true">★</span>
                         <span class="favorite-name">{stripMdExt(favorite.name)}</span>
@@ -2263,7 +2300,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           </div>
         {/if}
 
-        <div class="tree-scroll">
+        <div class="tree-scroll" bind:this={treeScrollEl}>
           {#if loading && files.length === 0}
             <p class="tree-status">Loading…</p>
           {:else if loadError}
@@ -2276,7 +2313,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
               selectedPath={currentPath}
               filter={treeFilter}
               favorites={favorites}
+              rescanningPath={rescanningFolder}
               ontogglefavorite={(path) => toggleFavorite(path)}
+              onrescan={(path) => void rescanFolder(path)}
               oncontext={showContextMenu}
               onselect={(path) => void openFile(path)}
             />

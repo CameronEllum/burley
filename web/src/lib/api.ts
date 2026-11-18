@@ -165,6 +165,13 @@ export const api = {
     return request<TreeResponse>(`/api/tree${refresh ? '?refresh=1' : ''}`, { signal })
   },
 
+  async rescanFolder(path: string, signal?: AbortSignal): Promise<TreeResponse> {
+    return request<TreeResponse>(`/api/tree/rescan?path=${encodeURIComponent(path)}`, {
+      method: 'POST',
+      signal,
+    })
+  },
+
   async file(path: string, signal?: AbortSignal): Promise<FileData> {
     return request<FileData>(`/api/file?path=${encodeURIComponent(path)}`, { signal })
   },

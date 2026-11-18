@@ -38,7 +38,7 @@ var adapters = []Adapter{
 		Name:    "Claude Code",
 		Command: "claude",
 		Args: func(prompt, model string) []string {
-			args := []string{"-p", prompt, "--output-format", "stream-json"}
+			args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose"}
 			if model != "" {
 				args = append(args, "--model", model)
 			}

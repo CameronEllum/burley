@@ -8,7 +8,9 @@
     selectedPath,
     filter,
     favorites,
+    rescanningPath = '',
     ontogglefavorite,
+    onrescan,
     oncontext,
     onselect,
   }: {
@@ -16,7 +18,9 @@
     selectedPath: string
     filter: string
     favorites: string[]
+    rescanningPath?: string
     ontogglefavorite: (path: string) => void
+    onrescan?: (path: string) => void
     oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
   } = $props()
@@ -70,7 +74,9 @@
         {filter}
         {visiblePaths}
         {favorites}
+        {rescanningPath}
         {ontogglefavorite}
+        {onrescan}
         {oncontext}
         {onselect}
       />

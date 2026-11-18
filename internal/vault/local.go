@@ -149,6 +149,26 @@ func (v *LocalVault) ScanTree(ctx context.Context, visit func(Entry) error) erro
 	return v.scanDir(ctx, v.root, "", visit)
 }
 
+// ScanFolder walks a single vault-relative subfolder and calls visit for each
+// Markdown file inside it.
+func (v *LocalVault) ScanFolder(ctx context.Context, relDir string, visit func(Entry) error) error {
+	if strings.TrimSpace(relDir) == "" {
+		return v.ScanTree(ctx, visit)
+	}
+	abs, clean, err := v.resolve(relDir)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return notFoundIfNeeded(err)
+	}
+	if !info.IsDir() {
+		return ErrInvalidPath
+	}
+	return v.scanDir(ctx, abs, clean, visit)
+}
+
 func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, visit func(Entry) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

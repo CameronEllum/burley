@@ -91,3 +91,43 @@ func TestDeleteUpdatesTreeWithoutRescan(t *testing.T) {
 		t.Fatalf("files = %+v, want only keep.md", payload.Files)
 	}
 }
+
+func TestRescanFolderUpdatesOnlyTargetFolder(t *testing.T) {
+	h := newHarness(t)
+	h.write(t, "other/keep.md", "# Keep\n")
+	h.write(t, "target/a.md", "# A\n")
+
+	// Prime the cache.
+	resp, data := h.do(t, "GET", "/api/tree", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("tree = %d %s", resp.StatusCode, data)
+	}
+
+	// Add a file in both target/ and other/; rescanning target/ should pick up
+	// target/b.md without rescanning other/.
+	h.write(t, "target/b.md", "# B\n")
+	h.write(t, "other/unscanned.md", "# Unscanned\n")
+
+	resp, data = h.do(t, "POST", "/api/tree/rescan?path=target", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("rescan = %d %s", resp.StatusCode, data)
+	}
+	var payload struct {
+		Files []flatFile `json:"files"`
+		Done  bool       `json:"done"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Done {
+		t.Fatalf("expected done=true after folder rescan")
+	}
+	if len(payload.Files) != 3 {
+		t.Fatalf("files = %+v, want 3 entries (other/keep.md, target/a.md, target/b.md)", payload.Files)
+	}
+	for _, f := range payload.Files {
+		if f.Path == "other/unscanned.md" {
+			t.Fatalf("folder rescan unexpectedly rescanned other/: %+v", payload.Files)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -49,6 +50,10 @@ func (s *server) handleTree(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.writeTreeSnapshot(w, files, done, scanning, errMsg)
+}
+
+func (s *server) writeTreeSnapshot(w http.ResponseWriter, files []vault.Entry, done, scanning bool, errMsg string) {
 	flat := make([]flatFile, len(files))
 	for i, file := range files {
 		flat[i] = flatFile{Path: file.Path, Name: file.Name, ModTime: file.ModTime, Size: file.Size}
@@ -62,6 +67,60 @@ func (s *server) handleTree(w http.ResponseWriter, r *http.Request) {
 		"scanned":  len(files),
 		"error":    errMsg,
 	})
+}
+
+// handleRescanFolder rescans a single folder in place without invalidating or
+// re-walking the rest of the vault.
+func (s *server) handleRescanFolder(w http.ResponseWriter, r *http.Request) {
+	rawPath := r.URL.Query().Get("path")
+	clean, err := vault.NormalizeRel(rawPath)
+	if err != nil {
+		vaultError(w, err)
+		return
+	}
+
+	scanner, ok := s.vault.(interface {
+		ScanFolder(context.Context, string, func(vault.Entry) error) error
+	})
+	if !ok {
+		s.invalidateTree()
+		s.startTreeScan(true)
+		files, done, scanning, errMsg := s.treeSnapshot()
+		s.writeTreeSnapshot(w, files, done, scanning, errMsg)
+		return
+	}
+
+	var updated []vault.Entry
+	err = scanner.ScanFolder(r.Context(), clean, func(entry vault.Entry) error {
+		updated = append(updated, entry)
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, vault.ErrNotFound) {
+			s.deleteTreeEntries(clean)
+			files, done, scanning, errMsg := s.treeSnapshot()
+			s.writeTreeSnapshot(w, files, done, scanning, errMsg)
+			return
+		}
+		vaultError(w, err)
+		return
+	}
+
+	prefix := clean + "/"
+	s.tree.mu.Lock()
+	kept := make([]vault.Entry, 0, len(s.tree.files)+len(updated))
+	for _, entry := range s.tree.files {
+		if entry.Path == clean || strings.HasPrefix(entry.Path, prefix) {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	kept = append(kept, updated...)
+	s.tree.files = kept
+	s.tree.mu.Unlock()
+
+	files, done, scanning, errMsg := s.treeSnapshot()
+	s.writeTreeSnapshot(w, files, done, scanning, errMsg)
 }
 
 func (s *server) startTreeScan(refresh bool) {

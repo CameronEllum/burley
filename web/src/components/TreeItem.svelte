@@ -9,7 +9,9 @@
     filter,
     visiblePaths,
     favorites,
+    rescanningPath = '',
     ontogglefavorite,
+    onrescan,
     oncontext,
     onselect,
   }: {
@@ -18,7 +20,9 @@
     filter: string
     visiblePaths: Set<string> | null
     favorites: string[]
+    rescanningPath?: string
     ontogglefavorite: (path: string) => void
+    onrescan?: (path: string) => void
     oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
   } = $props()
@@ -40,24 +44,48 @@
 {#if visible}
   {#if entry.isDir}
   <li class="dir">
-    <button class="row dir-row" onclick={() => (open = !open)} aria-expanded={expanded}
-      oncontextmenu={(event) => {
-        event.preventDefault()
-        oncontext(event, entry.path, true)
-      }}
-    >
-      <span class="chevron" class:open={expanded} aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-      </span>
-      <span class="folder" aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="14" height="14"><path d="M1.5 4.2c0-.5.4-.9.9-.9h3.2l1.3 1.4h6.7c.5 0 .9.4.9.9v6.2c0 .5-.4.9-.9.9H2.4a.9.9 0 0 1-.9-.9z" fill="none" stroke="currentColor" stroke-width="1.2" /></svg>
-      </span>
-      <span class="label">{entry.name}</span>
-    </button>
+    <div class="dir-item">
+      <button
+        class="row dir-row"
+        data-path={entry.path}
+        onclick={() => (open = !open)}
+        aria-expanded={expanded}
+        oncontextmenu={(event) => {
+          event.preventDefault()
+          oncontext(event, entry.path, true)
+        }}
+      >
+        <span class="chevron" class:open={expanded} aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </span>
+        <span class="folder" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M1.5 4.2c0-.5.4-.9.9-.9h3.2l1.3 1.4h6.7c.5 0 .9.4.9.9v6.2c0 .5-.4.9-.9.9H2.4a.9.9 0 0 1-.9-.9z" fill="none" stroke="currentColor" stroke-width="1.2" /></svg>
+        </span>
+        <span class="label">{entry.name}</span>
+      </button>
+      {#if onrescan}
+        <button
+          class="dir-rescan"
+          class:spinning={rescanningPath === entry.path}
+          title={`Rescan ${entry.name}`}
+          aria-label={`Rescan ${entry.name}`}
+          disabled={rescanningPath === entry.path}
+          onclick={(event) => {
+            event.stopPropagation()
+            onrescan(entry.path)
+          }}
+        >
+          <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+            <path d="M15.6 8.1A5.7 5.7 0 1 0 16 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M15.9 4.4v3.9h-3.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      {/if}
+    </div>
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {ontogglefavorite} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {ontogglefavorite} {onrescan} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}
@@ -67,6 +95,7 @@
     <button
       class="row file-row"
       class:active={entry.path === selectedPath}
+      data-path={entry.path}
       title={entry.path}
       onclick={() => onselect(entry.path)}
       oncontextmenu={(event) => {
@@ -171,6 +200,47 @@
   }
   .file-row.active .file-dot {
     background: var(--accent);
+  }
+  .dir-item {
+    position: relative;
+  }
+  .dir-item .dir-row {
+    padding-right: 30px;
+  }
+  .dir-rescan {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .dir-item:hover .dir-rescan,
+  .dir-rescan:focus-visible,
+  .dir-rescan.spinning {
+    opacity: 1;
+  }
+  .dir-rescan:hover {
+    background: var(--hover);
+    color: var(--accent);
+  }
+  .dir-rescan.spinning svg {
+    animation: dir-rescan-spin 0.8s linear infinite;
+  }
+  @keyframes dir-rescan-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .file-item {
     position: relative;
