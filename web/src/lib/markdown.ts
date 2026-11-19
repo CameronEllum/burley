@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { isValidInlineMath } from './math'
+import { colorSpecToPresentation, extractCellColor, parseColorAttrs } from './colors'
 
 const blockMath = {
   name: 'blockMath',
@@ -52,7 +53,71 @@ const inlineMath = {
   },
 }
 
-marked.use({ gfm: true, extensions: [blockMath, inlineMath] })
+const highlightMark = {
+  name: 'highlightMark',
+  level: 'inline' as const,
+  start(src: string) {
+    return src.indexOf('==')
+  },
+  tokenizer(this: any, src: string) {
+    const match = /^==(?=\S)((?:\\.|[^=\n]|=(?!=))*?\S)==/.exec(src)
+    if (!match) return undefined
+    return {
+      type: 'highlightMark',
+      raw: match[0],
+      tokens: this.lexer.inlineTokens(match[1]),
+    }
+  },
+  renderer(this: any, token: any) {
+    return `<mark class="burley-highlight">${this.parser.parseInline(token.tokens)}</mark>`
+  },
+}
+
+const bracketedColorSpan = {
+  name: 'bracketedColorSpan',
+  level: 'inline' as const,
+  start(src: string) {
+    return src.indexOf('[')
+  },
+  tokenizer(this: any, src: string) {
+    const match = /^\[((?:\\.|[^\]\n])+)\]\{([^{}\n]+)\}/.exec(src)
+    if (!match) return undefined
+    const spec = parseColorAttrs(match[2], 'inline')
+    if (!spec) return undefined
+    return {
+      type: 'bracketedColorSpan',
+      raw: match[0],
+      spec,
+      tokens: this.lexer.inlineTokens(match[1]),
+    }
+  },
+  renderer(this: any, token: any) {
+    const pres = colorSpecToPresentation(token.spec, 'inline')
+    const classAttr = pres.classes.length ? ` class="${pres.classes.join(' ')}"` : ''
+    const styleAttr = pres.style ? ` style="${pres.style}"` : ''
+    return `<span${classAttr}${styleAttr}>${this.parser.parseInline(token.tokens)}</span>`
+  },
+}
+
+marked.use({
+  gfm: true,
+  extensions: [blockMath, inlineMath, highlightMark, bracketedColorSpan],
+  renderer: {
+    tablecell(token) {
+      const { spec, content } = extractCellColor(token.text ?? '')
+      if (!spec) return false
+      const pres = colorSpecToPresentation(spec, 'cell')
+      const body = marked.parseInline(content) as string
+      const tag = token.header ? 'th' : 'td'
+      const attrs: string[] = []
+      if (token.align) attrs.push(`align="${token.align}"`)
+      if (pres.classes.length) attrs.push(`class="${pres.classes.join(' ')}"`)
+      if (pres.style) attrs.push(`style="${pres.style}"`)
+      const attrStr = attrs.length ? ` ${attrs.join(' ')}` : ''
+      return `<${tag}${attrStr}>${body}</${tag}>\n`
+    },
+  },
+})
 
 export function renderMarkdown(markdown: string): string {
   const html = marked.parse(markdown) as string

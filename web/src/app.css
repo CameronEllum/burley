@@ -57,6 +57,27 @@
   --danger-border: hsl(0 60% 82%);
   --toast-bg: hsl(30 15% 16%);
   --toast-fg: #fff;
+
+  /* Burley color dialect tokens (light) */
+  --tint-highlight-bg: hsl(48 96% 80%);
+  --tint-red-bg: hsl(0 75% 95%);
+  --tint-red-fg: hsl(0 65% 40%);
+  --tint-orange-bg: hsl(24 90% 94%);
+  --tint-orange-fg: hsl(20 78% 36%);
+  --tint-amber-bg: hsl(44 92% 92%);
+  --tint-amber-fg: hsl(35 80% 30%);
+  --tint-green-bg: hsl(146 52% 93%);
+  --tint-green-fg: hsl(148 52% 28%);
+  --tint-teal-bg: hsl(174 52% 93%);
+  --tint-teal-fg: hsl(176 58% 26%);
+  --tint-blue-bg: hsl(212 78% 95%);
+  --tint-blue-fg: hsl(214 72% 36%);
+  --tint-purple-bg: hsl(270 72% 95%);
+  --tint-purple-fg: hsl(272 58% 40%);
+  --tint-pink-bg: hsl(330 75% 95%);
+  --tint-pink-fg: hsl(330 62% 40%);
+  --tint-gray-bg: hsl(34 14% 92%);
+  --tint-gray-fg: hsl(30 10% 36%);
 }
 
 :root[data-theme='dark'] {
@@ -111,6 +132,27 @@
     --danger-border: hsl(0 32% 32%);
     --toast-bg: hsl(30 12% 88%);
     --toast-fg: hsl(30 15% 12%);
+
+    /* Burley color dialect tokens (dark) */
+    --tint-highlight-bg: hsl(42 62% 24%);
+    --tint-red-bg: hsl(0 36% 19%);
+    --tint-red-fg: hsl(0 74% 74%);
+    --tint-orange-bg: hsl(22 44% 19%);
+    --tint-orange-fg: hsl(24 88% 70%);
+    --tint-amber-bg: hsl(38 42% 18%);
+    --tint-amber-fg: hsl(42 86% 68%);
+    --tint-green-bg: hsl(148 32% 17%);
+    --tint-green-fg: hsl(146 60% 66%);
+    --tint-teal-bg: hsl(174 34% 17%);
+    --tint-teal-fg: hsl(174 62% 66%);
+    --tint-blue-bg: hsl(212 38% 19%);
+    --tint-blue-fg: hsl(210 78% 74%);
+    --tint-purple-bg: hsl(270 34% 20%);
+    --tint-purple-fg: hsl(272 74% 76%);
+    --tint-pink-bg: hsl(330 34% 20%);
+    --tint-pink-fg: hsl(330 74% 76%);
+    --tint-gray-bg: hsl(30 10% 21%);
+    --tint-gray-fg: hsl(32 12% 72%);
 }
 
 /* ------------------------------------------------------- UI palettes */
@@ -1217,6 +1259,194 @@ button {
   border-color: var(--border-strong);
   background: var(--bg-app);
 }
+.cm-burley-table-cell-paint {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+.cm-burley-table-cell-paint:hover,
+.cm-burley-table-cell-paint[aria-expanded='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+}
+.cm-burley-table-swatch-pop {
+  position: absolute;
+  pointer-events: auto;
+  width: 222px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-app);
+  box-shadow: 0 12px 30px -8px rgb(0 0 0 / 0.28);
+  z-index: 6;
+}
+.cm-burley-table-swatch-pop[hidden] {
+  display: none;
+}
+.cm-burley-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.cm-burley-swatch-btn {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cm-burley-swatch-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12);
+}
+.cm-burley-swatch-btn.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cm-burley-swatch-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-soft);
+}
+.cm-burley-swatch-color {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.cm-burley-swatch-hex {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.cm-burley-swatch-hex.is-invalid {
+  border-color: var(--danger-fg);
+}
+.cm-burley-swatch-apply {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cm-burley-swatch-apply:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Burley Markdown color dialect */
+.cm-burley-color-syntax {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.burley-color-span {
+  border-radius: 3px;
+}
+.cm-line span:has(.burley-color-span) {
+  text-decoration: none;
+}
+.cm-line .burley-color-span {
+  text-decoration: none;
+}
+.cm-line .burley-color-span span:not(.cm-code) {
+  color: inherit;
+  text-decoration: none;
+}
+.cm-line .burley-fg-red    { color: var(--tint-red-fg); }
+.cm-line .burley-fg-orange { color: var(--tint-orange-fg); }
+.cm-line .burley-fg-amber  { color: var(--tint-amber-fg); }
+.cm-line .burley-fg-green  { color: var(--tint-green-fg); }
+.cm-line .burley-fg-teal   { color: var(--tint-teal-fg); }
+.cm-line .burley-fg-blue   { color: var(--tint-blue-fg); }
+.cm-line .burley-fg-purple { color: var(--tint-purple-fg); }
+.cm-line .burley-fg-pink   { color: var(--tint-pink-fg); }
+.cm-line .burley-fg-gray   { color: var(--tint-gray-fg); }
+.burley-color-span.burley-has-bg,
+.burley-highlight {
+  background-color: var(--tint-highlight-bg);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.burley-color-span.burley-has-bg {
+  background-color: transparent;
+}
+.burley-fg-red    { color: var(--tint-red-fg); }
+.burley-fg-orange { color: var(--tint-orange-fg); }
+.burley-fg-amber  { color: var(--tint-amber-fg); }
+.burley-fg-green  { color: var(--tint-green-fg); }
+.burley-fg-teal   { color: var(--tint-teal-fg); }
+.burley-fg-blue   { color: var(--tint-blue-fg); }
+.burley-fg-purple { color: var(--tint-purple-fg); }
+.burley-fg-pink   { color: var(--tint-pink-fg); }
+.burley-fg-gray   { color: var(--tint-gray-fg); }
+
+.burley-bg-red    { background-color: var(--tint-red-bg); }
+.burley-bg-orange { background-color: var(--tint-orange-bg); }
+.burley-bg-amber  { background-color: var(--tint-amber-bg); }
+.burley-bg-green  { background-color: var(--tint-green-bg); }
+.burley-bg-teal   { background-color: var(--tint-teal-bg); }
+.burley-bg-blue   { background-color: var(--tint-blue-bg); }
+.burley-bg-purple { background-color: var(--tint-purple-bg); }
+.burley-bg-pink   { background-color: var(--tint-pink-bg); }
+.burley-bg-gray   { background-color: var(--tint-gray-bg); }
+
+table th.burley-cell-tint-red, table td.burley-cell-tint-red, table th.burley-cell-bg-red, table td.burley-cell-bg-red          { background-color: var(--tint-red-bg); }
+table th.burley-cell-tint-orange, table td.burley-cell-tint-orange, table th.burley-cell-bg-orange, table td.burley-cell-bg-orange { background-color: var(--tint-orange-bg); }
+table th.burley-cell-tint-amber, table td.burley-cell-tint-amber, table th.burley-cell-bg-amber, table td.burley-cell-bg-amber  { background-color: var(--tint-amber-bg); }
+table th.burley-cell-tint-green, table td.burley-cell-tint-green, table th.burley-cell-bg-green, table td.burley-cell-bg-green  { background-color: var(--tint-green-bg); }
+table th.burley-cell-tint-teal, table td.burley-cell-tint-teal, table th.burley-cell-bg-teal, table td.burley-cell-bg-teal     { background-color: var(--tint-teal-bg); }
+table th.burley-cell-tint-blue, table td.burley-cell-tint-blue, table th.burley-cell-bg-blue, table td.burley-cell-bg-blue     { background-color: var(--tint-blue-bg); }
+table th.burley-cell-tint-purple, table td.burley-cell-tint-purple, table th.burley-cell-bg-purple, table td.burley-cell-bg-purple { background-color: var(--tint-purple-bg); }
+table th.burley-cell-tint-pink, table td.burley-cell-tint-pink, table th.burley-cell-bg-pink, table td.burley-cell-bg-pink     { background-color: var(--tint-pink-bg); }
+table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-cell-bg-gray, table td.burley-cell-bg-gray     { background-color: var(--tint-gray-bg); }
+
+table th.burley-cell-tint-red, table td.burley-cell-tint-red, table th.burley-cell-fg-red, table td.burley-cell-fg-red          { color: var(--tint-red-fg); }
+table th.burley-cell-tint-orange, table td.burley-cell-tint-orange, table th.burley-cell-fg-orange, table td.burley-cell-fg-orange { color: var(--tint-orange-fg); }
+table th.burley-cell-tint-amber, table td.burley-cell-tint-amber, table th.burley-cell-fg-amber, table td.burley-cell-fg-amber  { color: var(--tint-amber-fg); }
+table th.burley-cell-tint-green, table td.burley-cell-tint-green, table th.burley-cell-fg-green, table td.burley-cell-fg-green  { color: var(--tint-green-fg); }
+table th.burley-cell-tint-teal, table td.burley-cell-tint-teal, table th.burley-cell-fg-teal, table td.burley-cell-fg-teal     { color: var(--tint-teal-fg); }
+table th.burley-cell-tint-blue, table td.burley-cell-tint-blue, table th.burley-cell-fg-blue, table td.burley-cell-fg-blue     { color: var(--tint-blue-fg); }
+table th.burley-cell-tint-purple, table td.burley-cell-tint-purple, table th.burley-cell-fg-purple, table td.burley-cell-fg-purple { color: var(--tint-purple-fg); }
+table th.burley-cell-tint-pink, table td.burley-cell-tint-pink, table th.burley-cell-fg-pink, table td.burley-cell-fg-pink     { color: var(--tint-pink-fg); }
+table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-cell-fg-gray, table td.burley-cell-fg-gray     { color: var(--tint-gray-fg); }
 
 /* Checkbox / task list polish */
 .cm-burley-task {

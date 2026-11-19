@@ -10,6 +10,13 @@ import { filePathFacet, previewGeometryChanged, readOnlyFacet } from './cm'
 import { getLinkClickBehavior, openTableLink } from './links'
 import { renderMarkdown } from './markdown'
 import {
+  PALETTE_COLORS,
+  applyCellColor,
+  colorSpecToPresentation,
+  extractCellColor,
+  normalizeHexColor,
+} from './colors'
+import {
   cycleColumnAlignment,
   deleteColumnAt,
   deleteRowAt,
@@ -134,6 +141,10 @@ class TableController {
   private readonly colAlignBtn: HTMLButtonElement
   private readonly colDelBtn: HTMLButtonElement
   private readonly rawBtn: HTMLButtonElement
+  private readonly cellPaintBtn: HTMLButtonElement
+  private readonly swatchPopEl: HTMLDivElement
+  private readonly swatchColorInput: HTMLInputElement
+  private readonly swatchHexInput: HTMLInputElement
 
   private activeEdit: ActiveEdit | null = null
   private pendingEdit: [number, number] | null = null
@@ -145,12 +156,26 @@ class TableController {
   private hoverDeleteRow = -1
   private hoverInsertCol = 0
   private hoverCol = -1
+  private hoverCell: [number, number] | null = null
+  private swatchTarget: [number, number] | null = null
   private downX = 0
   private downY = 0
   private dragAnchor: { node: Node; offset: number } | null = null
   private dragMoved = false
   private readonly onDocMouseMove = (event: MouseEvent) => this.handleDragMove(event)
   private readonly onDocMouseUp = () => this.handleDragEnd()
+  private readonly onSwatchDocMouseDown = (event: MouseEvent) => {
+    const target = event.target as Node | null
+    if (target && (this.swatchPopEl.contains(target) || this.cellPaintBtn.contains(target))) return
+    this.closeSwatchPopover(false)
+  }
+  private readonly onSwatchDocKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this.swatchTarget) {
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeSwatchPopover(true)
+    }
+  }
 
   constructor(
     private readonly root: HTMLDivElement,
@@ -191,6 +216,114 @@ class TableController {
 
     this.rawBtn = this.makeCtrlButton('cm-burley-table-ctrl cm-burley-table-raw-btn', '</>', 'Edit raw Markdown')
 
+    this.cellPaintBtn = this.makeCtrlButton('cm-burley-table-ctrl cm-burley-table-cell-paint', '', 'Cell color')
+    this.cellPaintBtn.setAttribute('aria-expanded', 'false')
+    this.cellPaintBtn.innerHTML =
+      '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><circle cx="5" cy="5" r="2.1" fill="currentColor"/><circle cx="11" cy="5" r="2.1" fill="currentColor" opacity="0.72"/><circle cx="5" cy="11" r="2.1" fill="currentColor" opacity="0.45"/><circle cx="11" cy="11" r="2.1" fill="currentColor" opacity="0.9"/></svg>'
+
+    this.swatchPopEl = document.createElement('div')
+    this.swatchPopEl.className = 'cm-burley-table-swatch-pop'
+    this.swatchPopEl.hidden = true
+    this.swatchPopEl.addEventListener('mousedown', (event) => {
+      event.stopPropagation()
+    })
+
+    const grid = document.createElement('div')
+    grid.className = 'cm-burley-swatch-grid'
+    const clearBtn = document.createElement('button')
+    clearBtn.type = 'button'
+    clearBtn.className = 'cm-burley-swatch-btn'
+    clearBtn.dataset.swatch = ''
+    clearBtn.textContent = '∅'
+    clearBtn.title = 'Clear cell color'
+    clearBtn.addEventListener('mousedown', (event) => event.preventDefault())
+    clearBtn.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.applySwatchAttr(null)
+    })
+    grid.appendChild(clearBtn)
+
+    for (const colorName of PALETTE_COLORS) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'cm-burley-swatch-btn'
+      btn.dataset.swatch = colorName
+      btn.title = colorName
+      btn.style.backgroundColor = `var(--tint-${colorName}-bg)`
+      btn.style.color = `var(--tint-${colorName}-fg)`
+      btn.style.borderColor = `var(--tint-${colorName}-fg)`
+      btn.addEventListener('mousedown', (event) => event.preventDefault())
+      btn.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.applySwatchAttr(`{.${colorName}}`)
+      })
+      grid.appendChild(btn)
+    }
+
+    const hexRow = document.createElement('div')
+    hexRow.className = 'cm-burley-swatch-hex-row'
+    this.swatchColorInput = document.createElement('input')
+    this.swatchColorInput.type = 'color'
+    this.swatchColorInput.className = 'cm-burley-swatch-color'
+    this.swatchColorInput.value = '#fef3c7'
+    this.swatchColorInput.title = 'Pick custom hex color'
+
+    this.swatchHexInput = document.createElement('input')
+    this.swatchHexInput.type = 'text'
+    this.swatchHexInput.className = 'cm-burley-swatch-hex'
+    this.swatchHexInput.placeholder = '#fef3c7'
+    this.swatchHexInput.spellcheck = false
+    this.swatchHexInput.setAttribute('aria-label', 'Custom hex color')
+
+    const applyHexBtn = document.createElement('button')
+    applyHexBtn.type = 'button'
+    applyHexBtn.className = 'cm-burley-swatch-apply'
+    applyHexBtn.textContent = 'Apply'
+    applyHexBtn.addEventListener('mousedown', (event) => event.preventDefault())
+
+    const submitHex = (rawHex: string) => {
+      const hex = normalizeHexColor(rawHex)
+      if (!hex) {
+        this.swatchHexInput.classList.add('is-invalid')
+        return
+      }
+      this.swatchHexInput.classList.remove('is-invalid')
+      this.applySwatchAttr(`{${hex}}`)
+    }
+
+    this.swatchColorInput.addEventListener('input', () => {
+      this.swatchHexInput.value = this.swatchColorInput.value
+      this.swatchHexInput.classList.remove('is-invalid')
+    })
+    this.swatchColorInput.addEventListener('change', () => {
+      submitHex(this.swatchColorInput.value)
+    })
+    this.swatchHexInput.addEventListener('input', () => {
+      this.swatchHexInput.classList.remove('is-invalid')
+      const hex = normalizeHexColor(this.swatchHexInput.value)
+      if (hex) this.swatchColorInput.value = hex
+    })
+    this.swatchHexInput.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        submitHex(this.swatchHexInput.value)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        this.closeSwatchPopover(true)
+      }
+    })
+    applyHexBtn.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      submitHex(this.swatchHexInput.value)
+    })
+
+    hexRow.append(this.swatchColorInput, this.swatchHexInput, applyHexBtn)
+    this.swatchPopEl.append(grid, hexRow)
+
     this.overlayEl.append(
       this.rowGuideEl,
       this.colGuideEl,
@@ -199,6 +332,8 @@ class TableController {
       this.colAddBtn,
       this.colPillEl,
       this.rawBtn,
+      this.cellPaintBtn,
+      this.swatchPopEl,
     )
 
     this.root.append(this.scrollWrap, this.overlayEl)
@@ -397,6 +532,7 @@ class TableController {
       event.preventDefault()
       event.stopPropagation()
       if (this.readOnly) return
+      this.closeSwatchPopover(false)
       this.commitActiveCell()
       const range = resolveTableRange(this.view, this.root)
       if (!range) return
@@ -408,9 +544,36 @@ class TableController {
       this.view.focus()
     })
 
+    this.cellPaintBtn.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (this.readOnly || !this.hoverCell) return
+      const [row, col] = this.hoverCell
+      if (this.swatchTarget && this.swatchTarget[0] === row && this.swatchTarget[1] === col) {
+        this.closeSwatchPopover(false)
+      } else {
+        this.openSwatchPopover(row, col)
+      }
+    })
+
+    this.tableEl.addEventListener('contextmenu', (event) => {
+      if (this.readOnly) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('textarea.cm-burley-table-input')) return
+      const cell = target?.closest<HTMLTableCellElement>('th, td')
+      if (!cell) return
+      const row = Number(cell.dataset.row)
+      const col = Number(cell.dataset.col)
+      if (Number.isNaN(row) || Number.isNaN(col)) return
+      event.preventDefault()
+      event.stopPropagation()
+      this.openSwatchPopover(row, col)
+    })
+
     this.root.addEventListener('mousemove', (event) => {
       if (this.readOnly) return
-      if ((event.target as HTMLElement | null)?.closest('.cm-burley-table-ctrl')) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.cm-burley-table-ctrl, .cm-burley-table-swatch-pop')) return
       this.updateOverlay(event.clientX, event.clientY)
     })
 
@@ -419,6 +582,7 @@ class TableController {
     })
 
     this.scrollWrap.addEventListener('scroll', () => {
+      this.closeSwatchPopover(false)
       this.hideHoverOverlay()
     })
   }
@@ -450,6 +614,7 @@ class TableController {
 
   destroy(): void {
     this.destroyed = true
+    this.closeSwatchPopover(false)
     this.handleDragEnd()
     this.closeEditorDom()
   }
@@ -457,7 +622,71 @@ class TableController {
   private applyReadOnlyState(): void {
     this.root.classList.toggle('is-readonly', this.readOnly)
     this.overlayEl.hidden = this.readOnly
-    if (this.readOnly) this.hideHoverOverlay()
+    if (this.readOnly) {
+      this.closeSwatchPopover(false)
+      this.hideHoverOverlay()
+    }
+  }
+
+  private openSwatchPopover(row: number, col: number): void {
+    const cell = this.findCell(row, col)
+    if (!cell) return
+    this.swatchTarget = [row, col]
+    this.cellPaintBtn.setAttribute('aria-expanded', 'true')
+
+    const { spec } = extractCellColor(this.table.rows[row]?.[col] ?? '')
+    const activeNamed =
+      spec?.cellTint ??
+      (spec?.bg?.kind === 'named' ? spec.bg.name : null) ??
+      (spec?.fg?.kind === 'named' ? spec.fg.name : null)
+    const activeHex =
+      (spec?.bg?.kind === 'hex' ? spec.bg.hex : null) ??
+      (spec?.fg?.kind === 'hex' ? spec.fg.hex : null)
+
+    for (const btn of this.swatchPopEl.querySelectorAll<HTMLButtonElement>('.cm-burley-swatch-btn')) {
+      const swatch = btn.dataset.swatch ?? ''
+      const isMatch = swatch === '' ? !spec : swatch === activeNamed
+      btn.classList.toggle('is-active', isMatch)
+    }
+    this.swatchHexInput.classList.remove('is-invalid')
+    this.swatchHexInput.value = activeHex ?? ''
+    if (activeHex) this.swatchColorInput.value = activeHex
+
+    const rootRect = this.root.getBoundingClientRect()
+    const cellRect = cell.getBoundingClientRect()
+    const popWidth = 222
+    const left = Math.max(4, Math.min(cellRect.left - rootRect.left, rootRect.width - popWidth - 4))
+    const top = cellRect.bottom - rootRect.top + 6
+    this.swatchPopEl.style.left = `${left}px`
+    this.swatchPopEl.style.top = `${top}px`
+    this.swatchPopEl.hidden = false
+
+    document.removeEventListener('mousedown', this.onSwatchDocMouseDown, true)
+    document.removeEventListener('keydown', this.onSwatchDocKeyDown, true)
+    document.addEventListener('mousedown', this.onSwatchDocMouseDown, true)
+    document.addEventListener('keydown', this.onSwatchDocKeyDown, true)
+  }
+
+  private closeSwatchPopover(focusView: boolean): void {
+    if (!this.swatchTarget && this.swatchPopEl.hidden) return
+    this.swatchTarget = null
+    this.swatchPopEl.hidden = true
+    this.cellPaintBtn.setAttribute('aria-expanded', 'false')
+    document.removeEventListener('mousedown', this.onSwatchDocMouseDown, true)
+    document.removeEventListener('keydown', this.onSwatchDocKeyDown, true)
+    if (focusView) this.view.focus()
+  }
+
+  private applySwatchAttr(attr: string | null): void {
+    const target = this.swatchTarget
+    if (!target) return
+    const [row, col] = target
+    const draft = this.readDraftTable()
+    const currentRaw = draft.rows[row]?.[col] ?? ''
+    const nextRaw = applyCellColor(currentRaw, attr)
+    const nextTable = updateCell(draft, row, col, nextRaw)
+    this.closeSwatchPopover(false)
+    this.commitTable(nextTable, null, true)
   }
 
   private renderTable(forceRender = false): void {
@@ -528,7 +757,19 @@ class TableController {
 
       if (forceRender || cell.dataset.raw !== rawText) {
         cell.dataset.raw = rawText
-        viewDiv.innerHTML = renderCellHtml(rawText)
+        const { spec, content } = extractCellColor(rawText)
+        for (const cls of Array.from(cell.classList)) {
+          if (cls.startsWith('burley-cell-')) cell.classList.remove(cls)
+        }
+        cell.style.backgroundColor = ''
+        cell.style.color = ''
+        if (spec) {
+          const pres = colorSpecToPresentation(spec, 'cell')
+          for (const cls of pres.classes) cell.classList.add(cls)
+          if (pres.backgroundColor) cell.style.backgroundColor = pres.backgroundColor
+          if (pres.color) cell.style.color = pres.color
+        }
+        viewDiv.innerHTML = renderCellHtml(content)
       }
     }
 
@@ -766,11 +1007,14 @@ class TableController {
     this.rowDelBtn.classList.remove('is-visible')
     this.colAddBtn.classList.remove('is-visible', 'is-hint')
     this.colPillEl.classList.remove('is-visible')
+    this.cellPaintBtn.classList.remove('is-visible')
     this.hoverDeleteRow = -1
     this.hoverCol = -1
+    this.hoverCell = null
   }
 
   private updateOverlay(clientX: number, clientY: number): void {
+    if (this.swatchTarget) return
     const rootRect = this.root.getBoundingClientRect()
     const scrollRect = this.scrollWrap.getBoundingClientRect()
     const tableRect = this.tableEl.getBoundingClientRect()
@@ -900,6 +1144,41 @@ class TableController {
       } else {
         this.colPillEl.classList.remove('is-visible')
       }
+    }
+
+    let cellRow = -1
+    for (let r = 0; r < rowCount; r++) {
+      const rTop = rowRects[r].top - rootRect.top
+      const rBot = rowRects[r].bottom - rootRect.top
+      if (my >= rTop && my <= rBot) {
+        cellRow = r
+        break
+      }
+    }
+    let cellCol = -1
+    for (let c = 0; c < colCount; c++) {
+      const cLeft = Math.max(colRects[c].left - rootRect.left, visLeft)
+      const cRight = Math.min(colRects[c].right - rootRect.left, visRight)
+      if (cRight > cLeft && mx >= cLeft && mx <= cRight) {
+        cellCol = c
+        break
+      }
+    }
+    const isEditingHovered =
+      cellRow >= 0 &&
+      cellCol >= 0 &&
+      this.activeEdit?.row === cellRow &&
+      this.activeEdit?.col === cellCol
+    if (cellRow >= 0 && cellCol >= 0 && !isEditingHovered) {
+      this.hoverCell = [cellRow, cellCol]
+      const rTop = rowRects[cellRow].top - rootRect.top
+      const cRight = Math.min(colRects[cellCol].right - rootRect.left, visRight)
+      this.cellPaintBtn.style.left = `${cRight - 10}px`
+      this.cellPaintBtn.style.top = `${rTop + 10}px`
+      this.cellPaintBtn.classList.add('is-visible')
+    } else {
+      this.hoverCell = null
+      this.cellPaintBtn.classList.remove('is-visible')
     }
   }
 }

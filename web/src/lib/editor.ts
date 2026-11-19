@@ -29,6 +29,7 @@ import { imagePreviewField } from './images'
 import { blockMathField, inlineMathPlugin } from './math'
 import { mathTooltipField } from './mathTooltip'
 import { linkPreviewField, setLinkOpenHandler } from './links'
+import { inlineColorField } from './inlineColors'
 import { taskCheckboxField } from './tasks'
 import { blockquoteStyler } from './quotes'
 import { listMarkerStyler } from './lists'
@@ -187,6 +188,7 @@ function previewExtensions(): Extension[] {
     blockPluginField(),
     imagePreviewField,
     linkPreviewField,
+    inlineColorField,
     inlineMathPlugin,
     blockMathField,
     mathTooltipField(),
