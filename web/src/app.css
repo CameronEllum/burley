@@ -1014,124 +1014,208 @@ button {
 
 /* Editable tables */
 .cm-burley-table-widget {
-  padding: 10px 0 16px;
-  margin: 0;
+  position: relative;
+  padding: 26px 20px 20px 26px;
+  margin: 4px 0;
 }
-.cm-burley-table-widget table {
+.cm-burley-table-widget.is-readonly {
+  padding: 10px 0 14px;
+}
+.cm-burley-table-scroll {
+  overflow-x: auto;
+}
+.cm-burley-table-scroll:focus {
+  outline: none;
+}
+.cm-burley-table {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.94em;
+  table-layout: auto;
 }
-.cm-burley-table-widget th,
-.cm-burley-table-widget td {
+.cm-burley-table th,
+.cm-burley-table td {
+  position: relative;
   border: 1px solid var(--border-soft);
-  padding: 5px 9px;
+  padding: 6px 10px;
   text-align: left;
   vertical-align: top;
+  user-select: text;
 }
-.cm-burley-table-widget th {
-  position: relative;
-  padding-right: 26px;
+.cm-burley-table th {
   background: var(--panel);
   font-weight: 600;
 }
-.cm-burley-table-cell {
+.cm-burley-table-cell-view {
+  min-height: 1.35em;
+  word-break: break-word;
+  cursor: text;
+}
+.cm-burley-table-cell-view code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--panel);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.cm-burley-table th.is-editing,
+.cm-burley-table td.is-editing {
+  background: var(--active);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  padding: 4px 8px;
+}
+.cm-burley-table-input {
   display: block;
   width: 100%;
   min-height: 1.35em;
-  padding: 1px 2px;
-  border-radius: 3px;
-  outline: none;
-  caret-color: var(--accent);
-  cursor: text;
-}
-.cm-burley-table-cell:focus {
-  background: var(--active);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-.cm-burley-table-align {
-  position: absolute;
-  right: 3px;
-  top: 50%;
-  transform: translateY(-50%);
+  margin: 0;
+  padding: 2px;
   border: 0;
-  border-radius: 4px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  caret-color: var(--accent);
+}
+.cm-burley-table-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+}
+.cm-burley-table-guide-row,
+.cm-burley-table-guide-col {
+  position: absolute;
+  background: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.cm-burley-table-guide-row {
+  height: 2px;
+  transform: translateY(-1px);
+}
+.cm-burley-table-guide-col {
+  width: 2px;
+  transform: translateX(-1px);
+}
+.cm-burley-table-guide-row.is-visible,
+.cm-burley-table-guide-col.is-visible {
+  opacity: 0.9;
+}
+.cm-burley-table-ctrl {
+  position: absolute;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.cm-burley-table-ctrl.is-visible {
+  opacity: 1;
+}
+.cm-burley-table-ctrl.is-hint {
+  opacity: 0.55;
+}
+.cm-burley-table-ctrl.is-hint:hover {
+  opacity: 1;
+}
+.cm-burley-table-add-row,
+.cm-burley-table-add-col,
+.cm-burley-table-del-row {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-app);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.1);
+}
+.cm-burley-table-add-row,
+.cm-burley-table-add-col {
+  color: var(--accent);
+}
+.cm-burley-table-add-row:hover,
+.cm-burley-table-add-col:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-app);
+}
+.cm-burley-table-del-row {
+  color: var(--text-muted);
+}
+.cm-burley-table-del-row:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger-fg);
+  color: var(--danger-fg);
+}
+.cm-burley-table-col-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-app);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
+}
+.cm-burley-table-col-btn {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 10px;
-  padding: 1px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
-  opacity: 0;
 }
-.cm-burley-table-widget th:hover .cm-burley-table-align,
-.cm-burley-table-align:focus {
-  opacity: 1;
-}
-.cm-burley-table-align:hover {
-  color: var(--accent);
+.cm-burley-table-col-btn:hover {
   background: var(--hover);
+  color: var(--accent);
 }
-.cm-burley-table-tools {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+.cm-burley-table-col-btn.danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
 }
-.cm-burley-table-widget:hover .cm-burley-table-tools {
-  opacity: 1;
-}
-.cm-burley-table-btn {
+.cm-burley-table-raw-btn {
+  top: 2px;
+  right: 2px;
+  padding: 1px 6px;
   border: 1px solid var(--border-soft);
   border-radius: 5px;
   background: var(--panel);
   color: var(--text-muted);
-  font: inherit;
+  font-family: var(--font-mono);
   font-size: 10.5px;
-  padding: 2px 6px;
+  line-height: 1.4;
   cursor: pointer;
 }
-.cm-burley-table-btn:hover {
+.cm-burley-table-widget:hover .cm-burley-table-raw-btn,
+.cm-burley-table-raw-btn:focus-visible {
+  opacity: 0.85;
+}
+.cm-burley-table-raw-btn:hover {
+  opacity: 1 !important;
   color: var(--text-primary);
   border-color: var(--border-strong);
-}
-.cm-burley-table-edge-row,
-.cm-burley-table-edge-col {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
   background: var(--bg-app);
-  color: var(--accent);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-  opacity: 0;
-  z-index: 2;
-}
-.cm-burley-table-edge-row {
-  left: 50%;
-  bottom: 5px;
-  transform: translateX(-50%);
-}
-.cm-burley-table-edge-col {
-  right: -11px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.cm-burley-table-widget:hover .cm-burley-table-edge-row,
-.cm-burley-table-widget:hover .cm-burley-table-edge-col {
-  opacity: 1;
-}
-.cm-burley-table-edge-row:hover,
-.cm-burley-table-edge-col:hover {
-  background: var(--active);
 }
 
 /* Checkbox / task list polish */
@@ -1236,7 +1320,7 @@ button {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
-.cm-burley-table-cell a {
+.cm-burley-table-cell-view a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;

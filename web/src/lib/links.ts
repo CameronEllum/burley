@@ -31,6 +31,39 @@ export function setLinkClickBehavior(behavior: 'toggle' | 'open'): void {
   linkClickBehavior = behavior
 }
 
+/** Current Ctrl/Cmd-click behaviour for links. */
+export function getLinkClickBehavior(): 'toggle' | 'open' {
+  return linkClickBehavior
+}
+
+/**
+ * Resolve and open an internal note, heading anchor, or vault asset link
+ * clicked inside a rendered table cell. Returns false for external URLs so the
+ * native anchor handles them normally.
+ */
+export function openTableLink(href: string, currentFile: string): boolean {
+  if (!href || href === '#') return false
+  if (href.startsWith('#')) {
+    openPathHandler?.(`${currentFile}${href}`)
+    return true
+  }
+  if (!isExternalRef(href)) {
+    const hashIdx = href.indexOf('#')
+    const hashPart = hashIdx >= 0 ? href.slice(hashIdx) : ''
+    const resolved = resolveRelative(currentFile, href.split('#')[0])
+    if (resolved && NOTE_FILE.test(resolved)) {
+      openPathHandler?.(`${resolved}${hashPart}`)
+      return true
+    }
+    if (resolved) {
+      window.open(api.assetUrl(resolved), '_blank', 'noopener,noreferrer')
+      return true
+    }
+    return true
+  }
+  return false
+}
+
 class LinkWidget extends WidgetType {
   constructor(
     readonly label: string,

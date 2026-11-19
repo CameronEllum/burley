@@ -324,6 +324,12 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
     if (target?.closest('.cm-burley-table-widget, .cm-burley-details-wrap, .cm-burley-block, .cm-burley-lua-cell')) {
       return
     }
+    const winSel = window.getSelection()
+    const anchorEl =
+      winSel?.anchorNode instanceof Element ? winSel.anchorNode : winSel?.anchorNode?.parentElement
+    if (anchorEl?.closest('.cm-burley-table-widget')) {
+      winSel?.removeAllRanges()
+    }
     pointerDown = true
     view.dispatch({ effects: setMouseSelecting.of(true) })
   }
