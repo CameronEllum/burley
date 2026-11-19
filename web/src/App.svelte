@@ -4,7 +4,7 @@
   import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf, isHtmlPath, stripMdExt } from './lib/paths'
+  import { baseName, dirOf, formatBytes, isHtmlPath, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
@@ -218,6 +218,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let currentHasAssets = $state(false)
   let pendingDelete = $state<{ path: string; isDir: boolean } | null>(null)
   let deleteDialogEl = $state<HTMLDialogElement | null>(null)
+  let pendingProperties = $state<{ path: string; isDir: boolean; sizeBytes: number } | null>(null)
+  let propertiesDialogEl = $state<HTMLDialogElement | null>(null)
   let pendingRename = $state<{ path: string; isDir: boolean } | null>(null)
   let renameDialogEl = $state<HTMLDialogElement | null>(null)
   let renameInput = $state<HTMLInputElement | null>(null)
@@ -1752,7 +1754,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   function showContextMenu(event: MouseEvent, path: string, isDir: boolean) {
     event.preventDefault()
     const width = 225
-    const height = isDir ? (scopePath ? 210 : 175) : 195
+    const height = isDir ? (scopePath ? 242 : 207) : 227
     contextMenuHasAssets = false
     contextMenu = {
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
@@ -1795,6 +1797,37 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     scopePath = null
     localStorage.removeItem(SCOPE_KEY)
     contextMenu = null
+  }
+
+  function computePropertiesSize(targetPath: string, isDir: boolean): number {
+    if (!isDir) {
+      return files.find((f) => f.path === targetPath)?.size ?? 0
+    }
+    const prefix = `${targetPath}/`
+    let total = 0
+    for (const file of files) {
+      if (file.path.startsWith(prefix)) {
+        total += file.size
+      }
+    }
+    return total
+  }
+
+  function requestProperties() {
+    const target = contextMenu
+    contextMenu = null
+    if (!target) return
+    pendingProperties = {
+      path: target.path,
+      isDir: target.isDir,
+      sizeBytes: computePropertiesSize(target.path, target.isDir),
+    }
+    propertiesDialogEl?.showModal()
+  }
+
+  function closePropertiesDialog() {
+    propertiesDialogEl?.close()
+    pendingProperties = null
   }
 
   function handleWindowPointerDown(event: PointerEvent) {
@@ -2974,6 +3007,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M5 13H4.5A1.5 1.5 0 0 1 3 11.5v-7A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5V5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
       <span>Copy path</span>
     </button>
+    <button class="context-menu-item" role="menuitem" onclick={requestProperties}>
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><circle cx="10" cy="10" r="6.8" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M10 9v4.2M10 6.5v.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+      <span>Properties</span>
+    </button>
     <button class="context-menu-item danger" role="menuitem" onclick={() => void requestDelete()}>
       <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M4.5 6h11M8 6V4.2h4V6M6 6l.7 10h6.6L14 6M8.5 9v4.5M11.5 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
       <span>Delete</span>
@@ -3011,6 +3048,40 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   <div class="delete-actions">
     <button class="secondary" onclick={closeDeleteDialog}>Cancel</button>
     <button class="danger" onclick={() => void confirmDelete()}>Delete</button>
+  </div>
+</dialog>
+
+<dialog
+  bind:this={propertiesDialogEl}
+  class="delete-dialog"
+  aria-labelledby="properties-title"
+  oncancel={(event) => {
+    event.preventDefault()
+    closePropertiesDialog()
+  }}
+  onclick={(event) => {
+    if (event.target === event.currentTarget) closePropertiesDialog()
+  }}
+>
+  <div class="delete-head">
+    <span class="delete-icon properties-icon" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="6.8" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M10 9v4.2M10 6.5v.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+    </span>
+    <div>
+      <h2 id="properties-title">Properties</h2>
+      {#if pendingProperties}
+        <p><code>{pendingProperties.path}</code></p>
+        <dl class="properties-list">
+          <div>
+            <dt>Size</dt>
+            <dd>{formatBytes(pendingProperties.sizeBytes)}</dd>
+          </div>
+        </dl>
+      {/if}
+    </div>
+  </div>
+  <div class="delete-actions">
+    <button class="secondary" onclick={closePropertiesDialog}>Close</button>
   </div>
 </dialog>
 
@@ -4666,6 +4737,37 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     border-radius: 10px;
     background: var(--danger-bg);
     color: var(--danger-fg);
+  }
+  .properties-icon {
+    background: var(--panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border-soft);
+  }
+  .properties-list {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border-soft);
+    display: grid;
+    gap: 6px;
+  }
+  .properties-list > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .properties-list dt {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .properties-list dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
   }
   .delete-dialog h2 {
     margin: 0 0 4px;

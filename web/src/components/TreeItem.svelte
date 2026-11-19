@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Entry } from '../lib/api'
-  import { isHtmlPath, stripMdExt } from '../lib/paths'
+  import { isHtmlPath, isMarkdownPath, stripMdExt } from '../lib/paths'
   import TreeItem from './TreeItem.svelte'
 
   let {
@@ -107,6 +107,8 @@
       <span class="label">{stripMdExt(entry.name)}</span>
       {#if isHtmlPath(entry.path)}
         <span class="file-type-tag">HTML</span>
+      {:else if isMarkdownPath(entry.path)}
+        <span class="file-type-tag">MD</span>
       {/if}
     </button>
     <button

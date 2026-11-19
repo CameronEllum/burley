@@ -17,9 +17,29 @@ export function stripMdExt(name: string): string {
   return name.replace(/\.(md|markdown|mdown|mkd)$/i, '')
 }
 
+/** True for Markdown files (.md / .markdown / .mdown / .mkd). */
+export function isMarkdownPath(filePath: string): boolean {
+  return /\.(md|markdown|mdown|mkd)$/i.test(filePath)
+}
+
 /** True for HTML files (.html / .htm). */
 export function isHtmlPath(filePath: string): boolean {
   return /\.(html|htm)$/i.test(filePath)
+}
+
+/** Format a byte count into a human-friendly size string. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  if (unit === 0) return `${Math.round(value)} B`
+  const formatted = value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)
+  return `${formatted.replace(/\.0+$/, '').replace(/(\.\d)0$/, '$1')} ${units[unit]}`
 }
 
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
