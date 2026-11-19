@@ -32,10 +32,31 @@ the compiled frontend, so deployment is a single executable.
 - **YAML properties card:** a leading frontmatter block folds into a compact
   card with tag chips, nested maps and clickable links; click a row or **Edit**
   to reveal the raw YAML in place, then move out to fold it back.
-- **Editable tables:** click a cell to edit it (Tab/Shift+Tab, arrows, Enter),
-  hover for + row / + column controls, cycle column alignment, and add/remove
-  rows or columns. Only the table range is rewritten, so the rest of the note is
-  untouched.
+- **Editable tables:** drag across cells to select and copy clean text in
+  display mode without triggering edits or copying UI glyphs, and
+  **double-click** any cell to edit plain text (`Tab`/`Shift+Tab`, `Enter`,
+  `Shift+Enter` for `<br>`, arrow keys; `Escape` commits and exits cleanly).
+  Hover row or column boundaries for contextual **`+`** insertion guides
+  (between rows/columns or at edges) and **`−`** immediate row/column deletion
+  (each change is atomic and undoable with `Ctrl+Z`), use the column header
+  pill to cycle alignment, and toggle **`</>`** in the top-right corner of any
+  table for per-table raw Markdown editing.
+- **Text & table colouring:** Pandoc-style inline spans (`[alert]{.red}`,
+  `[note]{.bg-amber}`, `[custom]{color=#c2410c bg=#fff7ed}`), `==highlights==`,
+  and leading table-cell directives (`| {.green} Healthy |`, `| {#fef3c7}
+  Custom |`). Includes 9 theme-aware light/dark named colors (`red`, `orange`,
+  `amber`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`, plus `ok`,
+  `warn`, `danger`, `info`, `muted` aliases) as well as custom `#RGB`/`#RRGGBB`
+  hex colors with automatic contrast ink. Hover or right-click any table cell
+  for the color swatch picker (`∅` clear, named swatches, native color picker,
+  and hex input), which writes `{...}` directives directly into Markdown with
+  `Ctrl+Z` undo and full HTML/PDF export support.
+- **HTML file viewing:** browse, search, and view `.html`/`.htm` files (badged
+  `HTML` alongside `MD` in the file tree) inside an interactive iframe served via
+  `/raw/<path>` with scripts and relative CSS/JS/assets supported, while **Raw**
+  mode remains available to inspect or edit HTML source in CodeMirror. Supported
+  file types (**Markdown**, **HTML**) can be toggled per vault in **Settings →
+  File Types**.
 - **Highlighted code blocks:** fenced code renders with highlight.js colors;
   editing the raw fence switches to a monospace source style.
 - **Image paste & drop:** paste a screenshot or drop an image file into the
@@ -72,9 +93,11 @@ the compiled frontend, so deployment is a single executable.
 - **Status bar:** the full file path and last-modified time live at the bottom,
   along with word count, caret position, and an update pill when a newer release
   exists (the top bar stays uncluttered).
-- **Settings page:** gear icon with Behaviour (auto-save, Ctrl-click behavior,
-  spellcheck) and Appearance (mode, light theme, dark theme, width, Markdown
-  style: Default / GitHub / Academic / Compact) tabs. Stored in
+- **Settings page:** gear icon with **Behaviour** (auto-save, Ctrl-click
+  behavior, spellcheck, optional very-low-priority **Background file scan** with
+  incremental tree updates), **Appearance** (mode, light theme, dark theme,
+  width, Markdown style: Default / GitHub / Academic / Compact), **File Types**
+  (toggle Markdown / HTML), **Agents**, and **About** tabs. Stored in
   `.burley/settings.yaml`.
 - **Raw mode:** `</>` toggles source view without losing cursor, scroll or undo;
   `Escape` exits the element under the caret.
@@ -367,7 +390,9 @@ Move the caret into the block to edit the source; the diagram renders again
 when the caret leaves. Diagrams also appear in the figure viewer and are
 embedded as SVG in HTML/PDF exports.
 
-### Tasks, tables, links```markdown
+### Tasks, tables, links
+
+```markdown
 - [x] Completed
 - [ ] Open
 
@@ -376,6 +401,18 @@ embedded as SVG in HTML/PDF exports.
 | one | two |
 
 See [the todo list](./notes/todo.md).
+```
+
+### Text & table colouring
+
+```markdown
+Status: [critical failure]{.red}, [needs review]{.bg-amber}, ==key point==,
+and [custom badge]{color=#c2410c bg=#fff7ed}.
+
+| Service | Status | Note |
+| --- | --- | --- |
+| API | {.green} Healthy | All checks pass |
+| Cache | {#fef3c7} Warm | [monitor]{.amber} latency |
 ```
 
 ---
