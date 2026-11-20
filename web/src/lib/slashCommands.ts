@@ -31,6 +31,7 @@ const items: SlashItem[] = [
   { label: 'mermaid', detail: 'diagram', info: 'Insert a ```mermaid diagram block' },
   { label: 'math', detail: 'block', info: 'Insert a $$ display-math block' },
   { label: 'table', detail: 'GFM', info: 'Insert a 3×2 table template' },
+  { label: 'datatable', detail: 'CSV/JSON', info: 'Insert a live ```table data block' },
   { label: 'callout', detail: 'note', info: 'Insert a > [!NOTE] callout' },
   { label: 'warning', detail: 'callout', info: 'Insert a > [!WARNING] callout' },
   { label: 'tip', detail: 'callout', info: 'Insert a > [!TIP] callout' },
@@ -52,6 +53,11 @@ function buildInsertion(label: string): Insertion | null {
     case 'plotly': {
       const text = `${FENCE}plotly\n{\n  "data": [{ "type": "scatter", "x": [1, 2, 3], "y": [4, 1, 6] }],\n  "layout": { "title": "New chart" }\n}\n${FENCE}`
       return { text, caret: text.indexOf('"data"') }
+    }
+    case 'datatable': {
+      const text = `${FENCE}table\nsrc: ./data/results.csv\n${FENCE}`
+      const start = text.indexOf('./data/results.csv')
+      return { text, caret: start, selectEnd: start + './data/results.csv'.length }
     }
     case 'math': {
       const text = '$$\n\n$$'

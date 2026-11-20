@@ -13,6 +13,11 @@ export const readOnlyFacet = Facet.define<boolean, boolean>({
   combine: (values) => values.some(Boolean),
 })
 
+/** Bumped when assets change on disk or the user triggers an explicit reload/re-render. */
+export const assetVersionFacet = Facet.define<number, number>({
+  combine: (values) => (values.length ? values[values.length - 1] : 0),
+})
+
 export function isMouseSelecting(state: EditorState): boolean {
   return Boolean(state.field(mouseSelectingField, false))
 }

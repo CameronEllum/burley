@@ -11,7 +11,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemir
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import hljs from 'highlight.js/lib/common'
-import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { assetVersionFacet, filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -96,11 +96,11 @@ export const genericCodeRenderer: BlockRenderer = {
 registerBlockRenderer('math', mathRenderer)
 registerBlockRenderer('katex', mathRenderer)
 
-export function assetUrlFor(currentFile: string, ref: string): string | null {
+export function assetUrlFor(currentFile: string, ref: string, assetVersion = 0): string | null {
   if (!ref) return null
   if (isExternalRef(ref)) return ref
   const resolved = resolveRelative(currentFile, ref)
-  return resolved ? api.assetUrl(resolved) : null
+  return resolved ? api.assetUrl(resolved, assetVersion) : null
 }
 
 /** How many body lines a block has (for the header badge). */
@@ -115,6 +115,7 @@ class BlockWidget extends WidgetType {
   constructor(
     readonly ctx: BlockContext,
     readonly renderer: BlockRenderer,
+    readonly assetVersion = 0,
   ) {
     super()
   }
@@ -122,6 +123,7 @@ class BlockWidget extends WidgetType {
   eq(other: BlockWidget): boolean {
     return (
       other.renderer === this.renderer &&
+      other.assetVersion === this.assetVersion &&
       other.ctx.lang === this.ctx.lang &&
       other.ctx.code === this.ctx.code &&
       other.ctx.filePath === this.ctx.filePath
@@ -253,6 +255,7 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = []
   const readOnly = state.facet(readOnlyFacet)
   const currentFile = state.facet(filePathFacet)
+  const assetVersion = state.facet(assetVersionFacet)
 
   syntaxTree(state).iterate({
     enter: (node) => {
@@ -282,10 +285,10 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
         to: node.to,
         editPos: codeText ? codeText.from : node.from + 3,
         filePath: currentFile,
-        assetUrl: (ref) => assetUrlFor(currentFile, ref),
+        assetUrl: (ref) => assetUrlFor(currentFile, ref, assetVersion),
       }
       decorations.push(
-        Decoration.replace({ widget: new BlockWidget(ctx, renderer), block: true }).range(node.from, node.to),
+        Decoration.replace({ widget: new BlockWidget(ctx, renderer, assetVersion), block: true }).range(node.from, node.to),
       )
     },
   })

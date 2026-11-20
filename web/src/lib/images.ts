@@ -7,7 +7,7 @@
 import { StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { assetVersionFacet, filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
 import { isExternalRef, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
@@ -34,12 +34,18 @@ function parseImageAlt(alt: string): { alt: string; width: number | null } {
   return { alt: alt.trim(), width: null }
 }
 
-function resolveInfo(currentFile: string, src: string, altRaw: string, title: string): ImageInfo | null {
+function resolveInfo(
+  currentFile: string,
+  src: string,
+  altRaw: string,
+  title: string,
+  assetVersion: number,
+): ImageInfo | null {
   const { alt, width } = parseImageAlt(altRaw)
   if (isExternalRef(src)) return { url: src, alt, title, width }
   const resolved = resolveRelative(currentFile, src)
   if (!resolved) return null
-  return { url: api.assetUrl(resolved), alt, title, width }
+  return { url: api.assetUrl(resolved, assetVersion), alt, title, width }
 }
 
 class ImageWidget extends WidgetType {
@@ -130,6 +136,7 @@ function buildImageDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = []
   const readOnly = state.facet(readOnlyFacet)
   const currentFile = state.facet(filePathFacet)
+  const assetVersion = state.facet(assetVersionFacet)
 
   syntaxTree(state).iterate({
     enter: (node) => {
@@ -139,7 +146,7 @@ function buildImageDecorations(state: EditorState): DecorationSet {
       const match = IMAGE_SYNTAX.exec(raw.trim())
       if (!match) return
       const src = match[2] ?? match[3] ?? ''
-      const info = resolveInfo(currentFile, src, match[1] ?? '', match[4] ?? '')
+      const info = resolveInfo(currentFile, src, match[1] ?? '', match[4] ?? '', assetVersion)
       if (!info) return
       decorations.push(
         Decoration.replace({

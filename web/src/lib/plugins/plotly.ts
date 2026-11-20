@@ -42,11 +42,15 @@ function stripQuotes(value: string): string {
 }
 
 async function parseSpec(ctx: BlockContext): Promise<any> {
-  return parsePlotlySource(ctx.code, ctx.filePath)
+  return parsePlotlySource(ctx.code, ctx.filePath, ctx.assetUrl)
 }
 
 /** Parse a Plotly block body (inline JSON or a relative `src:` file). */
-export async function parsePlotlySource(code: string, filePath: string): Promise<any> {
+export async function parsePlotlySource(
+  code: string,
+  filePath: string,
+  resolveUrl: (ref: string) => string | null = (ref) => assetUrlFor(filePath, ref),
+): Promise<any> {
   const body = code.trim()
   if (!body) throw new Error('empty plotly block')
 
@@ -54,7 +58,7 @@ export async function parsePlotlySource(code: string, filePath: string): Promise
   const srcMatch = /^(?:src|file)\s*:\s*(.+)$/im.exec(body)
   if (srcMatch && !looksLikeJson) {
     const ref = stripQuotes(srcMatch[1])
-    const url = assetUrlFor(filePath, ref)
+    const url = resolveUrl(ref)
     if (!url) throw new Error(`cannot resolve data file "${ref}" relative to ${filePath || 'the vault root'}`)
     const res = await fetch(url)
     if (!res.ok) {

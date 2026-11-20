@@ -218,10 +218,17 @@ func (s *server) handleFileAssets(w http.ResponseWriter, r *http.Request) {
 	if assets == nil {
 		assets = []string{}
 	}
+	stamp := ""
+	if stamper, ok := s.vault.(interface {
+		AssetsStamp(context.Context, []string) string
+	}); ok {
+		stamp = stamper.AssetsStamp(r.Context(), assets)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path":      p,
 		"assets":    assets,
 		"hasAssets": len(assets) > 0,
+		"stamp":     stamp,
 	})
 }
 

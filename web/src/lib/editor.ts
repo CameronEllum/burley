@@ -23,7 +23,7 @@ import {
   mouseSelectingField,
   setMouseSelecting,
 } from 'codemirror-live-markdown'
-import { filePathFacet, readOnlyFacet } from './cm'
+import { assetVersionFacet, filePathFacet, readOnlyFacet } from './cm'
 import { blockPluginField } from './blockPlugins'
 import { imagePreviewField } from './images'
 import { blockMathField, inlineMathPlugin } from './math'
@@ -47,6 +47,7 @@ import { resolveRelative } from './paths'
 import { setActiveView } from './viewRef'
 import './plugins/plotly'
 import './plugins/mermaid'
+import './plugins/dataTable'
 
 export interface SelectionInfo {
   line: number
@@ -69,6 +70,7 @@ export interface EditorController {
   readonly view: EditorView
   setDoc(path: string, content: string): void
   reloadDoc(path: string, content: string): void
+  rerender(): void
   setReadOnly(readOnly: boolean): void
   setRawMode(raw: boolean): void
   setZenFocus(enabled: boolean): void
@@ -147,6 +149,7 @@ const burleyTheme = EditorView.theme({
 
 const readOnlyCompartment = new Compartment()
 const previewCompartment = new Compartment()
+const assetVersionCompartment = new Compartment()
 const spellcheckCompartment = new Compartment()
 const zenCompartment = new Compartment()
 
@@ -199,7 +202,12 @@ function previewExtensions(): Extension[] {
   ]
 }
 
-function markdownExtensions(readOnly: boolean, rawMode: boolean, spellcheck: boolean): Extension[] {
+function markdownExtensions(
+  readOnly: boolean,
+  rawMode: boolean,
+  spellcheck: boolean,
+  assetVersion: number,
+): Extension[] {
   return [
     history(),
     autocompletion({ override: [slashCommands], icons: false }),
@@ -216,6 +224,7 @@ function markdownExtensions(readOnly: boolean, rawMode: boolean, spellcheck: boo
     editorTheme,
     burleyTheme,
     previewCompartment.of(rawMode ? [] : previewExtensions()),
+    assetVersionCompartment.of(assetVersionFacet.of(assetVersion)),
     spellcheckCompartment.of(spellcheckExtensions(spellcheck)),
     zenCompartment.of([]),
     readOnlySelectionGuard,
@@ -236,6 +245,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   let rawMode = false
   let zenFocus = false
   let spellcheck = false
+  let assetVersion = 0
   let parseRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
@@ -308,7 +318,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   })
 
   const extensionsFor = (path: string): Extension[] => [
-    ...markdownExtensions(readOnly, rawMode, spellcheck),
+    ...markdownExtensions(readOnly, rawMode, spellcheck, assetVersion),
     listener,
     filePathFacet.of(path),
   ]
@@ -404,6 +414,7 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
 
     reloadDoc(path: string, content: string) {
       currentPath = path
+      assetVersion += 1
       const scroller = view.scrollDOM
       const top = scroller.scrollTop
       const left = scroller.scrollLeft
@@ -419,6 +430,14 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
         scroller.scrollTop = top
         scroller.scrollLeft = left
       })
+    },
+
+    rerender() {
+      assetVersion += 1
+      view.dispatch({
+        effects: assetVersionCompartment.reconfigure(assetVersionFacet.of(assetVersion)),
+      })
+      refreshParsedPreview(view)
     },
 
     setReadOnly(value: boolean) {

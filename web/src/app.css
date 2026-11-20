@@ -1684,3 +1684,96 @@ table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-
 .editor-host[data-md-style='compact'] .cm-header-3 {
   font-size: 1.12em;
 }
+
+/* Live data tables (```table) */
+.burley-data-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.burley-dt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.burley-dt-filter {
+  flex: 1 1 180px;
+  max-width: 280px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+}
+.burley-dt-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.burley-dt-meta,
+.burley-dt-src {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.burley-dt-src {
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+.burley-dt-scroll {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+}
+.burley-dt-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.burley-dt-scroll th,
+.burley-dt-scroll td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+.burley-dt-scroll th:last-child,
+.burley-dt-scroll td:last-child {
+  border-right: 0;
+}
+.burley-dt-scroll tr:last-child td {
+  border-bottom: 0;
+}
+.burley-dt-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  padding: 0;
+}
+.burley-dt-sort {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.burley-dt-sort:hover,
+.burley-dt-sort.active {
+  color: var(--accent);
+}
+.burley-dt-truncated {
+  text-align: center !important;
+  color: var(--text-muted);
+  font-style: italic;
+}

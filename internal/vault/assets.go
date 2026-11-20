@@ -2,7 +2,10 @@ package vault
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -217,4 +220,26 @@ func (v *LocalVault) NoteAssets(ctx context.Context, notePath string) ([]string,
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// AssetsStamp returns a fast metadata digest (path, size, modTime) for the
+// given vault-relative asset paths so clients can detect asset changes on disk.
+func (v *LocalVault) AssetsStamp(ctx context.Context, assetPaths []string) string {
+	h := sha256.New()
+	for _, rel := range assetPaths {
+		if ctx.Err() != nil {
+			break
+		}
+		abs, _, err := v.resolve(rel)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			_, _ = fmt.Fprintf(h, "%s:missing\n", rel)
+			continue
+		}
+		_, _ = fmt.Fprintf(h, "%s:%d:%d\n", rel, info.Size(), info.ModTime().UnixNano())
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

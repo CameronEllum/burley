@@ -311,15 +311,15 @@ export const api = {
     return request(`/api/release${refresh ? '?refresh=1' : ''}`)
   },
 
-  assetUrl(path: string): string {
-    return `/api/asset?path=${encodeURIComponent(path)}`
+  assetUrl(path: string, version?: number): string {
+    return `/api/asset?path=${encodeURIComponent(path)}${version ? `&v=${version}` : ''}`
   },
 
   async fileAssets(
     path: string,
     signal?: AbortSignal,
-  ): Promise<{ path: string; assets: string[]; hasAssets: boolean }> {
-    return request<{ path: string; assets: string[]; hasAssets: boolean }>(
+  ): Promise<{ path: string; assets: string[]; hasAssets: boolean; stamp?: string }> {
+    return request<{ path: string; assets: string[]; hasAssets: boolean; stamp?: string }>(
       `/api/file/assets?path=${encodeURIComponent(path)}`,
       { signal },
     )

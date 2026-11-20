@@ -35,6 +35,7 @@ import { wordDiff } from './lib/diff'
   import FileTree from './components/FileTree.svelte'
   import SearchModal from './components/SearchModal.svelte'
   import ConflictModal from './components/ConflictModal.svelte'
+  import PresentationModal from './components/PresentationModal.svelte'
 import FigureLightbox from './components/FigureLightbox.svelte'
 
   type SaveState = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error'
@@ -210,6 +211,20 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let recentSaveTimer: ReturnType<typeof setTimeout> | null = null
   let conflictData = $state<FileData | null>(null)
   let conflictOpen = $state(false)
+  let presentOpen = $state(false)
+
+  let splitPath = $state('')
+  let splitContent = $state('')
+  let splitHash = $state('')
+  let splitLoading = $state(false)
+  let splitHtmlNonce = $state(0)
+  const isSplitHtml = $derived(isHtmlPath(splitPath))
+  const splitHtmlSrc = $derived(
+    isSplitHtml ? `/raw/${encodeURI(splitPath)}?v=${splitHtmlNonce}` : '',
+  )
+  const splitHtmlRendered = $derived(
+    !isSplitHtml && splitPath ? renderMarkdown(splitContent) : '',
+  )
 
   let quitOpen = $state(false)
   let shuttingDown = $state(false)
@@ -336,6 +351,29 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       label: rawMode ? 'Show live preview' : 'Show raw Markdown',
       keywords: 'source editor',
       run: toggleRawMode,
+    },
+    {
+      id: 'reload-file',
+      label: 'Reload & re-render file',
+      keywords: 'refresh assets images charts',
+      run: () => void reloadCurrentFile(),
+    },
+    {
+      id: 'present-slides',
+      label: 'Present slides (---)',
+      keywords: 'presentation deck slideshow f5',
+      run: () => {
+        if (currentPath && !isCurrentHtml) presentOpen = true
+      },
+    },
+    {
+      id: 'toggle-split',
+      label: splitPath ? 'Close split pane' : 'Open current file in split pane',
+      keywords: 'side by side compare view',
+      run: () => {
+        if (splitPath) closeSplit()
+        else if (currentPath) void openInSplit(currentPath)
+      },
     },
     {
       id: 'toggle-zen',
@@ -791,6 +829,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null }
     rememberRecent(data.path)
+    currentAssetsStamp = ''
     void refreshCurrentAssets(data.path)
     if (line) {
       setTimeout(() => editor?.scrollToLine(line), 0)
@@ -873,14 +912,71 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   let fileCheckInFlight = false
+  let currentAssetsStamp = ''
+  let reloadingFile = $state(false)
 
   async function checkExternalFileChange() {
     const path = currentPath
-    if (!path || fileCheckInFlight || loadingFile || saveState === 'saving' || conflictOpen) return
+    if (!path || fileCheckInFlight || loadingFile || reloadingFile || saveState === 'saving' || conflictOpen) return
     fileCheckInFlight = true
     try {
       const remote = await api.file(path)
-      if (currentPath !== path || remote.hash === hash) return
+      if (currentPath !== path) return
+      if (remote.hash !== hash) {
+        if (!dirty) {
+          const decoded = decodeForEditor(remote.content)
+          format = decoded.format
+          content = decoded.text
+          hash = remote.hash
+          modTime = remote.modTime
+          dirty = false
+          saveState = 'saved'
+          saveError = ''
+          editor?.reloadDoc(remote.path, decoded.text)
+          htmlFrameNonce += 1
+          void refreshCurrentAssets(remote.path)
+          flash(`Reloaded ${baseName(remote.path)} (changed on disk)`)
+          return
+        }
+        conflictData = remote
+        saveState = 'conflict'
+        conflictOpen = true
+        return
+      }
+      if (!isHtmlPath(path)) {
+        const assetRes = await api.fileAssets(path)
+        if (currentPath !== path) return
+        currentHasAssets = assetRes.hasAssets
+        const nextStamp = assetRes.stamp ?? ''
+        if (nextStamp && currentAssetsStamp && nextStamp !== currentAssetsStamp) {
+          currentAssetsStamp = nextStamp
+          editor?.rerender()
+          flash(`Reloaded assets for ${baseName(path)}`)
+        } else if (!currentAssetsStamp && nextStamp) {
+          currentAssetsStamp = nextStamp
+        }
+      }
+    } catch {
+      /* ignore transient poll errors */
+    } finally {
+      fileCheckInFlight = false
+      if (splitPath) void refreshSplitIfChanged()
+    }
+  }
+
+  async function reloadCurrentFile() {
+    const path = currentPath
+    if (!path || reloadingFile || loadingFile) return
+    reloadingFile = true
+    try {
+      const remote = await api.file(path)
+      if (currentPath !== path) return
+      if (dirty && remote.hash !== hash) {
+        conflictData = remote
+        saveState = 'conflict'
+        conflictOpen = true
+        return
+      }
       if (!dirty) {
         const decoded = decodeForEditor(remote.content)
         format = decoded.format
@@ -891,17 +987,66 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         saveState = 'saved'
         saveError = ''
         editor?.reloadDoc(remote.path, decoded.text)
-        htmlFrameNonce += 1
-        flash(`Reloaded ${baseName(remote.path)} (changed on disk)`)
       } else {
-        conflictData = remote
-        saveState = 'conflict'
-        conflictOpen = true
+        editor?.rerender()
       }
+      htmlFrameNonce += 1
+      await refreshCurrentAssets(path)
+      flash(`Reloaded ${baseName(path)}`)
+    } catch (err) {
+      flash(err instanceof Error ? err.message : String(err), true)
+    } finally {
+      reloadingFile = false
+    }
+  }
+
+  async function openInSplit(path: string) {
+    if (!path) return
+    splitLoading = true
+    try {
+      const data = await api.file(path)
+      const decoded = decodeForEditor(data.content)
+      splitPath = data.path
+      splitContent = decoded.text
+      splitHash = data.hash
+      splitHtmlNonce += 1
+    } catch (err) {
+      flash(err instanceof Error ? err.message : String(err), true)
+    } finally {
+      splitLoading = false
+    }
+  }
+
+  function closeSplit() {
+    splitPath = ''
+    splitContent = ''
+    splitHash = ''
+  }
+
+  async function swapSplit() {
+    if (!splitPath) return
+    const nextMain = splitPath
+    const nextSplit = currentPath
+    await openFile(nextMain)
+    if (nextSplit) {
+      await openInSplit(nextSplit)
+    } else {
+      closeSplit()
+    }
+  }
+
+  async function refreshSplitIfChanged() {
+    const target = splitPath
+    if (!target || splitLoading) return
+    try {
+      const remote = await api.file(target)
+      if (splitPath !== target || remote.hash === splitHash) return
+      const decoded = decodeForEditor(remote.content)
+      splitContent = decoded.text
+      splitHash = remote.hash
+      splitHtmlNonce += 1
     } catch {
       /* ignore transient poll errors */
-    } finally {
-      fileCheckInFlight = false
     }
   }
 
@@ -1366,10 +1511,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   async function refreshCurrentAssets(path: string) {
     currentHasAssets = false
-    if (!path) return
+    if (!path || isHtmlPath(path)) {
+      currentAssetsStamp = ''
+      return
+    }
     try {
       const res = await api.fileAssets(path)
-      if (currentPath === path) currentHasAssets = res.hasAssets
+      if (currentPath === path) {
+        currentHasAssets = res.hasAssets
+        currentAssetsStamp = res.stamp ?? ''
+      }
     } catch {
       /* ignore */
     }
@@ -2102,6 +2253,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       openSearch('')
       return
     }
+    if (event.key === 'F5' && !presentOpen && currentPath && !isCurrentHtml) {
+      event.preventDefault()
+      presentOpen = true
+      return
+    }
     if (event.altKey && event.key.toLowerCase() === 't') {
       event.preventDefault()
       talkOpen = !talkOpen
@@ -2336,6 +2492,47 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       </div>
       <button class="icon-btn talk-btn" class:on={talkOpen} title="Talk to an AI agent (Alt+T)" aria-label="Toggle Talk panel" onclick={toggleTalk}>
         <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 4.2h14v9.1H8.4L4.9 16v-2.7H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M6.4 8.7h7.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+      </button>
+      <button
+        class="icon-btn present-btn"
+        title="Present slides (F5)"
+        aria-label="Present slides"
+        disabled={!currentPath || isCurrentHtml}
+        onclick={() => (presentOpen = true)}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <rect x="2.8" y="3.8" width="14.4" height="10.4" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <path d="M8.5 7l4.2 2.4-4.2 2.4z" fill="currentColor" />
+          <path d="M6.8 16.4h6.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
+      </button>
+      <button
+        class="icon-btn split-btn"
+        class:on={!!splitPath}
+        title={splitPath ? 'Close split pane' : 'Open current file in split pane'}
+        aria-label="Toggle split pane"
+        aria-pressed={!!splitPath}
+        disabled={!splitPath && !currentPath}
+        onclick={() => {
+          if (splitPath) closeSplit()
+          else if (currentPath) void openInSplit(currentPath)
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <rect x="3" y="4" width="14" height="12" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <path d="M10 4v12" stroke="currentColor" stroke-width="1.4" />
+        </svg>
+      </button>
+      <button
+        class="icon-btn reload-btn"
+        title="Reload file & re-render"
+        aria-label="Reload file and re-render"
+        disabled={!currentPath || reloadingFile}
+        onclick={() => void reloadCurrentFile()}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" class:spinning={reloadingFile}>
+          <path d="M16 10a6 6 0 1 1-1.7-4.2M16 3.5v3.3h-3.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
       </button>
       <button
         class="icon-btn raw-btn"
@@ -2596,7 +2793,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     </aside>
 
 
-    <section class="editor-pane">
+    <div class="editor-stage" class:has-split={!!splitPath}>
+      <section class="editor-pane">
       <div
         class="editor-host"
         class:wide={wideMode}
@@ -2642,7 +2840,58 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       {#if loadingFile}
         <div class="loading-bar" role="status" aria-label="Loading note"></div>
       {/if}
-    </section>
+      </section>
+
+      {#if splitPath}
+        <aside class="split-pane" aria-label={`Split view: ${splitPath}`}>
+          <header class="split-head">
+            <span class="split-path" title={splitPath}>{splitPath}</span>
+            <span class="grow"></span>
+            <button
+              type="button"
+              class="talk-icon"
+              title="Swap with main pane"
+              aria-label="Swap with main pane"
+              onclick={() => void swapSplit()}
+            >
+              ⇄
+            </button>
+            <button
+              type="button"
+              class="talk-icon"
+              title="Reload split pane"
+              aria-label="Reload split pane"
+              onclick={() => void openInSplit(splitPath)}
+            >
+              ↻
+            </button>
+            <button
+              type="button"
+              class="talk-icon"
+              title="Close split pane"
+              aria-label="Close split pane"
+              onclick={closeSplit}
+            >
+              ×
+            </button>
+          </header>
+          <div class="split-body">
+            {#if isSplitHtml}
+              <iframe
+                class="html-frame"
+                title={splitPath}
+                src={splitHtmlSrc}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              ></iframe>
+            {:else}
+              <article class="split-doc" data-md-style={markdownStyle}>
+                {@html splitHtmlRendered}
+              </article>
+            {/if}
+          </div>
+        </aside>
+      {/if}
+    </div>
 
     {#if talkOpen}
       <aside class="talk-panel" aria-label="Talk">
@@ -2954,6 +3203,15 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   />
 {/if}
 
+{#if presentOpen && currentPath && !isCurrentHtml}
+  <PresentationModal
+    title={stripMdExt(baseName(currentPath))}
+    markdown={content}
+    filePath={currentPath}
+    onclose={() => (presentOpen = false)}
+  />
+{/if}
+
 {#if toast}
   <div class="toast" class:error={toastError} role="status">{toast}</div>
 {/if}
@@ -2988,6 +3246,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         <span>Add document</span>
       </button>
     {:else}
+      <button
+        class="context-menu-item"
+        role="menuitem"
+        onclick={() => {
+          const p = contextMenu?.path
+          contextMenu = null
+          if (p) void openInSplit(p)
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M10 4v12" stroke="currentColor" stroke-width="1.4" /></svg>
+        <span>Open in split</span>
+      </button>
       <button class="context-menu-item" role="menuitem" onclick={() => downloadNote(contextMenu!.path, false)}>
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 3.2v8.8M6.8 9l3.2 3.2L13.2 9M4 13.8v2.5h12v-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
         <span>Download</span>
@@ -4078,6 +4348,77 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     cursor: default;
   }
 
+  .editor-stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .editor-stage.has-split {
+    grid-template-columns: 1fr 1fr;
+  }
+  .split-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px solid var(--border-soft);
+    background: var(--bg-app);
+  }
+  .split-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-chrome);
+    font-size: 12px;
+  }
+  .split-path {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .split-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .split-doc {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 32px 34px 96px;
+    line-height: 1.7;
+    font-size: 15.5px;
+  }
+  .split-doc :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.94em;
+  }
+  .split-doc :global(th),
+  .split-doc :global(td) {
+    border: 1px solid var(--border-soft);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .split-doc :global(th) {
+    background: var(--panel);
+  }
+  .split-doc :global(pre) {
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--panel);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
   .editor-pane {
     position: relative;
     min-width: 0;

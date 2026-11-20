@@ -5,7 +5,7 @@ tags: [demo, tables, colors]
 
 # Tables and Colourizing
 
-Burley supports Pandoc-style `{...}` colour directives and `==highlights==` in prose and GFM tables, adapting automatically across light and dark themes while remaining readable plain Markdown.
+Burley supports Pandoc-style `{...}` colour directives and `==highlights==` in prose and GitHub Flavored Markdown (GFM) tables, adapting automatically across light and dark themes while remaining readable plain Markdown.
 
 ## Inline text colouring
 
