@@ -27,6 +27,15 @@ export function isHtmlPath(filePath: string): boolean {
   return /\.(html|htm)$/i.test(filePath)
 }
 
+/** Normalize a user-typed vault path (`\` -> `/`, strip leading `./` or `/`). */
+export function normalizeExplicitPath(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^(?:\.\/)+/, '')
+    .replace(/^\/+/, '')
+}
+
 /** Build a Burley app URL for opening `target` (`path` or `path#slug`) in a tab. */
 export function noteTabUrl(target: string): string {
   const hashIdx = target.indexOf('#')

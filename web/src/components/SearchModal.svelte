@@ -3,7 +3,7 @@
   import fuzzysort from 'fuzzysort'
   import { api, type FlatFile, type SearchMatch } from '../lib/api'
   import type { OutlineItem } from '../lib/outline'
-  import { baseName, dirOf } from '../lib/paths'
+  import { baseName, dirOf, isHtmlPath, isMarkdownPath, normalizeExplicitPath } from '../lib/paths'
   import { highlightSegments, highlightText, type PaletteCommand, type PaletteItem } from '../lib/palette'
 
   let {
@@ -96,6 +96,16 @@
     const results = fuzzysort.go(q, files, { key: 'path', limit: 200, threshold: -50000 })
     const pinned: PaletteItem[] = []
     const others: PaletteItem[] = []
+    const explicit = normalizeExplicitPath(q)
+    if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit)) && !fileMap.has(explicit)) {
+      pinned.push({
+        kind: 'file',
+        key: `explicit:${explicit}`,
+        file: { path: explicit, name: baseName(explicit), modTime: 0, size: 0 },
+        pinned: favoriteSet.has(explicit),
+        hint: 'Open path',
+      })
+    }
     for (const result of results) {
       const item: PaletteItem = {
         kind: 'file',

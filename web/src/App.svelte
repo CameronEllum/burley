@@ -4,7 +4,7 @@
   import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf, formatBytes, isHtmlPath, openNoteInNewTab, stripMdExt } from './lib/paths'
+  import { baseName, dirOf, formatBytes, isHtmlPath, isMarkdownPath, normalizeExplicitPath, openNoteInNewTab, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
@@ -922,6 +922,16 @@ import { wordDiff } from './lib/diff'
     saveState = 'saved'
     conflictData = null
     conflictOpen = false
+    if (!files.some((f) => f.path === data.path)) {
+      const added: FlatFile = {
+        path: data.path,
+        name: baseName(data.path),
+        modTime: data.modTime,
+        size: new TextEncoder().encode(data.content).length,
+      }
+      insertTreeNode(tree, added)
+      files.push(added)
+    }
     editor?.setDoc(data.path, decoded.text)
     htmlFrameNonce += 1
     setLuaDocument(data.path)
@@ -2948,9 +2958,17 @@ import { wordDiff } from './lib/diff'
             <input
               class="tree-filter"
               placeholder="Filter notes…"
-              title="Filter favorites and notes"
+              title="Filter favorites and notes (Enter opens an explicit path)"
               spellcheck="false"
               bind:value={treeFilter}
+              onkeydown={(event) => {
+                if (event.key !== 'Enter') return
+                const explicit = normalizeExplicitPath(treeFilter)
+                if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit))) {
+                  event.preventDefault()
+                  void openFile(explicit)
+                }
+              }}
             />
             {#if treeFilter}
               <button class="clear-filter" aria-label="Clear filter" onclick={() => (treeFilter = '')}>×</button>
