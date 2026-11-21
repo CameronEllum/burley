@@ -82,6 +82,21 @@ func TestClaudeStreamJSONIncludesVerbose(t *testing.T) {
 	}
 }
 
+func TestClaudeStreamJSONSkipsDuplicateResult(t *testing.T) {
+	assistantLine := `{"type":"assistant","message":{"content":[{"type":"text","text":"Hello world"}]}}`
+	resultLine := `{"type":"result","subtype":"success","result":"Hello world"}`
+
+	if got := ExtractStreamText("claude", assistantLine, false); got != "Hello world" {
+		t.Fatalf("assistant line = %q, want %q", got, "Hello world")
+	}
+	if got := ExtractStreamText("claude", resultLine, true); got != "" {
+		t.Fatalf("result line after emitted assistant text = %q, want empty", got)
+	}
+	if got := ExtractStreamText("claude", resultLine, false); got != "Hello world" {
+		t.Fatalf("result line when nothing emitted = %q, want %q", got, "Hello world")
+	}
+}
+
 func TestOpenCodePromptsViaStdin(t *testing.T) {
 	adapter, _ := adapterByID("opencode")
 	if !adapter.StdinPrompt {

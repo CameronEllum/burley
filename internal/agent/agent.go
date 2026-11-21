@@ -175,6 +175,12 @@ func Find(id string) (Adapter, string, bool) {
 // ExtractText pulls human-readable text from one line of CLI output. Claude's
 // stream-json output is unwrapped; other CLIs emit plain text lines.
 func ExtractText(id, line string) string {
+	return ExtractStreamText(id, line, false)
+}
+
+// ExtractStreamText extracts text from one line of CLI output while avoiding
+// duplicate final `result` payloads when Claude has already streamed assistant text.
+func ExtractStreamText(id, line string, emitted bool) string {
 	if id != "claude" {
 		return line
 	}
@@ -191,7 +197,10 @@ func ExtractText(id, line string) string {
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		return line
 	}
-	if event.Result != "" {
+	if event.Type == "result" || (event.Result != "" && len(event.Message.Content) == 0) {
+		if emitted {
+			return ""
+		}
 		return event.Result
 	}
 	var b strings.Builder

@@ -90,7 +90,7 @@ func (s *server) handleAgentTest(w http.ResponseWriter, r *http.Request) {
 	scanner := bufio.NewScanner(strings.NewReader(stdoutRaw))
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	for scanner.Scan() {
-		text := strings.TrimSpace(agent.StripANSI(agent.ExtractText(adapter.ID, scanner.Text())))
+		text := strings.TrimSpace(agent.StripANSI(agent.ExtractStreamText(adapter.ID, scanner.Text(), len(replyParts) > 0)))
 		if text != "" {
 			replyParts = append(replyParts, text)
 		}
@@ -274,7 +274,7 @@ func (s *server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	emitted := false
 	for scanner.Scan() {
-		text := agent.ExtractText(adapter.ID, scanner.Text())
+		text := agent.ExtractStreamText(adapter.ID, scanner.Text(), emitted)
 		if text == "" {
 			continue
 		}
