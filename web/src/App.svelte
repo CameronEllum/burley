@@ -1953,11 +1953,14 @@ import { wordDiff } from './lib/diff'
           } else if (event === 'done' && data.file && typeof data.file.content === 'string') {
             const filePath = typeof data.file.path === 'string' && data.file.path ? data.file.path : targetPath
             if (!filePath || filePath !== currentPath) return
+            const decoded = decodeForEditor(data.file.content)
+            // Apply via dispatch on the existing state so Ctrl+Z can undo the agent edit,
+            // then clear the dirty state/autosave timer triggered by updateListener.
+            editor?.applyDocMutation(decoded.text)
             if (saveTimer) {
               clearTimeout(saveTimer)
               saveTimer = null
             }
-            const decoded = decodeForEditor(data.file.content)
             format = decoded.format
             content = decoded.text
             if (typeof data.file.hash === 'string') hash = data.file.hash
@@ -1967,10 +1970,9 @@ import { wordDiff } from './lib/diff'
             saveError = ''
             conflictData = null
             conflictOpen = false
-            editor?.reloadDoc(filePath, decoded.text)
             htmlFrameNonce += 1
             void refreshCurrentAssets(filePath)
-            flash('Agent updated the note')
+            flash('Agent updated the note (Ctrl+Z to undo)')
           } else if (event === 'error') {
             const msg = data.message ?? 'Agent failed'
             talkError = msg
