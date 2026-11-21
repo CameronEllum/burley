@@ -24,10 +24,12 @@ type Settings struct {
 	SpellCheck    bool   `json:"spellCheck"`
 	// AgentModels pins a CLI model per agent ID (e.g. opencode). An empty or
 	// missing entry means "use the agent's own default".
-	AgentModels    map[string]string `json:"agentModels"`
-	DisabledAgents []string          `json:"disabledAgents"`
-	FileTypes      []string          `json:"fileTypes"`
-	BackgroundScan bool              `json:"backgroundScan"`
+	AgentModels         map[string]string `json:"agentModels"`
+	DisabledAgents      []string          `json:"disabledAgents"`
+	FileTypes           []string          `json:"fileTypes"`
+	BackgroundScan      bool              `json:"backgroundScan"`
+	CommentHoverPreview bool              `json:"commentHoverPreview"`
+	CommentAuthor       string            `json:"commentAuthor"`
 }
 
 func defaultFileTypes() []string {
@@ -44,9 +46,11 @@ func defaultSettings() Settings {
 		AutoSave:       true,
 		CtrlClickLink:  "toggle",
 		SpellCheck:     false,
-		AgentModels:    map[string]string{},
-		DisabledAgents: []string{},
-		FileTypes:      defaultFileTypes(),
+		AgentModels:         map[string]string{},
+		DisabledAgents:      []string{},
+		FileTypes:           defaultFileTypes(),
+		CommentHoverPreview: true,
+		CommentAuthor:       "",
 	}
 }
 
@@ -145,11 +149,24 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		AutoSave:       settings.AutoSave,
 		CtrlClickLink:  ctrlClick,
 		SpellCheck:     settings.SpellCheck,
-		AgentModels:    normalizeAgentModels(settings.AgentModels),
-		DisabledAgents: normalizeDisabledAgents(settings.DisabledAgents),
-		FileTypes:      normalizeFileTypes(settings.FileTypes),
-		BackgroundScan: settings.BackgroundScan,
+		AgentModels:         normalizeAgentModels(settings.AgentModels),
+		DisabledAgents:      normalizeDisabledAgents(settings.DisabledAgents),
+		FileTypes:           normalizeFileTypes(settings.FileTypes),
+		BackgroundScan:      settings.BackgroundScan,
+		CommentHoverPreview: settings.CommentHoverPreview,
+		CommentAuthor:       normalizeCommentAuthor(settings.CommentAuthor),
 	}, nil
+}
+
+func normalizeCommentAuthor(author string) string {
+	clean := strings.TrimSpace(author)
+	clean = strings.TrimLeft(clean, "@")
+	clean = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "(", "", ")", "").Replace(clean)
+	clean = strings.TrimSpace(clean)
+	if len(clean) > 60 {
+		clean = strings.TrimSpace(clean[:60])
+	}
+	return clean
 }
 
 // normalizeFileTypes keeps only known file type IDs. A nil slice (omitted in
@@ -270,6 +287,10 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(boolYAML(hasHTML))
 	b.WriteString("\nbackground_scan: ")
 	b.WriteString(boolYAML(settings.BackgroundScan))
+	b.WriteString("\ncomment_hover_preview: ")
+	b.WriteString(boolYAML(settings.CommentHoverPreview))
+	b.WriteString("\ncomment_author: ")
+	b.WriteString(yamlQuote(settings.CommentAuthor))
 	if len(settings.AgentModels) > 0 {
 		ids := make([]string, 0, len(settings.AgentModels))
 		for id := range settings.AgentModels {
@@ -376,6 +397,12 @@ func parseSettingsYAML(content string) Settings {
 			if parsedBool, ok := parseYAMLBool(parsed); ok {
 				settings.BackgroundScan = parsedBool
 			}
+		case "comment_hover_preview", "comment_hover":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.CommentHoverPreview = parsedBool
+			}
+		case "comment_author":
+			settings.CommentAuthor = normalizeCommentAuthor(parsed)
 		}
 	}
 	fileTypes := make([]string, 0, 2)

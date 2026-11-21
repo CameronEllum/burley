@@ -21,6 +21,7 @@
         ['Ctrl S', 'Save now (autosave is debounced)'],
         ['Escape', 'Close a dialog, or exit the element under the caret'],
         ['Select text', 'Selection action buttons in Talk (Explain, Summarize, Shorten, Rewrite)'],
+        ['Alt C', 'Add a comment at the selection or cursor'],
         ['/', 'Slash commands: plotly, mermaid, math, table, callout, code, date, lua'],
         ['Ctrl B', 'Toggle the file tree'],
         ['Ctrl Shift R', 'Reload the file tree'],

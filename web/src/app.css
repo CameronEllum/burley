@@ -1777,3 +1777,78 @@ table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* Inline Discussion & Edit comment highlights + clickable pills */
+.cm-doc-comment-range.cm-doc-comment-discussion {
+  background: color-mix(in srgb, var(--tint-amber-bg) 75%, transparent);
+  border-bottom: 1.5px dotted var(--warn-fg);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.cm-doc-comment-range.cm-doc-comment-discussion.is-active {
+  background: var(--tint-amber-bg);
+  outline: 1.5px solid color-mix(in srgb, var(--warn-fg) 65%, transparent);
+}
+.cm-doc-comment-range.cm-doc-comment-edit {
+  background: color-mix(in srgb, var(--tint-blue-bg) 75%, transparent);
+  border-bottom: 1.5px dotted var(--info-fg);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.cm-doc-comment-range.cm-doc-comment-edit.is-active {
+  background: var(--tint-blue-bg);
+  outline: 1.5px solid color-mix(in srgb, var(--info-fg) 65%, transparent);
+}
+.cm-doc-comment-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 3px 0 2px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: middle;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease;
+}
+.cm-doc-comment-marker.is-discussion {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-color: var(--warn-border);
+}
+.cm-doc-comment-marker.is-edit {
+  background: var(--info-bg);
+  color: var(--info-fg);
+  border-color: var(--info-border);
+}
+.cm-doc-comment-marker:hover {
+  filter: brightness(0.95);
+  transform: translateY(-0.5px);
+}
+.cm-doc-comment-marker.is-active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
+}
+.cm-doc-comment-count {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.cm-doc-comment-pending {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 2px;
+}
+.cm-doc-comment-pending-point {
+  display: inline-block;
+  width: 3px;
+  height: 1.05em;
+  margin: 0 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}

@@ -9,6 +9,7 @@ import { StateField, type EditorState, type Extension, type Range } from '@codem
 import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
+import { isBurleyCommentTag } from './docComments'
 
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g
 
@@ -45,6 +46,7 @@ function buildCommentDecorations(state: EditorState): DecorationSet {
     const from = m.index
     const to = from + m[0].length
     if (insideAnyRange(from, codeRanges)) continue
+    if (isBurleyCommentTag(m[0])) continue
 
     const startLine = state.doc.lineAt(from)
     const endLine = state.doc.lineAt(to)

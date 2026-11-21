@@ -66,6 +66,8 @@ export interface AppSettings {
   /** Enabled viewable/searchable file type IDs ("markdown", "html"). */
   fileTypes: string[]
   backgroundScan: boolean
+  commentHoverPreview: boolean
+  commentAuthor: string
 }
 
 export interface AppMeta {
@@ -74,6 +76,7 @@ export interface AppMeta {
   ripgrep: boolean
   version: string
   repo: string
+  user?: string
 }
 
 export interface ReleaseInfo {

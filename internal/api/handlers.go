@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os/user"
 	"path"
 	"strconv"
 	"strings"
@@ -188,6 +189,18 @@ func vaultError(w http.ResponseWriter, err error) {
 
 // ---------------------------------------------------------------- API routes
 
+func currentUsername() string {
+	u, err := user.Current()
+	if err != nil || u == nil {
+		return ""
+	}
+	name := strings.TrimSpace(u.Username)
+	if idx := strings.LastIndex(name, "\\"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	return strings.TrimSpace(name)
+}
+
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
@@ -195,6 +208,7 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"ripgrep": s.opts.RipgrepAvailable,
 		"version": s.currentVersion(),
 		"repo":    s.repoURL(),
+		"user":    currentUsername(),
 	})
 }
 

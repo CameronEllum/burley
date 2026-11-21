@@ -37,6 +37,16 @@ import { tableEditorField } from './tables'
 import { frontmatterField } from './frontmatter'
 import { detailsField } from './details'
 import { commentsField } from './comments'
+import {
+  activeCommentField,
+  docCommentsField,
+  pendingCommentField,
+  setActiveCommentEffect,
+  setCommentClickHandler,
+  setCommentHoverHandler,
+  setPendingCommentEffect,
+  type CommentHoverRect,
+} from './commentDecorations'
 import { luaCellsField, setLuaCellRunHandler } from './luaCells'
 import { runLuaCell } from './lua/runner'
 import { escapeElementKeymap } from './escape'
@@ -64,6 +74,8 @@ export interface EditorOptions {
   onSelectionChange: (info: SelectionInfo) => void
   onOpenPath?: (path: string) => void
   onFiles?: (files: File[], pos: number) => void
+  onSelectComment?: (id: string) => void
+  onHoverComment?: (id: string | null, rect: CommentHoverRect | null) => void
 }
 
 export interface EditorController {
@@ -81,8 +93,12 @@ export interface EditorController {
   insertTextAt(text: string, pos: number): number
   replaceRange(from: number, to: number, text: string): void
   replaceAll(content: string): void
+  applyDocMutation(content: string): void
+  setActiveComment(id: string | null): void
+  setPendingComment(range: { from: number; to: number } | null): void
   focus(): void
   scrollToLine(line: number, column?: number): void
+  scrollToPos(pos: number): void
   destroy(): void
 }
 
@@ -184,6 +200,9 @@ function previewExtensions(): Extension[] {
     frontmatterField(),
     detailsField(),
     commentsField(),
+    activeCommentField,
+    pendingCommentField,
+    docCommentsField(),
     luaCellsField(),
     livePreviewPlugin,
     markdownStylePlugin,
@@ -238,6 +257,8 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
   if (opts.onOpenPath) {
     setLinkOpenHandler((path) => opts.onOpenPath?.(path))
   }
+  setCommentClickHandler(opts.onSelectComment ?? null)
+  setCommentHoverHandler(opts.onHoverComment ?? null)
   setLuaCellRunHandler(runLuaCell)
 
   let currentPath = ''
@@ -532,6 +553,33 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       })
     },
 
+    applyDocMutation(content: string) {
+      const scroller = view.scrollDOM
+      const top = scroller.scrollTop
+      const left = scroller.scrollLeft
+      const prevAnchor = Math.min(view.state.selection.main.head, content.length)
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+        selection: { anchor: prevAnchor },
+      })
+      requestAnimationFrame(() => {
+        scroller.scrollTop = top
+        scroller.scrollLeft = left
+      })
+    },
+
+    setActiveComment(id: string | null) {
+      view.dispatch({
+        effects: setActiveCommentEffect.of(id),
+      })
+    },
+
+    setPendingComment(range: { from: number; to: number } | null) {
+      view.dispatch({
+        effects: setPendingCommentEffect.of(range),
+      })
+    },
+
     focus() {
       view.focus()
     },
@@ -552,6 +600,19 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       view.focus()
     },
 
+    scrollToPos(pos: number) {
+      const clamped = Math.max(0, Math.min(pos, view.state.doc.length))
+      if (view.state.facet(readOnlyFacet)) {
+        view.dispatch({ effects: EditorView.scrollIntoView(clamped, { y: 'center' }) })
+        return
+      }
+      view.dispatch({
+        selection: { anchor: clamped },
+        effects: EditorView.scrollIntoView(clamped, { y: 'center' }),
+      })
+      view.focus()
+    },
+
     destroy() {
       view.contentDOM.removeEventListener('mousedown', onMouseDown, true)
       view.contentDOM.removeEventListener('click', onClick)
@@ -560,6 +621,8 @@ export function createEditor(parent: HTMLElement, opts: EditorOptions): EditorCo
       view.contentDOM.removeEventListener('drop', onDrop)
       document.removeEventListener('mouseup', onMouseUp)
       setLinkOpenHandler(null)
+      setCommentClickHandler(null)
+      setCommentHoverHandler(null)
       setActiveView(null)
       if (parseRefreshTimer) {
         clearTimeout(parseRefreshTimer)

@@ -260,6 +260,32 @@
               onchange={(event) => onchange({ spellCheck: event.currentTarget.checked })}
             />
           </label>
+          <h3>Comments</h3>
+          <label class="setting-row">
+            <span>
+              <strong>Show comment on hover</strong>
+              <small>Display a floating preview when hovering over highlighted comments or pins.</small>
+            </span>
+            <input
+              type="checkbox"
+              class="switch"
+              checked={settings.commentHoverPreview}
+              onchange={(event) => onchange({ commentHoverPreview: event.currentTarget.checked })}
+            />
+          </label>
+          <label class="setting-row">
+            <span>
+              <strong>Comment username</strong>
+              <small>Author name shown on new discussions, edits, and replies.</small>
+            </span>
+            <input
+              type="text"
+              class="setting-input"
+              value={settings.commentAuthor}
+              placeholder="Auto (OS username)"
+              onchange={(event) => onchange({ commentAuthor: event.currentTarget.value })}
+            />
+          </label>
           <h3>Vault</h3>
           <label class="setting-row">
             <span>
@@ -755,7 +781,8 @@
   .switch:checked::after {
     transform: translateX(16px);
   }
-  .setting-select {
+  .setting-select,
+  .setting-input {
     border: 1px solid var(--border-soft);
     border-radius: 7px;
     background: var(--bg-app);
@@ -765,6 +792,12 @@
     padding: 6px 9px;
     outline: none;
     flex: 0 0 auto;
+  }
+  .setting-input {
+    width: 170px;
+  }
+  .setting-input:focus {
+    border-color: var(--accent);
   }
   .segmented {
     display: flex;

@@ -4,7 +4,7 @@
   import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf, formatBytes, isHtmlPath, stripMdExt } from './lib/paths'
+  import { baseName, dirOf, formatBytes, isHtmlPath, openNoteInNewTab, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
@@ -36,7 +36,18 @@ import { wordDiff } from './lib/diff'
   import SearchModal from './components/SearchModal.svelte'
   import ConflictModal from './components/ConflictModal.svelte'
   import PresentationModal from './components/PresentationModal.svelte'
-import FigureLightbox from './components/FigureLightbox.svelte'
+  import FigureLightbox from './components/FigureLightbox.svelte'
+  import CommentsPanel from './components/CommentsPanel.svelte'
+  import {
+    addCommentToDoc,
+    addReplyToDoc,
+    deleteCommentFromDoc,
+    deleteReplyFromDoc,
+    editCommentMessageInDoc,
+    parseDocComments,
+    type CommentKind,
+    type DocComment,
+  } from './lib/docComments'
 
   type SaveState = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error'
 
@@ -50,6 +61,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   const RAW_MODE_KEY = 'burley:raw-mode'
   const SCOPE_KEY = 'burley:scope'
   const ZEN_KEY = 'burley:zen'
+  const COMMENT_AUTHOR_KEY = 'burley:comment-author'
   const SIDEBAR_MIN = 220
   const SIDEBAR_MAX = 560
   const TALK_MIN = 220
@@ -104,10 +116,43 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   let checkingRelease = $state(false)
   let settingsOpen = $state(false)
   let shortcutsOpen = $state(false)
-  let talkOpen = $state(false)
+  let rightPanel = $state<null | 'talk' | 'comments'>(null)
+  const talkOpen = $derived(rightPanel === 'talk')
+  const commentsOpen = $derived(rightPanel === 'comments')
   let talkWidth = $state(TALK_DEFAULT)
   let talkAgent = $state('')
   let talkMode = $state<'ask' | 'edit'>('ask')
+  let commentAuthor = $state('')
+  let commentAuthorSetting = $state('')
+  let commentHoverPreview = $state(true)
+  const effectiveCommentAuthor = $derived(commentAuthorSetting || commentAuthor)
+  let activeCommentId = $state<string | null>(null)
+  let hoveredComment = $state<{
+    id: string
+    left: number
+    top: number
+    bottom: number
+  } | null>(null)
+  let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null
+  let commentDraft = $state<{
+    from: number
+    to: number
+    snippet: string
+    line: number
+    openedPanel: boolean
+  } | null>(null)
+
+  const parsedComments = $derived(
+    currentPath && !isCurrentHtml && content
+      ? parseDocComments(content)
+      : { comments: [], anchors: [] },
+  )
+  const docComments = $derived(parsedComments.comments)
+  const hoveredDocComment = $derived(
+    commentHoverPreview && hoveredComment
+      ? (docComments.find((c) => c.id === hoveredComment!.id) ?? null)
+      : null,
+  )
 
   interface TalkDebug {
     command?: string
@@ -367,6 +412,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       },
     },
     {
+      id: 'add-comment',
+      label: 'Add comment (Alt+C)',
+      keywords: 'discussion edit annotate review note',
+      run: openCommentDraft,
+    },
+    {
+      id: 'toggle-comments',
+      label: commentsOpen ? 'Hide Comments panel' : 'Show Comments panel',
+      keywords: 'discussions edits review annotations',
+      run: toggleComments,
+    },
+    {
       id: 'toggle-split',
       label: splitPath ? 'Close split pane' : 'Open current file in split pane',
       keywords: 'side by side compare view',
@@ -465,6 +522,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
     rawMode = localStorage.getItem(RAW_MODE_KEY) === '1'
     zenMode = localStorage.getItem(ZEN_KEY) === '1'
+    const storedAuthor = localStorage.getItem(COMMENT_AUTHOR_KEY)
+    if (storedAuthor) commentAuthor = storedAuthor
     const storedFavoritesOpen = localStorage.getItem(FAVORITES_OPEN_KEY)
     if (storedFavoritesOpen !== null) favoritesOpen = storedFavoritesOpen === '1'
 
@@ -496,6 +555,30 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       },
       onFiles: (files, pos) => {
         void uploadImages(files, pos)
+      },
+      onSelectComment: (id) => {
+        hoveredComment = null
+        activeCommentId = id
+        rightPanel = 'comments'
+      },
+      onHoverComment: (id, rect) => {
+        if (hoverCloseTimer) {
+          clearTimeout(hoverCloseTimer)
+          hoverCloseTimer = null
+        }
+        if (!commentHoverPreview || !id || !rect) {
+          hoverCloseTimer = setTimeout(() => {
+            hoverCloseTimer = null
+            hoveredComment = null
+          }, 120)
+          return
+        }
+        hoveredComment = {
+          id,
+          left: Math.min(window.innerWidth - 336, Math.max(12, rect.left)),
+          top: rect.top,
+          bottom: rect.bottom,
+        }
       },
     })
     editor.setRawMode(rawMode)
@@ -768,6 +851,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   $effect(() => {
+    editor?.setActiveComment(activeCommentId)
+  })
+
+  $effect(() => {
+    editor?.setPendingComment(
+      commentDraft && rightPanel === 'comments'
+        ? { from: commentDraft.from, to: commentDraft.to }
+        : null,
+    )
+  })
+
+  $effect(() => {
     if (!backgroundScan) return
     const timer = setInterval(() => {
       if (treeComplete && !loading && !document.hidden) {
@@ -810,6 +905,10 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
+    if (currentPath !== data.path) {
+      activeCommentId = null
+    }
+    commentDraft = null
     selectedRange = null
     talkPinnedSelection = ''
     const decoded = decodeForEditor(data.content)
@@ -912,19 +1011,20 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   let fileCheckInFlight = false
+  let talkEditStreaming = false
   let currentAssetsStamp = ''
   let reloadingFile = $state(false)
 
   async function checkExternalFileChange() {
     const path = currentPath
-    if (!path || fileCheckInFlight || loadingFile || reloadingFile || saveState === 'saving' || conflictOpen) return
+    if (!path || fileCheckInFlight || talkEditStreaming || loadingFile || reloadingFile || saveState === 'saving' || conflictOpen) return
     fileCheckInFlight = true
     try {
       const remote = await api.file(path)
-      if (currentPath !== path) return
+      if (currentPath !== path || talkEditStreaming) return
       if (remote.hash !== hash) {
+        const decoded = decodeForEditor(remote.content)
         if (!dirty) {
-          const decoded = decodeForEditor(remote.content)
           format = decoded.format
           content = decoded.text
           hash = remote.hash
@@ -936,6 +1036,20 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           htmlFrameNonce += 1
           void refreshCurrentAssets(remote.path)
           flash(`Reloaded ${baseName(remote.path)} (changed on disk)`)
+          return
+        }
+        if (decoded.text === content) {
+          if (saveTimer) {
+            clearTimeout(saveTimer)
+            saveTimer = null
+          }
+          format = decoded.format
+          hash = remote.hash
+          modTime = remote.modTime
+          dirty = false
+          saveState = 'saved'
+          saveError = ''
+          void refreshCurrentAssets(remote.path)
           return
         }
         conflictData = remote
@@ -1069,8 +1183,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }, 1500)
   }
 
-  async function saveNow(): Promise<boolean> {
-    if (!currentPath || readOnly) return false
+  async function saveNow(allowInReadOnly = false): Promise<boolean> {
+    if (!currentPath || (readOnly && !allowInReadOnly)) return false
     if (saveState === 'conflict') {
       conflictOpen = true
       return false
@@ -1106,6 +1220,17 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       return true
     } catch (err) {
       if (err instanceof ConflictError) {
+        const remoteDecoded = decodeForEditor(err.current.content)
+        if (remoteDecoded.text === content) {
+          format = remoteDecoded.format
+          hash = err.current.hash
+          modTime = err.current.modTime
+          dirty = false
+          saveState = 'saved'
+          saveError = ''
+          void refreshCurrentAssets(currentPath)
+          return true
+        }
         conflictData = err.current
         conflictOpen = true
         saveState = 'conflict'
@@ -1282,6 +1407,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         spellCheck,
         fileTypes,
         backgroundScan,
+        commentHoverPreview,
+        commentAuthor: commentAuthorSetting,
         agentModels: agentPins,
         disabledAgents,
       })
@@ -1334,6 +1461,18 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (patch.backgroundScan !== undefined) {
       backgroundScan = patch.backgroundScan
     }
+    if (patch.commentHoverPreview !== undefined) {
+      commentHoverPreview = patch.commentHoverPreview
+      if (!commentHoverPreview) hoveredComment = null
+    }
+    if (patch.commentAuthor !== undefined) {
+      const clean = patch.commentAuthor.trim().replace(/^@+/, '')
+      commentAuthorSetting = clean
+      if (clean) {
+        commentAuthor = clean
+        localStorage.setItem(COMMENT_AUTHOR_KEY, clean)
+      }
+    }
     if (patch.disabledAgents !== undefined) {
       const prevDisabled = new Set(disabledAgents)
       disabledAgents = patch.disabledAgents
@@ -1384,7 +1523,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     localStorage.setItem(ZEN_KEY, zenMode ? '1' : '0')
     editor?.setZenFocus(zenMode)
     if (zenMode) {
-      talkOpen = false
+      commentDraft = null
+      rightPanel = null
       scrollProgress = 0
     }
     requestAnimationFrame(() => editor?.focus())
@@ -1410,6 +1550,9 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         spellCheck = response.settings.spellCheck
         fileTypes = response.settings.fileTypes ?? ['markdown', 'html']
         backgroundScan = response.settings.backgroundScan ?? false
+        commentHoverPreview = response.settings.commentHoverPreview ?? true
+        commentAuthorSetting = response.settings.commentAuthor ?? ''
+        if (commentAuthorSetting) commentAuthor = commentAuthorSetting
         agentPins = response.settings.agentModels ?? {}
         disabledAgents = response.settings.disabledAgents ?? []
         applyTheme(themeMode, lightTheme, darkTheme)
@@ -1431,6 +1574,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           spellCheck,
           fileTypes,
           backgroundScan,
+          commentHoverPreview,
+          commentAuthor: commentAuthorSetting,
           agentModels: agentPins,
           disabledAgents,
         })
@@ -1471,6 +1616,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       const meta = await api.health()
       if (meta.version) appVersion = meta.version
       if (meta.repo) repoUrl = meta.repo
+      if (meta.user && !commentAuthor) commentAuthor = meta.user
     } catch {
       /* health is best-effort */
     }
@@ -1578,7 +1724,104 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   function toggleTalk() {
-    talkOpen = !talkOpen
+    commentDraft = null
+    rightPanel = rightPanel === 'talk' ? null : 'talk'
+  }
+
+  function toggleComments() {
+    if (!currentPath || isCurrentHtml) return
+    if (rightPanel === 'comments') {
+      commentDraft = null
+      rightPanel = null
+    } else {
+      rightPanel = 'comments'
+    }
+  }
+
+  function closeCommentsPanel() {
+    commentDraft = null
+    if (rightPanel === 'comments') rightPanel = null
+  }
+
+  function applyCommentMutation(nextDoc: string, nextActiveId?: string | null) {
+    if (!editor || nextDoc === content) return
+    editor.applyDocMutation(nextDoc)
+    if (nextActiveId !== undefined) activeCommentId = nextActiveId
+    void saveNow(true)
+  }
+
+  function openCommentDraft() {
+    if (!currentPath || isCurrentHtml || !editor) return
+    const sel = editor.view.state.selection.main
+    const from = Math.min(sel.from, sel.to)
+    const to = Math.max(sel.from, sel.to)
+    const line = editor.view.state.doc.lineAt(from).number
+    const snippet = from < to ? editor.view.state.doc.sliceString(from, to) : ''
+    const openedPanel = commentDraft ? commentDraft.openedPanel : rightPanel !== 'comments'
+    rightPanel = 'comments'
+    commentDraft = { from, to, snippet, line, openedPanel }
+  }
+
+  function cancelCommentDraft() {
+    const shouldClose = !!commentDraft?.openedPanel
+    commentDraft = null
+    if (shouldClose && rightPanel === 'comments') {
+      rightPanel = null
+    }
+    requestAnimationFrame(() => editor?.focus())
+  }
+
+  function submitNewComment(payload: { kind: CommentKind; author: string; body: string }) {
+    if (!commentDraft) return
+    const trimmedAuthor = payload.author.trim()
+    if (trimmedAuthor && trimmedAuthor !== 'anonymous') {
+      commentAuthor = trimmedAuthor
+      localStorage.setItem(COMMENT_AUTHOR_KEY, trimmedAuthor)
+    }
+    const { from, to } = commentDraft
+    const res = addCommentToDoc(content, {
+      kind: payload.kind,
+      from,
+      to,
+      author: trimmedAuthor || commentAuthor || 'anonymous',
+      body: payload.body,
+    })
+    commentDraft = null
+    rightPanel = 'comments'
+    applyCommentMutation(res.doc, res.id)
+  }
+
+  function handleAddReply(id: string, author: string, body: string) {
+    const trimmedAuthor = author.trim()
+    if (trimmedAuthor && trimmedAuthor !== 'anonymous') {
+      commentAuthor = trimmedAuthor
+      localStorage.setItem(COMMENT_AUTHOR_KEY, trimmedAuthor)
+    }
+    const res = addReplyToDoc(content, id, { author: trimmedAuthor || commentAuthor || 'anonymous', body })
+    applyCommentMutation(res.doc, res.id)
+  }
+
+  function handleEditComment(id: string, messageIndex: number, body: string) {
+    const res = editCommentMessageInDoc(content, id, messageIndex, body)
+    applyCommentMutation(res.doc, res.id)
+  }
+
+  function handleDeleteReply(id: string, messageIndex: number) {
+    const res = deleteReplyFromDoc(content, id, messageIndex)
+    applyCommentMutation(res.doc, res.id)
+  }
+
+  function handleDeleteComment(id: string) {
+    const nextDoc = deleteCommentFromDoc(content, id)
+    applyCommentMutation(nextDoc, activeCommentId === id ? null : activeCommentId)
+  }
+
+  function handleSelectCommentFromPanel(comment: DocComment) {
+    activeCommentId = comment.id
+    if (comment.anchor && editor) {
+      const pos = comment.anchor.isRange ? comment.anchor.textFrom : comment.anchor.openFrom
+      editor.scrollToPos(pos)
+    }
   }
 
   async function runExport(kind: 'html' | 'pdf') {
@@ -1609,6 +1852,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     talkAbort?.abort()
     talkAbort = null
     talkStreaming = false
+    talkEditStreaming = false
     talkMessages = []
     talkError = ''
     talkPinnedSelection = ''
@@ -1634,6 +1878,13 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     range?: { from: number; to: number }
   }): Promise<void> {
     if (!talkAgent || talkStreaming) return
+    const runMode = options.mode ?? talkMode
+    const targetPath = currentPath
+    if (runMode === 'edit' && dirty && targetPath && !readOnly) {
+      const saved = await saveNow()
+      if (!saved) return
+    }
+
     const history = talkMessages
       .filter((message) => message.content.trim())
       .slice(-8)
@@ -1647,12 +1898,13 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     if (options.range) {
       assistant.from = options.range.from
       assistant.to = options.range.to
-      assistant.path = currentPath
+      assistant.path = targetPath
     }
     talkMessages = [...talkMessages, user, assistant]
     const assistantIndex = talkMessages.length - 1
 
     talkStreaming = true
+    talkEditStreaming = runMode === 'edit'
     talkError = ''
     talkAbort = new AbortController()
     try {
@@ -1660,8 +1912,8 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         {
           agent: talkAgent,
           prompt: options.prompt,
-          path: currentPath,
-          mode: options.mode ?? talkMode,
+          path: targetPath,
+          mode: runMode,
           selection: options.selection,
           history,
         },
@@ -1698,8 +1950,26 @@ import FigureLightbox from './components/FigureLightbox.svelte'
               },
             }
             talkMessages = messages
-          } else if (event === 'done' && data.file?.content) {
-            editor?.replaceAll(data.file.content)
+          } else if (event === 'done' && data.file && typeof data.file.content === 'string') {
+            const filePath = typeof data.file.path === 'string' && data.file.path ? data.file.path : targetPath
+            if (!filePath || filePath !== currentPath) return
+            if (saveTimer) {
+              clearTimeout(saveTimer)
+              saveTimer = null
+            }
+            const decoded = decodeForEditor(data.file.content)
+            format = decoded.format
+            content = decoded.text
+            if (typeof data.file.hash === 'string') hash = data.file.hash
+            if (typeof data.file.modTime === 'number') modTime = data.file.modTime
+            dirty = false
+            saveState = 'saved'
+            saveError = ''
+            conflictData = null
+            conflictOpen = false
+            editor?.reloadDoc(filePath, decoded.text)
+            htmlFrameNonce += 1
+            void refreshCurrentAssets(filePath)
             flash('Agent updated the note')
           } else if (event === 'error') {
             const msg = data.message ?? 'Agent failed'
@@ -1720,6 +1990,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
       }
     } finally {
       talkStreaming = false
+      talkEditStreaming = false
       talkAbort = null
     }
   }
@@ -1751,7 +2022,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
     const prompt = SPARKLE_PROMPTS[action]
     const display = `${SPARKLE_LABELS[action]} the selection`
-    talkOpen = true
+    rightPanel = 'talk'
     talkMode = 'ask'
     talkPinnedSelection = sel.text
     void streamTalk({
@@ -1766,7 +2037,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
   function openSelectionInTalk() {
     if (!selectedRange) return
-    talkOpen = true
+    rightPanel = 'talk'
     talkMode = 'ask'
     talkPinnedSelection = selectedRange.text
   }
@@ -2260,8 +2531,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     }
     if (event.altKey && event.key.toLowerCase() === 't') {
       event.preventDefault()
-      talkOpen = !talkOpen
+      toggleTalk()
       return
+    }
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.code === 'KeyC' || event.key.toLowerCase() === 'c')) {
+      if (currentPath && !isCurrentHtml) {
+        event.preventDefault()
+        event.stopPropagation()
+        openCommentDraft()
+        return
+      }
     }
     if (
       (event.key === '?' || (event.key === '/' && event.shiftKey)) &&
@@ -2295,6 +2574,11 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && commentDraft) {
+      event.preventDefault()
+      cancelCommentDraft()
+      return
+    }
     if (event.key === 'Escape' && shortcutsOpen) {
       event.preventDefault()
       shortcutsOpen = false
@@ -2491,7 +2775,26 @@ import FigureLightbox from './components/FigureLightbox.svelte'
         {/if}
       </div>
       <button class="icon-btn talk-btn" class:on={talkOpen} title="Talk to an AI agent (Alt+T)" aria-label="Toggle Talk panel" onclick={toggleTalk}>
-        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 4.2h14v9.1H8.4L4.9 16v-2.7H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M6.4 8.7h7.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+          <path d="M9.2 2.8l1.4 4.2 4.2 1.4-4.2 1.4-1.4 4.2-1.4-4.2-4.2-1.4 4.2-1.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+          <path d="M15.2 12.6l.6 1.8 1.8.6-1.8.6-.6 1.8-.6-1.8-1.8-.6 1.8-.6z" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        class="icon-btn comments-btn"
+        class:on={commentsOpen}
+        title="Comments panel (Alt+C to add comment)"
+        aria-label="Toggle Comments panel"
+        disabled={!currentPath || isCurrentHtml}
+        onclick={toggleComments}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <path d="M2.6 3.8h10.2v6.6H6.5L3.6 12.8v-2.4h-1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+          <path d="M13 7.4h4.4v6.4h-1v2l-2.4-2H8.4v-2.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+        </svg>
+        {#if docComments.length > 0}
+          <span class="comments-badge">{docComments.length}</span>
+        {/if}
       </button>
       <button
         class="icon-btn present-btn"
@@ -2604,7 +2907,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     </div>
   </header>
 
-  <main class="workspace" class:collapsed={!sidebarOpen || zenMode} class:talk-open={talkOpen} class:zen={zenMode} style={`--sidebar-width: ${sidebarWidth}px; --talk-width: ${talkWidth}px`}>
+  <main class="workspace" class:collapsed={!sidebarOpen || zenMode} class:talk-open={rightPanel !== null} class:zen={zenMode} style={`--sidebar-width: ${sidebarWidth}px; --talk-width: ${talkWidth}px`}>
     <aside class="sidebar" class:closed={!sidebarOpen || zenMode} aria-label="Sidebar">
       <div class="sidebar-tabs" role="tablist" aria-label="Sidebar panels">
         <button
@@ -2697,6 +3000,16 @@ import FigureLightbox from './components/FigureLightbox.svelte'
                         onclick={() => {
                           if (!favorite.exists) return
                           void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
+                        }}
+                        onmousedown={(event) => {
+                          if (event.button === 1 && favorite.exists) event.preventDefault()
+                        }}
+                        onauxclick={(event) => {
+                          if (event.button === 1 && favorite.exists) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            openNoteInNewTab(favorite.path)
+                          }
                         }}
                       >
                         <span class="favorite-pin" aria-hidden="true">★</span>
@@ -2920,7 +3233,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
             <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M12.7 3.8a4 4 0 0 0-5.1 5.1L3.8 12.7a1.5 1.5 0 0 0 2.1 2.1l3.8-3.8a4 4 0 0 0 5.1-5.1l-2.2 2.2-1.8-.4-.4-1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
           </button>
           <button class="talk-icon" title="New chat" aria-label="New chat" onclick={newTalkChat}>+</button>
-          <button class="talk-icon" title="Close Talk" aria-label="Close Talk" onclick={() => (talkOpen = false)}>×</button>
+          <button class="talk-icon" title="Close Talk" aria-label="Close Talk" onclick={() => (rightPanel = null)}>×</button>
         </header>
 
         {#if talkDiagOpen || agents.length === 0}
@@ -3118,6 +3431,34 @@ import FigureLightbox from './components/FigureLightbox.svelte'
           ondblclick={() => setTalkWidth(TALK_DEFAULT)}
         ></button>
       </aside>
+    {:else if commentsOpen}
+      <aside class="talk-panel comments-panel" aria-label="Comments">
+        <CommentsPanel
+          comments={docComments}
+          activeId={activeCommentId}
+          defaultAuthor={effectiveCommentAuthor}
+          canAdd={!!currentPath && !isCurrentHtml}
+          draft={commentDraft}
+          onnew={openCommentDraft}
+          oncreatedraft={submitNewComment}
+          oncanceldraft={cancelCommentDraft}
+          onselect={handleSelectCommentFromPanel}
+          onreply={handleAddReply}
+          onedit={handleEditComment}
+          ondeletereply={handleDeleteReply}
+          ondelete={handleDeleteComment}
+          onclose={closeCommentsPanel}
+        />
+        <button
+          type="button"
+          class="talk-resizer"
+          aria-label="Resize Comments panel"
+          title="Drag to resize — double-click to reset"
+          onpointerdown={startTalkResize}
+          onkeydown={handleTalkResizerKeydown}
+          ondblclick={() => setTalkWidth(TALK_DEFAULT)}
+        ></button>
+      </aside>
     {/if}
   </main>
 
@@ -3210,6 +3551,56 @@ import FigureLightbox from './components/FigureLightbox.svelte'
     filePath={currentPath}
     onclose={() => (presentOpen = false)}
   />
+{/if}
+
+{#if hoveredDocComment && hoveredComment}
+  {@const above = hoveredComment.top > 180}
+  <button
+    type="button"
+    class="comment-hover-card"
+    class:is-discussion={hoveredDocComment.kind === 'discussion'}
+    class:is-edit={hoveredDocComment.kind === 'edit'}
+    style={`left: ${hoveredComment.left}px; ${above ? `bottom: ${window.innerHeight - hoveredComment.top + 8}px` : `top: ${hoveredComment.bottom + 8}px`};`}
+    onmouseenter={() => {
+      if (hoverCloseTimer) {
+        clearTimeout(hoverCloseTimer)
+        hoverCloseTimer = null
+      }
+    }}
+    onmouseleave={() => {
+      hoverCloseTimer = setTimeout(() => {
+        hoverCloseTimer = null
+        hoveredComment = null
+      }, 120)
+    }}
+    onclick={() => {
+      activeCommentId = hoveredDocComment.id
+      rightPanel = 'comments'
+      hoveredComment = null
+    }}
+  >
+    <div class="chc-head">
+      <span class="chc-pill" class:is-discussion={hoveredDocComment.kind === 'discussion'} class:is-edit={hoveredDocComment.kind === 'edit'}>
+        {hoveredDocComment.kind === 'discussion' ? 'Discussion' : 'Edit'}
+      </span>
+      {#if hoveredDocComment.messages[0]}
+        <span class="chc-author">@{hoveredDocComment.messages[0].author}</span>
+        <span class="chc-date">{hoveredDocComment.messages[0].date}</span>
+      {/if}
+    </div>
+    {#if hoveredDocComment.messages[0]}
+      <p class="chc-body">{hoveredDocComment.messages[0].body}</p>
+    {/if}
+    {#if hoveredDocComment.kind === 'discussion' && hoveredDocComment.messages.length > 1}
+      <div class="chc-replies">
+        {#each hoveredDocComment.messages.slice(1) as reply}
+          <div class="chc-reply">
+            <span class="chc-author">@{reply.author}:</span> {reply.body}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </button>
 {/if}
 
 {#if toast}
@@ -3445,7 +3836,7 @@ import FigureLightbox from './components/FigureLightbox.svelte'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, agentModels: agentPins, disabledAgents }}
     agents={sortedAllAgents}
     agentTests={agentTests}
     agentTesting={agentTesting}
@@ -3782,6 +4173,101 @@ import FigureLightbox from './components/FigureLightbox.svelte'
   .icon-btn.on {
     color: var(--accent);
     background: var(--active);
+  }
+  .comments-btn {
+    position: relative;
+  }
+  .comments-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+  .comment-hover-card {
+    position: fixed;
+    z-index: 95;
+    width: 320px;
+    max-width: calc(100vw - 24px);
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border-strong);
+    border-left-width: 3px;
+    background: var(--bg-app);
+    box-shadow: 0 10px 26px rgb(0 0 0 / 0.16);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .comment-hover-card.is-discussion {
+    border-left-color: var(--warn-fg);
+  }
+  .comment-hover-card.is-edit {
+    border-left-color: var(--info-fg);
+  }
+  .chc-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .chc-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .chc-pill.is-discussion {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    border-color: var(--warn-border);
+  }
+  .chc-pill.is-edit {
+    background: var(--info-bg);
+    color: var(--info-fg);
+    border-color: var(--info-border);
+  }
+  .chc-author {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .chc-body {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .chc-replies {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 5px;
+    border-top: 1px solid var(--border-soft);
+    font-size: 12px;
+    color: var(--text-primary);
+    max-height: 110px;
+    overflow-y: auto;
+  }
+  .chc-reply {
+    line-height: 1.38;
   }
   .raw-glyph {
     font-family: var(--font-mono);
