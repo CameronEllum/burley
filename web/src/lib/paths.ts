@@ -27,6 +27,23 @@ export function isHtmlPath(filePath: string): boolean {
   return /\.(html|htm)$/i.test(filePath)
 }
 
+/** Build a Burley app URL for opening `target` (`path` or `path#slug`) in a tab. */
+export function noteTabUrl(target: string): string {
+  const hashIdx = target.indexOf('#')
+  const path = hashIdx >= 0 ? target.slice(0, hashIdx) : target
+  const hash = hashIdx >= 0 ? target.slice(hashIdx + 1) : ''
+  const url = new URL(window.location.href)
+  if (path) url.searchParams.set('file', path)
+  else url.searchParams.delete('file')
+  url.hash = hash ? `#${hash}` : ''
+  return url.toString()
+}
+
+/** Open a vault note (`path` or `path#slug`) in a new browser tab. */
+export function openNoteInNewTab(target: string): void {
+  window.open(noteTabUrl(target), '_blank', 'noopener,noreferrer')
+}
+
 /** Format a byte count into a human-friendly size string. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'

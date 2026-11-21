@@ -11,7 +11,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemir
 import { syntaxTree } from '@codemirror/language'
 import { setMouseSelecting } from 'codemirror-live-markdown'
 import { filePathFacet, isMouseSelecting, mouseSelectingEnded, previewGeometryChanged, readOnlyFacet, selectionTouches } from './cm'
-import { isExternalRef, resolveRelative } from './paths'
+import { isExternalRef, noteTabUrl, openNoteInNewTab, resolveRelative } from './paths'
 import { api } from './api'
 import { getActiveView } from './viewRef'
 
@@ -94,8 +94,19 @@ class LinkWidget extends WidgetType {
     let downX = 0
     let downY = 0
     anchor.addEventListener('mousedown', (event) => {
+      if (event.button === 1 && this.internalPath) {
+        event.preventDefault()
+      }
       downX = event.clientX
       downY = event.clientY
+    })
+
+    anchor.addEventListener('auxclick', (event) => {
+      if (event.button === 1 && this.internalPath) {
+        event.preventDefault()
+        event.stopPropagation()
+        openNoteInNewTab(this.internalPath)
+      }
     })
 
     anchor.addEventListener('click', (event) => {
@@ -125,7 +136,7 @@ class LinkWidget extends WidgetType {
     })
 
     if (this.internalPath) {
-      anchor.href = '#'
+      anchor.href = noteTabUrl(this.internalPath)
       anchor.classList.add('cm-burley-link-internal')
     } else if (this.url) {
       anchor.href = this.url

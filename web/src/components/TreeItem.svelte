@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Entry } from '../lib/api'
-  import { isHtmlPath, isMarkdownPath, stripMdExt } from '../lib/paths'
+  import { isHtmlPath, isMarkdownPath, openNoteInNewTab, stripMdExt } from '../lib/paths'
   import TreeItem from './TreeItem.svelte'
 
   let {
@@ -98,6 +98,16 @@
       data-path={entry.path}
       title={entry.path}
       onclick={() => onselect(entry.path)}
+      onmousedown={(event) => {
+        if (event.button === 1) event.preventDefault()
+      }}
+      onauxclick={(event) => {
+        if (event.button === 1) {
+          event.preventDefault()
+          event.stopPropagation()
+          openNoteInNewTab(entry.path)
+        }
+      }}
       oncontextmenu={(event) => {
         event.preventDefault()
         oncontext(event, entry.path, false)
