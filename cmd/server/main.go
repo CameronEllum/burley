@@ -25,6 +25,7 @@ import (
 
 	"burley/internal/agent"
 	"burley/internal/api"
+	"burley/internal/demo"
 	"burley/internal/syntax"
 	"burley/internal/vault"
 )
@@ -80,6 +81,7 @@ func main() {
 		showVersion    = flag.Bool("version", false, "print version and exit")
 		reportSyntax   = flag.Bool("report-syntax", false, "print Burley's Markdown flavour reference for AI agents and exit")
 		initAgentDocs  = flag.Bool("init-agent-docs", false, "create or update AGENTS.md in --root with Burley's Markdown flavour and exit")
+		demoMode       = flag.Bool("demo", false, "serve a temporary copy of the built-in demo vault")
 	)
 	flag.Parse()
 
@@ -109,7 +111,18 @@ func main() {
 
 	logger := log.New(os.Stderr, "burley ", log.LstdFlags|log.Lmsgprefix)
 
-	v, err := vault.NewLocalVault(*root)
+	vaultRoot := *root
+	if *demoMode {
+		dir, cleanup, err := demo.ExtractToTemp()
+		if err != nil {
+			logger.Fatalf("prepare demo vault: %v", err)
+		}
+		defer cleanup()
+		vaultRoot = dir
+		logger.Printf("demo vault: %s (temporary, removed on exit)", dir)
+	}
+
+	v, err := vault.NewLocalVault(vaultRoot)
 	if err != nil {
 		logger.Fatalf("open vault: %v", err)
 	}
@@ -136,6 +149,7 @@ func main() {
 		Version:          version,
 		Logger:           logger,
 		DebugAgents:      *debugAgents,
+		DemoMode:         *demoMode,
 		OnQuit:           quit,
 	})
 

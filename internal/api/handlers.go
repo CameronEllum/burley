@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"burley/internal/demo"
 	"burley/internal/vault"
 )
 
@@ -42,6 +43,8 @@ type Options struct {
 	Logger *log.Logger
 	// DebugAgents logs CLI invocations, stderr, and exit codes.
 	DebugAgents bool
+	// DemoMode is true when started with --demo.
+	DemoMode bool
 	// OnQuit is invoked (after a short delay) when POST /api/quit is called.
 	// It is wired to the same graceful-shutdown path as SIGINT.
 	OnQuit func()
@@ -60,6 +63,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/demo/tree", s.handleDemoTree)
 	mux.HandleFunc("GET /api/release", s.handleRelease)
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("POST /api/tree/rescan", s.handleRescanFolder)
@@ -203,17 +207,37 @@ func currentUsername() string {
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"root":    s.opts.Root,
-		"ripgrep": s.opts.RipgrepAvailable,
-		"version": s.currentVersion(),
-		"repo":    s.repoURL(),
-		"user":    currentUsername(),
+		"status":   "ok",
+		"root":     s.opts.Root,
+		"ripgrep":  s.opts.RipgrepAvailable,
+		"version":  s.currentVersion(),
+		"repo":     s.repoURL(),
+		"user":     currentUsername(),
+		"demoMode": s.opts.DemoMode,
+	})
+}
+
+func (s *server) handleDemoTree(w http.ResponseWriter, r *http.Request) {
+	tree, files := demo.Tree()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"root":  "Built-in Demo",
+		"tree":  tree,
+		"files": files,
+		"done":  true,
 	})
 }
 
 func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
+	if demo.IsVirtualPath(p) {
+		data, err := demo.Read(p)
+		if err != nil {
+			vaultError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, data)
+		return
+	}
 	data, err := s.vault.Read(r.Context(), p)
 	if err != nil {
 		vaultError(w, err)
@@ -224,6 +248,15 @@ func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleFileAssets(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
+	if demo.IsVirtualPath(p) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"path":      p,
+			"assets":    []string{},
+			"hasAssets": false,
+			"stamp":     "demo",
+		})
+		return
+	}
 	assets, err := s.vault.NoteAssets(r.Context(), p)
 	if err != nil {
 		vaultError(w, err)
@@ -355,6 +388,10 @@ func (s *server) handlePutFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "path is required")
 		return
 	}
+	if demo.IsVirtualPath(req.Path) {
+		writeError(w, http.StatusForbidden, "built-in demo is read-only")
+		return
+	}
 	expected := ""
 	if req.ExpectedHash != nil {
 		expected = *req.ExpectedHash
@@ -432,8 +469,22 @@ func (s *server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {	p := r.URL.Query().Get("path")
-	b, mimeType, err := s.vault.ReadAsset(r.Context(), p)
+func (s *server) handleAsset(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	var b []byte
+	var mimeType string
+	var err error
+	if demo.IsVirtualPath(p) {
+		b, err = demo.ReadAsset(p)
+		if err == nil {
+			mimeType = mime.TypeByExtension(path.Ext(p))
+			if mimeType == "" {
+				mimeType = http.DetectContentType(b)
+			}
+		}
+	} else {
+		b, mimeType, err = s.vault.ReadAsset(r.Context(), p)
+	}
 	if err != nil {
 		vaultError(w, err)
 		return

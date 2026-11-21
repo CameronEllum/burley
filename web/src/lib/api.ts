@@ -68,6 +68,7 @@ export interface AppSettings {
   backgroundScan: boolean
   commentHoverPreview: boolean
   commentAuthor: string
+  demoSeen: boolean
 }
 
 export interface AppMeta {
@@ -77,6 +78,7 @@ export interface AppMeta {
   version: string
   repo: string
   user?: string
+  demoMode?: boolean
 }
 
 export interface ReleaseInfo {
@@ -179,6 +181,10 @@ export const api = {
     if (since !== undefined && since > 0) params.set('since', String(since))
     const qs = params.toString()
     return request<TreeResponse>(`/api/tree${qs ? `?${qs}` : ''}`, { signal })
+  },
+
+  async demoTree(signal?: AbortSignal): Promise<TreeResponse> {
+    return request<TreeResponse>('/api/demo/tree', { signal })
   },
 
   async rescanFolder(path: string, signal?: AbortSignal): Promise<TreeResponse> {

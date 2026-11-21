@@ -1,0 +1,9 @@
+Service,Region,P50_ms,P99_ms,Req_per_sec,Status
+api-gateway,us-east,11,42,4820,healthy
+auth-worker,us-east,16,58,3190,healthy
+billing-queue,us-west,48,240,640,degraded
+search-index,eu-central,23,89,1950,healthy
+webhook-relay,us-west,95,410,410,degraded
+cache-edge,eu-central,4,12,12400,healthy
+metrics-ingest,us-east,19,64,5310,healthy
+export-worker,us-west,62,195,280,healthy

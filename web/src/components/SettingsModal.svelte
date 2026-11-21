@@ -17,6 +17,7 @@
     release = null,
     checkingRelease = false,
     oncheck = () => {},
+    onrundemo = () => {},
   }: {
     settings: AppSettings
     onchange: (patch: Partial<AppSettings>) => void
@@ -31,6 +32,7 @@
     release?: ReleaseInfo | null
     checkingRelease?: boolean
     oncheck?: () => void
+    onrundemo?: () => void
   } = $props()
 
   const bugUrl = $derived(bugReportUrl(repo, version))
@@ -299,6 +301,41 @@
               onchange={(event) => onchange({ backgroundScan: event.currentTarget.checked })}
             />
           </label>
+          <h3>Demo</h3>
+          <div class="setting-row">
+            <span>
+              <strong>Feature demo</strong>
+              <small>Open the built-in interactive demo pages (or launch <code>burley --demo</code> for a writable sandbox).</small>
+            </span>
+            <button
+              type="button"
+              class="setting-btn"
+              onclick={() => {
+                onclose()
+                onrundemo()
+              }}
+            >
+              Run Demo
+            </button>
+          </div>
+          <div class="setting-row">
+            <span>
+              <strong>First-run demo</strong>
+              <small>
+                {settings.demoSeen
+                  ? 'Already shown for this vault. Reset to show automatically on next launch.'
+                  : 'Pending — will open automatically on next launch.'}
+              </small>
+            </span>
+            <button
+              type="button"
+              class="setting-btn"
+              disabled={!settings.demoSeen}
+              onclick={() => onchange({ demoSeen: false })}
+            >
+              {settings.demoSeen ? 'Reset' : 'Pending'}
+            </button>
+          </div>
         </section>
       {:else if tab === 'appearance'}
         <section class="settings-section">
@@ -798,6 +835,26 @@
   }
   .setting-input:focus {
     border-color: var(--accent);
+  }
+  .setting-btn {
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 6px 12px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .setting-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .setting-btn:disabled {
+    opacity: 0.48;
+    cursor: default;
   }
   .segmented {
     display: flex;

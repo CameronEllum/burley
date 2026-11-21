@@ -30,6 +30,7 @@ type Settings struct {
 	BackgroundScan      bool              `json:"backgroundScan"`
 	CommentHoverPreview bool              `json:"commentHoverPreview"`
 	CommentAuthor       string            `json:"commentAuthor"`
+	DemoSeen            bool              `json:"demoSeen"`
 }
 
 func defaultFileTypes() []string {
@@ -155,6 +156,7 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		BackgroundScan:      settings.BackgroundScan,
 		CommentHoverPreview: settings.CommentHoverPreview,
 		CommentAuthor:       normalizeCommentAuthor(settings.CommentAuthor),
+		DemoSeen:            settings.DemoSeen,
 	}, nil
 }
 
@@ -291,6 +293,8 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(boolYAML(settings.CommentHoverPreview))
 	b.WriteString("\ncomment_author: ")
 	b.WriteString(yamlQuote(settings.CommentAuthor))
+	b.WriteString("\ndemo_seen: ")
+	b.WriteString(boolYAML(settings.DemoSeen))
 	if len(settings.AgentModels) > 0 {
 		ids := make([]string, 0, len(settings.AgentModels))
 		for id := range settings.AgentModels {
@@ -403,6 +407,10 @@ func parseSettingsYAML(content string) Settings {
 			}
 		case "comment_author":
 			settings.CommentAuthor = normalizeCommentAuthor(parsed)
+		case "demo_seen":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.DemoSeen = parsedBool
+			}
 		}
 	}
 	fileTypes := make([]string, 0, 2)

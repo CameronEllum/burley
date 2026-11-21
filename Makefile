@@ -31,9 +31,14 @@ web:
 	cd $(WEB_DIR) && npm run build
 
 # Copy the Vite output next to cmd/server so //go:embed can pick it up.
-dist: web
+dist: web demo
 	rm -rf $(DIST_DIR)
 	cp -r $(WEB_DIR)/dist $(DIST_DIR)
+
+demo:
+	rm -rf internal/demo/vault
+	mkdir -p internal/demo/vault
+	tar -C demo-vault --exclude='.burley' -cf - . | tar -C internal/demo/vault -xf -
 
 build: dist
 	mkdir -p $(BIN_DIR)

@@ -125,6 +125,13 @@ import { wordDiff } from './lib/diff'
   let commentAuthor = $state('')
   let commentAuthorSetting = $state('')
   let commentHoverPreview = $state(true)
+  let demoSeen = $state(false)
+  let serverDemoMode = $state(false)
+  let virtualDemoActive = $state(false)
+  let demoTree = $state<Entry[]>([])
+  let demoFiles = $state<FlatFile[]>([])
+  let savedRealPath = $state('')
+  let readOnlyBeforeDemo = false
   const effectiveCommentAuthor = $derived(commentAuthorSetting || commentAuthor)
   let activeCommentId = $state<string | null>(null)
   let hoveredComment = $state<{
@@ -347,6 +354,8 @@ import { wordDiff } from './lib/diff'
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
   const scopedEntry = $derived(scopePath ? findFolder(tree, scopePath) : null)
   const treeEntries = $derived(scopePath ? (scopedEntry?.children ?? []) : tree)
+  const visibleTreeEntries = $derived(virtualDemoActive ? demoTree : treeEntries)
+  const visiblePaletteFiles = $derived(virtualDemoActive ? demoFiles : files)
 
   $effect(() => {
     const path = currentPath
@@ -437,6 +446,15 @@ import { wordDiff } from './lib/diff'
       label: zenMode ? 'Exit Zen mode' : 'Enter Zen mode',
       keywords: 'focus distraction free writing reading',
       run: toggleZenMode,
+    },
+    {
+      id: 'open-demo',
+      label: virtualDemoActive ? 'Exit Feature Demo' : 'Open Feature Demo',
+      keywords: 'tour examples tutorial built-in',
+      run: () => {
+        if (virtualDemoActive) void exitVirtualDemo()
+        else void openVirtualDemo()
+      },
     },
     {
       id: 'restart-lua',
@@ -647,13 +665,23 @@ import { wordDiff } from './lib/diff'
 
   async function initialLoad() {
     await refreshTree()
-    await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents(false)])
+    await Promise.all([loadFavorites(), loadSettings(), loadRecent(), loadAgents(false), loadMeta()])
     confirmAgentsInBackground()
     const storedScope = localStorage.getItem(SCOPE_KEY)
     if (storedScope && findFolder(tree, storedScope)) scopePath = storedScope
     const params = new URLSearchParams(window.location.search)
     const requested = params.get('file') ?? ''
     const initialHash = window.location.hash.replace(/^#/, '')
+    if (requested.startsWith('_demo/')) {
+      await openVirtualDemo(requested, initialHash)
+      return
+    }
+    if (!serverDemoMode && !demoSeen && !requested) {
+      demoSeen = true
+      void persistSettings()
+      await openVirtualDemo('_demo/welcome.md')
+      return
+    }
     const stored = localStorage.getItem(LAST_PATH_KEY)
     const exists = (path: string | null): path is string =>
       !!path && files.some((file) => file.path === path)
@@ -922,7 +950,7 @@ import { wordDiff } from './lib/diff'
     saveState = 'saved'
     conflictData = null
     conflictOpen = false
-    if (!files.some((f) => f.path === data.path)) {
+    if (!data.path.startsWith('_demo/') && !files.some((f) => f.path === data.path)) {
       const added: FlatFile = {
         path: data.path,
         name: baseName(data.path),
@@ -937,7 +965,7 @@ import { wordDiff } from './lib/diff'
     setLuaDocument(data.path)
     editor?.setReadOnly(readOnly)
     cursor = { line: 1, column: 1, selectedChars: 0, from: 0, to: 0, anchor: null }
-    rememberRecent(data.path)
+    if (!data.path.startsWith('_demo/')) rememberRecent(data.path)
     currentAssetsStamp = ''
     void refreshCurrentAssets(data.path)
     if (line) {
@@ -988,6 +1016,13 @@ import { wordDiff } from './lib/diff'
     options: { history?: 'push' | 'replace' | 'none'; hash?: string } = {},
   ) {
     if (!path) return
+    if (!path.startsWith('_demo/') && virtualDemoActive) {
+      virtualDemoActive = false
+      if (readOnly !== readOnlyBeforeDemo) {
+        readOnly = readOnlyBeforeDemo
+        editor?.setReadOnly(readOnly)
+      }
+    }
     if (path === currentPath) {
       if (line) editor?.scrollToLine(line)
       else if (options.hash) scrollToHeadingSlug(options.hash)
@@ -1004,7 +1039,7 @@ import { wordDiff } from './lib/diff'
     try {
       const data = await api.file(path)
       applyFile(data, line, options.hash)
-      localStorage.setItem(LAST_PATH_KEY, path)
+      if (!path.startsWith('_demo/')) localStorage.setItem(LAST_PATH_KEY, path)
       const mode = options.history ?? 'push'
       if (mode !== 'none') {
         const next = buildAppUrl(path, options.hash ?? '')
@@ -1419,6 +1454,7 @@ import { wordDiff } from './lib/diff'
         backgroundScan,
         commentHoverPreview,
         commentAuthor: commentAuthorSetting,
+        demoSeen,
         agentModels: agentPins,
         disabledAgents,
       })
@@ -1482,6 +1518,9 @@ import { wordDiff } from './lib/diff'
         commentAuthor = clean
         localStorage.setItem(COMMENT_AUTHOR_KEY, clean)
       }
+    }
+    if (patch.demoSeen !== undefined) {
+      demoSeen = patch.demoSeen
     }
     if (patch.disabledAgents !== undefined) {
       const prevDisabled = new Set(disabledAgents)
@@ -1562,6 +1601,7 @@ import { wordDiff } from './lib/diff'
         backgroundScan = response.settings.backgroundScan ?? false
         commentHoverPreview = response.settings.commentHoverPreview ?? true
         commentAuthorSetting = response.settings.commentAuthor ?? ''
+        demoSeen = response.settings.demoSeen ?? false
         if (commentAuthorSetting) commentAuthor = commentAuthorSetting
         agentPins = response.settings.agentModels ?? {}
         disabledAgents = response.settings.disabledAgents ?? []
@@ -1586,6 +1626,7 @@ import { wordDiff } from './lib/diff'
           backgroundScan,
           commentHoverPreview,
           commentAuthor: commentAuthorSetting,
+          demoSeen,
           agentModels: agentPins,
           disabledAgents,
         })
@@ -1627,10 +1668,55 @@ import { wordDiff } from './lib/diff'
       if (meta.version) appVersion = meta.version
       if (meta.repo) repoUrl = meta.repo
       if (meta.user && !commentAuthor) commentAuthor = meta.user
+      if (meta.demoMode !== undefined) serverDemoMode = meta.demoMode
     } catch {
       /* health is best-effort */
     }
     void loadReleaseInfo(false)
+  }
+
+  async function openVirtualDemo(targetPath = '_demo/welcome.md', hash = '') {
+    try {
+      const res = await api.demoTree()
+      demoTree = res.tree
+      demoFiles = res.files
+      if (!virtualDemoActive) {
+        savedRealPath = currentPath.startsWith('_demo/') ? savedRealPath : currentPath
+        readOnlyBeforeDemo = readOnly
+        if (!readOnly) {
+          readOnly = true
+          editor?.setReadOnly(true)
+        }
+      }
+      virtualDemoActive = true
+      sidebarOpen = true
+      sidebarTab = 'files'
+      await openFile(targetPath, undefined, { history: 'replace', hash })
+    } catch (err) {
+      flash(`Could not open demo: ${err instanceof Error ? err.message : String(err)}`, true)
+    }
+  }
+
+  async function exitVirtualDemo() {
+    virtualDemoActive = false
+    if (readOnly !== readOnlyBeforeDemo) {
+      readOnly = readOnlyBeforeDemo
+      editor?.setReadOnly(readOnly)
+    }
+    const target =
+      (savedRealPath && files.some((f) => f.path === savedRealPath) && savedRealPath) ||
+      files.find((f) => !f.path.includes('/'))?.path ||
+      files[0]?.path ||
+      ''
+    if (target) {
+      await openFile(target, undefined, { history: 'replace' })
+    } else {
+      currentPath = ''
+      content = ''
+      dirty = false
+      editor?.setDoc('', '')
+      replaceUrl('', '')
+    }
   }
 
   async function loadFavorites() {
@@ -2947,7 +3033,12 @@ import { wordDiff } from './lib/diff'
       </div>
 
       {#if sidebarTab === 'files'}
-        {#if scopePath}
+        {#if virtualDemoActive}
+          <div class="scope-banner">
+            <span class="scope-label">Built-in <strong>Feature Demo</strong></span>
+            <button class="scope-clear" onclick={() => void exitVirtualDemo()}>Exit Demo</button>
+          </div>
+        {:else if scopePath}
           <div class="scope-banner">
             <span class="scope-label">Scoped to <strong>{scopePath}</strong></span>
             <button class="scope-clear" onclick={unscopeFolder}>Unscope</button>
@@ -3060,7 +3151,7 @@ import { wordDiff } from './lib/diff'
             <p class="tree-status">Scanning…</p>
           {:else}
             <FileTree
-              entries={treeEntries}
+              entries={visibleTreeEntries}
               selectedPath={currentPath}
               filter={treeFilter}
               favorites={favorites}
@@ -3524,7 +3615,7 @@ import { wordDiff } from './lib/diff'
     anchorLeft={paletteAnchor.left}
     anchorTop={paletteAnchor.top}
     anchorWidth={paletteAnchor.width}
-    files={files}
+    files={visiblePaletteFiles}
     favorites={favorites}
     recent={recent}
     headings={outline}
@@ -3856,7 +3947,8 @@ import { wordDiff } from './lib/diff'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
+    onrundemo={() => void openVirtualDemo()}
     agents={sortedAllAgents}
     agentTests={agentTests}
     agentTesting={agentTesting}
