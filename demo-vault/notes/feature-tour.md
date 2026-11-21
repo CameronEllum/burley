@@ -1,58 +1,52 @@
-# Feature Tour
+---
+title: Feature Tour (Basic Formatting)
+tags: [demo, formatting]
+---
 
-A compact reference note for checking that Burley's live preview handles the formats you actually write. Open it in **Read-Only** mode to see everything rendered at once, or click into any element to reveal its Markdown source.
+# Feature Tour — Basic Formatting
 
-## Text and emphasis
+A compact reference note for Burley's core Markdown formatting. Click into any element to reveal and edit its raw Markdown source, or switch to **Read-Only** mode to browse cleanly.
 
-Regular text with **bold**, *italic*, ***both at once***, ~~strikethrough~~, `inline code`, and a [link to Plotly charts](./plotly-charts.md).
+## Text & emphasis
+
+Regular text with **bold**, *italic*, ***both at once***, ~~strikethrough~~, ==highlighted==, `inline code`, and an internal [link to Equations](./equations.md).
 
 A line ending with two spaces gets a hard break.  
 This line proves it.
 
 ## Lists
 
-### Unordered, nested
+### Unordered & nested
 
 - Fast local rendering
-- Live preview that hides syntax when the cursor is elsewhere
+- Live preview hides Markdown markers until your cursor enters them
   - Headings, emphasis, and links
-  - Tables and task lists
-    - Math via KaTeX
-    - Charts via Plotly
-- Lossless saves
+  - Tables, math, and interactive blocks
+- Atomic saves with conflict detection
 
-### Ordered, with mixed nesting
+### Ordered & task lists
 
-1. Open the vault folder.
-2. Pick a note from the right-hand tree.
-3. Edit and let autosave handle the rest.
-   1. Watch the status pill change.
-   2. Keep typing; saves are debounced.
-4. Press `Ctrl+P` to jump to another file.
+1. Open any folder with `burley --root <folder>`.
+2. Press `Ctrl+P` to quick-open a note (or type an explicit path).
+3. Track work with interactive checkboxes:
+   - [x] Serve Markdown from a plain folder
+   - [x] Render KaTeX, Mermaid, Plotly, and live CSV tables locally
+   - [x] Inline review comments (`Alt+C`)
+   - [ ] Your next note
 
-### Task lists
+## Blockquotes & collapsible sections
 
-- [x] Serve Markdown from a plain folder
-- [x] Render math without a CDN
-- [x] Render Plotly blocks lazily
-- [ ] Add a diff view to the conflict dialog
-- [ ] Ship a Wails desktop wrapper
-  - [ ] Decide on window chrome
-  - [ ] Test on Windows and macOS
+> The file on disk is the source of truth.
+> Everything else is a view.
 
-## Table
+<details>
+<summary>Collapsible section (click to toggle)</summary>
 
-| Feature | Syntax | Status | Notes |
-|:--------|:------:|:------:|------:|
-| Headings | `#` — `######` | Done | Six levels |
-| Tables | GFM pipe tables | Done | Alignment supported |
-| Math | `$...$`, `$$...$$` | Done | KaTeX, strict off |
-| Plotly | plotly fenced block | Done | Inline JSON or `src:` |
-| Search | `Ctrl+P` / `Ctrl+Shift+F` | In progress | `rg` backend |
+Hidden details stay collapsed in live preview until clicked, and render natively in GitHub and HTML exports.
 
-## Code
+</details>
 
-Fenced blocks keep their exact contents when the cursor is outside them.
+## Code fences
 
 ```go
 type FileData struct {
@@ -63,64 +57,11 @@ type FileData struct {
 }
 ```
 
-```ts
-export async function saveFile(path: string, content: string, expectedHash: string) {
-  const res = await fetch('/api/file', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, content, expectedHash }),
-  })
-  if (res.status === 409) throw new ConflictError(await res.json())
-  return res.json()
-}
-```
+## Tables
 
-## Math
-
-Inline math works mid-sentence: the identity $e^{i\pi} + 1 = 0$ holds, and so does $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$.
-
-A displayed derivation:
-
-$$
-\begin{aligned}
-\frac{d}{dx}\left( x^n \right) &= n x^{n-1} \\
-\int_0^1 x^2 \, dx &= \left. \frac{x^3}{3} \right|_0^1 = \frac{1}{3} \\
-\nabla \cdot \mathbf{E} &= \frac{\rho}{\varepsilon_0}
-\end{aligned}
-$$
-
-Matrices and cases render too:
-
-$$
-\mathbf{A} =
-\begin{pmatrix}
-a & b \\
-c & d
-\end{pmatrix},
-\qquad
-\det(\mathbf{A}) = ad - bc
-$$
-
-$$
-f(x) =
-\begin{cases}
-x^2 & \text{if } x \ge 0 \\
--x  & \text{otherwise}
-\end{cases}
-$$
-
-## Blockquotes
-
-> A quote can hold **formatting**, `code`, and even a list:
->
-> - first point
-> - second point
->
-> > And a nested quote for good measure.
-
-## Rules and links
-
----
-
-Relative links are resolved against the current note: see
-[Plotly Charts](./plotly-charts.md) for chart recipes.
+| Feature | Shortcut | Notes |
+| :--- | :---: | ---: |
+| Quick open | `Ctrl+P` | Fuzzy search or explicit path |
+| Content search | `Ctrl+Shift+F` | Ripgrep-backed |
+| Add comment | `Alt+C` | Discussion or Edit |
+| Present slides | `F5` | Splits on `---` |
