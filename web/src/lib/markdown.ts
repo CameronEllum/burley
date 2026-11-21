@@ -5,16 +5,25 @@ import katex from 'katex'
 import { isValidInlineMath } from './math'
 import { colorSpecToPresentation, extractCellColor, parseColorAttrs } from './colors'
 
+function earliestIndex(src: string, needles: string[]): number {
+  let best = -1
+  for (const needle of needles) {
+    const idx = src.indexOf(needle)
+    if (idx >= 0 && (best < 0 || idx < best)) best = idx
+  }
+  return best
+}
+
 const blockMath = {
   name: 'blockMath',
   level: 'block' as const,
   start(src: string) {
-    return src.indexOf('$$')
+    return earliestIndex(src, ['$$', '\\['])
   },
   tokenizer(src: string) {
-    const match = /^\$\$\s*\n([\s\S]+?)\n\$\$(?:\n|$)/.exec(src)
+    const match = /^\$\$\s*\n([\s\S]+?)\n\$\$(?:\n|$)|^\\\[\s*\n([\s\S]+?)\n\\\](?:\n|$)/.exec(src)
     if (!match) return undefined
-    return { type: 'blockMath', raw: match[0], text: match[1] }
+    return { type: 'blockMath', raw: match[0], text: match[1] ?? match[2] }
   },
   renderer(token: any) {
     return katex.renderToString(token.text, {
@@ -30,17 +39,32 @@ const inlineMath = {
   name: 'inlineMath',
   level: 'inline' as const,
   start(src: string) {
-    return src.indexOf('$')
+    return earliestIndex(src, ['$', '\\(', '\\['])
   },
   tokenizer(src: string) {
-    const match = /^\$\$([^$\n]+?)\$\$(?!\$)|^\$(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)/.exec(src)
+    const match =
+      /^\$\$([^$\n]+?)\$\$(?!\$)|^\\\[([^\n]+?)(?<!\\)\\\]|^\$(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)|^\\\(([^\n]+?)(?<!\\)\\\)/.exec(
+        src,
+      )
     if (!match) return undefined
-    if (!match[1] && !isValidInlineMath(match[2] ?? '')) return undefined
+    const displayTex = match[1] ?? match[2]
+    if (displayTex !== undefined) {
+      if (!displayTex.trim()) return undefined
+      return {
+        type: 'inlineMath',
+        raw: match[0],
+        text: displayTex.trim(),
+        display: true,
+      }
+    }
+    if (match[3] !== undefined && !isValidInlineMath(match[3])) return undefined
+    const inlineTex = match[3] ?? match[4] ?? ''
+    if (!inlineTex.trim()) return undefined
     return {
       type: 'inlineMath',
       raw: match[0],
-      text: match[1] ?? match[2],
-      display: !!match[1],
+      text: inlineTex.trim(),
+      display: false,
     }
   },
   renderer(token: any) {

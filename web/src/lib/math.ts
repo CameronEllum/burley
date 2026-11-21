@@ -21,7 +21,9 @@ import { getActiveView } from './viewRef'
 import katex from 'katex'
 
 const INLINE = /(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)/g
+const INLINE_PAREN = /(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)/g
 const DISPLAY_INLINE = /(?<!\\)\$\$([^$\n]+?)\$\$(?!\$)/g
+const DISPLAY_BRACKET_INLINE = /(?<!\\)\\\[([^\n]+?)(?<!\\)\\\]/g
 
 export function isValidInlineMath(source: string): boolean {
   const trimmed = source.trim()
@@ -104,29 +106,62 @@ export function mathAt(state: EditorState, head: number): MathAtCursor | null {
   return inlineMathAt(state, head)
 }
 
-function blockMathAt(state: EditorState, head: number): MathAtCursor | null {
+interface BlockMathPair {
+  from: number
+  to: number
+  bodyFrom: number
+  bodyTo: number
+}
+
+function findBlockMathPairs(state: EditorState): BlockMathPair[] {
   let openLine = -1
+  let openDelim: '$$' | '\\[' | null = null
+  const pairs: BlockMathPair[] = []
+
   for (let n = 1; n <= state.doc.lines; n++) {
     const line = state.doc.line(n)
-    if (line.text.trim() !== '$$') continue
-    if (openLine < 0) {
-      openLine = n
+    const trimmed = line.text.trim()
+    if (!openDelim) {
+      if (trimmed === '$$' || trimmed === '\\[') {
+        openLine = n
+        openDelim = trimmed
+      }
       continue
     }
-    const open = state.doc.line(openLine)
-    if (head >= open.from && head <= line.to) {
-      const bodyFrom = open.to + 1
-      const bodyTo = n - 1 >= openLine + 1 ? state.doc.line(n - 1).to : open.to
-      return { tex: state.doc.sliceString(bodyFrom, bodyTo), display: true, from: open.from, to: line.to }
+    const closeDelim = openDelim === '$$' ? '$$' : '\\]'
+    if (trimmed === closeDelim) {
+      const open = state.doc.line(openLine)
+      const prev = state.doc.line(n - 1)
+      pairs.push({
+        from: open.from,
+        to: line.to,
+        bodyFrom: open.to + 1,
+        bodyTo: n - 1 >= openLine + 1 ? prev.to : open.to,
+      })
+      openLine = -1
+      openDelim = null
     }
-    openLine = -1
+  }
+  return pairs
+}
+
+function blockMathAt(state: EditorState, head: number): MathAtCursor | null {
+  for (const pair of findBlockMathPairs(state)) {
+    if (head >= pair.from && head <= pair.to) {
+      return {
+        tex: state.doc.sliceString(pair.bodyFrom, pair.bodyTo),
+        display: true,
+        from: pair.from,
+        to: pair.to,
+      }
+    }
   }
   return null
 }
 
 function inlineMathAt(state: EditorState, head: number): MathAtCursor | null {
   const line = state.doc.lineAt(head)
-  const search = (pattern: RegExp, display: boolean): MathAtCursor | null => {
+  const search = (pattern: RegExp, display: boolean, checkValid: boolean): MathAtCursor | null => {
     pattern.lastIndex = 0
     for (let m = pattern.exec(line.text); m; m = pattern.exec(line.text)) {
       const from = line.from + m.index
@@ -134,12 +169,18 @@ function inlineMathAt(state: EditorState, head: number): MathAtCursor | null {
       if (head < from || head > to) continue
       if (isInCode(state, from, to)) return null
       const raw = m[1] ?? ''
-      if (!display && !isValidInlineMath(raw)) continue
+      if (checkValid && !isValidInlineMath(raw)) continue
+      if (!raw.trim()) continue
       return { tex: raw.trim(), display, from, to }
     }
     return null
   }
-  return search(DISPLAY_INLINE, true) ?? search(INLINE, false)
+  return (
+    search(DISPLAY_INLINE, true, false) ??
+    search(DISPLAY_BRACKET_INLINE, true, false) ??
+    search(INLINE, false, true) ??
+    search(INLINE_PAREN, false, false)
+  )
 }
 
 function buildInlineDecorations(state: EditorState): DecorationSet {
@@ -148,34 +189,36 @@ function buildInlineDecorations(state: EditorState): DecorationSet {
   const text = state.doc.toString()
   const covered: Array<[number, number]> = []
 
-  // Display math on a single line: $$ ... $$
-  DISPLAY_INLINE.lastIndex = 0
-  for (let m = DISPLAY_INLINE.exec(text); m; m = DISPLAY_INLINE.exec(text)) {
-    const from = m.index
-    const to = from + m[0].length
-    if (isInCode(state, from, to)) continue
-    covered.push([from, to])
-    if (!readOnly && selectionTouches(state, from, to)) continue
-    decorations.push(
-      Decoration.replace({ widget: new MathWidget(m[1].trim(), true, from + 2) }).range(from, to),
-    )
+  const addMatches = (
+    pattern: RegExp,
+    display: boolean,
+    editOffset: number,
+    validate: (raw: string) => boolean,
+  ) => {
+    pattern.lastIndex = 0
+    for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+      const from = m.index
+      const to = from + m[0].length
+      const source = m[1] ?? ''
+      if (!validate(source)) continue
+      if (covered.some(([a, b]) => from >= a && from < b)) continue
+      if (isInCode(state, from, to)) continue
+      covered.push([from, to])
+      if (!readOnly && selectionTouches(state, from, to)) continue
+      decorations.push(
+        Decoration.replace({ widget: new MathWidget(source.trim(), display, from + editOffset) }).range(from, to),
+      )
+    }
   }
 
-  INLINE.lastIndex = 0
-  for (let m = INLINE.exec(text); m; m = INLINE.exec(text)) {
-    const from = m.index
-    const to = from + m[0].length
-    const source = m[1]
-    // Standard heuristic: no space directly inside the delimiters, and the
-    // content must not look like a currency amount ("$5 and $10", "~$9,900–$10,150").
-    if (!isValidInlineMath(source)) continue
-    if (covered.some(([a, b]) => from >= a && from < b)) continue
-    if (isInCode(state, from, to)) continue
-    if (!readOnly && selectionTouches(state, from, to)) continue
-    decorations.push(
-      Decoration.replace({ widget: new MathWidget(source.trim(), false, from + 1) }).range(from, to),
-    )
-  }
+  // Display math on a single line: $$ ... $$ and \[ ... \]
+  addMatches(DISPLAY_INLINE, true, 2, (s) => s.trim().length > 0)
+  addMatches(DISPLAY_BRACKET_INLINE, true, 2, (s) => s.trim().length > 0)
+  // Standard heuristic for $...$: no space directly inside the delimiters, and
+  // content must not look like a currency amount ("$5 and $10", "~$9,900–$10,150").
+  addMatches(INLINE, false, 1, isValidInlineMath)
+  // Unambiguous LaTeX \( ... \) allows inner whitespace.
+  addMatches(INLINE_PAREN, false, 2, (s) => s.trim().length > 0)
 
   return Decoration.set(decorations, true)
 }
@@ -214,28 +257,7 @@ export const inlineMathPlugin: Extension = ViewPlugin.fromClass(
 function buildBlockMath(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = []
   const readOnly = state.facet(readOnlyFacet)
-  let openStart = -1
-  let openFrom = 0
-  const pairs: Array<{ from: number; to: number; bodyFrom: number; bodyTo: number }> = []
-
-  for (let n = 1; n <= state.doc.lines; n++) {
-    const line = state.doc.line(n)
-    if (line.text.trim() === '$$') {
-      if (openStart < 0) {
-        openStart = n
-        openFrom = line.from
-      } else {
-        const prev = state.doc.line(n - 1)
-        pairs.push({
-          from: openFrom,
-          to: line.to,
-          bodyFrom: state.doc.line(openStart).to + 1,
-          bodyTo: n - 1 >= openStart + 1 ? prev.to : state.doc.line(openStart).to,
-        })
-        openStart = -1
-      }
-    }
-  }
+  const pairs = findBlockMathPairs(state)
 
   for (const pair of pairs) {
     if (!readOnly && selectionTouches(state, pair.from, pair.to)) {
