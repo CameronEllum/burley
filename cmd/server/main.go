@@ -25,6 +25,7 @@ import (
 
 	"burley/internal/agent"
 	"burley/internal/api"
+	"burley/internal/syntax"
 	"burley/internal/vault"
 )
 
@@ -75,13 +76,34 @@ func main() {
 	var (
 		root        = flag.String("root", ".", "folder containing the Markdown files to serve")
 		addr        = flag.String("addr", "127.0.0.1:8080", "address to listen on (host:port); the next free port is used if busy")
-		debugAgents = flag.Bool("debug-agents", false, "log agent CLI invocations, stderr, and exit status")
-		showVersion = flag.Bool("version", false, "print version and exit")
+		debugAgents    = flag.Bool("debug-agents", false, "log agent CLI invocations, stderr, and exit status")
+		showVersion    = flag.Bool("version", false, "print version and exit")
+		reportSyntax   = flag.Bool("report-syntax", false, "print Burley's Markdown flavour reference for AI agents and exit")
+		initAgentDocs  = flag.Bool("init-agent-docs", false, "create or update AGENTS.md in --root with Burley's Markdown flavour and exit")
 	)
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("burley %s\n", version)
+		return
+	}
+	if *reportSyntax {
+		fmt.Print(syntax.Full)
+		if !strings.HasSuffix(syntax.Full, "\n") {
+			fmt.Println()
+		}
+		return
+	}
+	if *initAgentDocs {
+		v, err := vault.NewLocalVault(*root)
+		if err != nil {
+			log.Fatalf("open vault: %v", err)
+		}
+		written, err := syntax.WriteAgentDocs(v.Root())
+		if err != nil {
+			log.Fatalf("write agent docs: %v", err)
+		}
+		fmt.Println(written)
 		return
 	}
 

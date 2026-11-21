@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"burley/internal/agent"
+	"burley/internal/syntax"
 )
 
 type chatMessage struct {
@@ -338,6 +339,8 @@ func buildAgentPrompt(req chatRequest, fileContent, mode string) string {
 	} else {
 		b.WriteString("You are Burley's read-only research assistant. Answer questions about the current Markdown file. Do not modify any files.\n\n")
 	}
+	b.WriteString(syntax.Compact)
+	b.WriteString("\n\n")
 	if req.Path != "" {
 		b.WriteString("Current file: ")
 		b.WriteString(req.Path)
