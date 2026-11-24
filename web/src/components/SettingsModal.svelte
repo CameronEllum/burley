@@ -178,7 +178,7 @@
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="settings-head">
       <h2 id="settings-title">Settings</h2>
-      <button class="settings-close" aria-label="Close settings" onclick={onclose}>Esc</button>
+      <button class="settings-close" aria-label="Close settings" onclick={onclose}>×</button>
     </header>
 
     <div class="settings-tabs" role="tablist">
@@ -721,8 +721,9 @@
     background: transparent;
     color: var(--text-muted);
     font: inherit;
-    font-size: 11px;
-    padding: 4px 8px;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 7px;
     border-radius: 6px;
     cursor: pointer;
   }
