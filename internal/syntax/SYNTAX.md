@@ -27,7 +27,7 @@ Burley uses standard CommonMark + GFM with the extensions below.
 - **Live Data Table:** ```` ```table ```` with `src: ./data.csv` (`.csv`, `.tsv`, `.json`) or inline CSV/TSV/JSON
 - **Plotly Chart:** ```` ```plotly ```` with `src: ./chart.json` or inline JSON spec
 - **Mermaid Diagram:** ```` ```mermaid ````
-- **Lua Cell:** ```` ```lua ````
+- **Lua Cell:** ```` ```lua-run ````
 
 ## Document Structure
 - **Slides (Presentation Mode):** split slides on `---` horizontal rules (outside frontmatter and code fences).

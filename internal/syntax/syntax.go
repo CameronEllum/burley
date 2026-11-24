@@ -18,7 +18,7 @@ const Compact = `Burley Markdown extensions:
 - Comments (invisible in GitHub): <!-- edit -->text<!-- /edit @user (YYYY-MM-DD): note --> or point <!-- edit @user (YYYY-MM-DD): note -->; threaded <!-- discussion -->text<!-- /discussion @user (YYYY-MM-DD): msg --> (replies: > @user (YYYY-MM-DD): reply; escape -- as -&#45;). When applying edit comments, update prose and remove the edit tags; keep discussion threads unless asked.
 - Colours: ==highlight==, [text]{.green}/{.bg-amber}/{color=#hex bg=#hex}, table cell prefix {.red} text.
 - Math: $...$ or \(...\) inline; $$...$$ or \[...\] display.
-- Fences: table (src: ./file.csv), plotly (src: ./spec.json), mermaid, lua. Slides split on ---.`
+- Fences: table (src: ./file.csv), plotly (src: ./spec.json), mermaid, lua-run. Slides split on ---.`
 
 const (
 	markerStart = "<!-- burley-syntax:start -->"
