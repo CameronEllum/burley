@@ -559,15 +559,9 @@ import { wordDiff } from './lib/diff'
           const text = editor?.getSelection() ?? ''
           selectedRange = text.trim() ? { text, from: info.from, to: info.to } : null
           if (commentsOpen && currentPath && !isCurrentHtml) {
-            if (text.trim()) {
-              commentDraft = {
-                from: info.from,
-                to: info.to,
-                snippet: text,
-                line: info.line,
-                openedPanel: false,
-                autoFocus: false,
-              }
+            const nextDraft = prepareCommentDraftFromSelection(false, false)
+            if (nextDraft) {
+              commentDraft = nextDraft
             } else if (commentDraft?.autoFocus === false) {
               commentDraft = null
             }
@@ -1842,6 +1836,18 @@ import { wordDiff } from './lib/diff'
     rightPanel = rightPanel === 'talk' ? null : 'talk'
   }
 
+  function prepareCommentDraftFromSelection(openedPanel = false, autoFocus = false) {
+    if (!currentPath || isCurrentHtml || !editor) return null
+    const sel = editor.view.state.selection.main
+    const from = Math.min(sel.from, sel.to)
+    const to = Math.max(sel.from, sel.to)
+    if (from >= to) return null
+    const snippet = editor.view.state.doc.sliceString(from, to)
+    if (!snippet.trim()) return null
+    const line = editor.view.state.doc.lineAt(from).number
+    return { from, to, snippet, line, openedPanel, autoFocus }
+  }
+
   function toggleComments() {
     if (!currentPath || isCurrentHtml) return
     if (rightPanel === 'comments') {
@@ -1849,6 +1855,9 @@ import { wordDiff } from './lib/diff'
       rightPanel = null
     } else {
       rightPanel = 'comments'
+      if (!commentDraft) {
+        commentDraft = prepareCommentDraftFromSelection(false, true)
+      }
     }
   }
 
