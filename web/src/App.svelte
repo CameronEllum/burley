@@ -341,7 +341,7 @@ import { wordDiff } from './lib/diff'
       path,
       name: baseName(path),
       dir: dirOf(path),
-      exists: fileByPath.has(path),
+      exists: !treeComplete || fileByPath.has(path),
     })),
   )
   const filteredFavorites = $derived.by(() => {
