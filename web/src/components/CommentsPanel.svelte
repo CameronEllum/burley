@@ -6,6 +6,7 @@
     to: number
     snippet: string
     line: number
+    autoFocus?: boolean
   }
 
   let {
@@ -70,7 +71,9 @@
       draftAuthor = defaultAuthor
       draftBody = ''
     }
-    requestAnimationFrame(() => draftTextareaEl?.focus())
+    if (draft.autoFocus !== false) {
+      requestAnimationFrame(() => draftTextareaEl?.focus())
+    }
   })
 
   function submitDraft(kind: CommentKind) {

@@ -147,6 +147,7 @@ import { wordDiff } from './lib/diff'
     snippet: string
     line: number
     openedPanel: boolean
+    autoFocus?: boolean
   } | null>(null)
 
   const parsedComments = $derived(
@@ -557,8 +558,25 @@ import { wordDiff } from './lib/diff'
         if (info.selectedChars > 0) {
           const text = editor?.getSelection() ?? ''
           selectedRange = text.trim() ? { text, from: info.from, to: info.to } : null
+          if (commentsOpen && currentPath && !isCurrentHtml) {
+            if (text.trim()) {
+              commentDraft = {
+                from: info.from,
+                to: info.to,
+                snippet: text,
+                line: info.line,
+                openedPanel: false,
+                autoFocus: false,
+              }
+            } else if (commentDraft?.autoFocus === false) {
+              commentDraft = null
+            }
+          }
         } else {
           selectedRange = null
+          if (commentsOpen && commentDraft?.autoFocus === false) {
+            commentDraft = null
+          }
         }
       },
       onOpenPath: (path) => {
@@ -1855,7 +1873,7 @@ import { wordDiff } from './lib/diff'
     const snippet = from < to ? editor.view.state.doc.sliceString(from, to) : ''
     const openedPanel = commentDraft ? commentDraft.openedPanel : rightPanel !== 'comments'
     rightPanel = 'comments'
-    commentDraft = { from, to, snippet, line, openedPanel }
+    commentDraft = { from, to, snippet, line, openedPanel, autoFocus: true }
   }
 
   function cancelCommentDraft() {
