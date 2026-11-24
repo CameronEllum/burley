@@ -11,6 +11,7 @@
     favorites,
     rescanningPath = '',
     ontogglefavorite,
+    ontogglefolder,
     onrescan,
     oncontext,
     onselect,
@@ -22,6 +23,7 @@
     favorites: string[]
     rescanningPath?: string
     ontogglefavorite: (path: string) => void
+    ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
     oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
@@ -36,6 +38,15 @@
     if (containsSelected) open = true
   })
   const expanded = $derived(open || filtering)
+  $effect(() => {
+    if (!entry.isDir || !ontogglefolder) return
+    const isOpen = expanded
+    const path = entry.path
+    ontogglefolder(path, isOpen)
+    return () => {
+      if (isOpen) ontogglefolder(path, false)
+    }
+  })
   const children = $derived(
     (entry.children ?? []).filter((child) => visiblePaths === null || visiblePaths.has(child.path)),
   )
@@ -85,7 +96,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {ontogglefavorite} {onrescan} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}

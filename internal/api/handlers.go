@@ -60,6 +60,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	if initialSettings, _, err := v.ReadSettings(context.Background()); err == nil && initialSettings.BackgroundScan {
 		s.configureBackgroundScan(true)
 	}
+	s.initTreeWatcher()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
@@ -67,6 +68,7 @@ func New(v vault.Vault, staticFS fs.FS, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/release", s.handleRelease)
 	mux.HandleFunc("GET /api/tree", s.handleTree)
 	mux.HandleFunc("POST /api/tree/rescan", s.handleRescanFolder)
+	mux.HandleFunc("POST /api/tree/watch", s.handleWatchTree)
 	mux.HandleFunc("GET /api/file", s.handleGetFile)
 	mux.HandleFunc("GET /api/file/assets", s.handleFileAssets)
 	mux.HandleFunc("GET /api/download", s.handleDownloadFile)
@@ -102,7 +104,8 @@ type server struct {
 	releaseCache ReleaseInfo
 	releaseAt    time.Time
 
-	tree treeState
+	tree    treeState
+	watcher *treeWatcher
 }
 
 // ---------------------------------------------------------------- middleware

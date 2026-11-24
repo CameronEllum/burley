@@ -194,6 +194,13 @@ export const api = {
     })
   },
 
+  async watchTreeDirs(dirs: string[]): Promise<{ watched: number; capped: boolean }> {
+    return request<{ watched: number; capped: boolean }>('/api/tree/watch', {
+      method: 'POST',
+      body: JSON.stringify({ dirs }),
+    })
+  },
+
   async file(path: string, signal?: AbortSignal): Promise<FileData> {
     return request<FileData>(`/api/file?path=${encodeURIComponent(path)}`, { signal })
   },

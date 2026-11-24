@@ -178,6 +178,75 @@ func (v *LocalVault) ScanFolder(ctx context.Context, relDir string, visit func(E
 	return v.scanDir(ctx, abs, clean, v.enabledFileTypes(ctx), visit)
 }
 
+// ScanDirShallow lists only the immediate enabled files and visible
+// subdirectories of relDir ("" for the vault root) without descending.
+func (v *LocalVault) ScanDirShallow(ctx context.Context, relDir string) ([]Entry, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	dirAbs := v.root
+	clean := ""
+	if strings.TrimSpace(relDir) != "" {
+		abs, norm, err := v.resolve(relDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		dirAbs = abs
+		clean = norm
+	}
+	info, err := os.Stat(dirAbs)
+	if err != nil {
+		return nil, nil, notFoundIfNeeded(err)
+	}
+	if !info.IsDir() {
+		return nil, nil, ErrInvalidPath
+	}
+
+	dirents, err := os.ReadDir(dirAbs)
+	if err != nil {
+		return nil, nil, notFoundIfNeeded(err)
+	}
+
+	types := v.enabledFileTypes(ctx)
+	var files []Entry
+	var subdirs []string
+	for _, de := range dirents {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		name := de.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		rel := name
+		if clean != "" {
+			rel = clean + "/" + name
+		}
+		if de.IsDir() {
+			if name == "node_modules" || name == "vendor" {
+				continue
+			}
+			subdirs = append(subdirs, rel)
+			continue
+		}
+		if !IsEnabledFile(name, types) {
+			continue
+		}
+		fi, err := de.Info()
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		files = append(files, Entry{
+			Name:    name,
+			Path:    rel,
+			IsDir:   false,
+			ModTime: fi.ModTime().UnixMilli(),
+			Size:    fi.Size(),
+		})
+	}
+	return files, subdirs, nil
+}
+
 func (v *LocalVault) scanDir(ctx context.Context, dirAbs, relDir string, types []string, visit func(Entry) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

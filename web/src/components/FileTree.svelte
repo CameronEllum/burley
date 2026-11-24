@@ -10,6 +10,7 @@
     favorites,
     rescanningPath = '',
     ontogglefavorite,
+    ontogglefolder,
     onrescan,
     oncontext,
     onselect,
@@ -20,6 +21,7 @@
     favorites: string[]
     rescanningPath?: string
     ontogglefavorite: (path: string) => void
+    ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
     oncontext: (event: MouseEvent, path: string, isDir: boolean) => void
     onselect: (path: string) => void
@@ -76,6 +78,7 @@
         {favorites}
         {rescanningPath}
         {ontogglefavorite}
+        {ontogglefolder}
         {onrescan}
         {oncontext}
         {onselect}

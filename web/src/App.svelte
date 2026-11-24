@@ -643,7 +643,12 @@ import { wordDiff } from './lib/diff'
     window.addEventListener('resize', onResize)
     window.addEventListener('popstate', onPopState)
     const onFocusOrVisible = () => {
-      if (document.visibilityState === 'visible') void checkExternalFileChange()
+      if (document.visibilityState === 'visible') {
+        void checkExternalFileChange()
+        if (treeComplete && !loading && !virtualDemoActive) {
+          void refreshTree(false, true, treeVersion)
+        }
+      }
     }
     window.addEventListener('focus', onFocusOrVisible)
     document.addEventListener('visibilitychange', onFocusOrVisible)
@@ -902,13 +907,43 @@ import { wordDiff } from './lib/diff'
     )
   })
 
+  const expandedWatchDirs = new Set<string>()
+  let watchSyncTimer: ReturnType<typeof setTimeout> | null = null
+
+  function scheduleWatchSync() {
+    if (virtualDemoActive) return
+    if (watchSyncTimer) clearTimeout(watchSyncTimer)
+    watchSyncTimer = setTimeout(() => {
+      watchSyncTimer = null
+      if (virtualDemoActive) return
+      const dirs = new Set<string>(expandedWatchDirs)
+      const activeDir = dirOf(currentPath)
+      if (activeDir) dirs.add(activeDir)
+      if (scopePath) dirs.add(scopePath)
+      void api.watchTreeDirs([...dirs]).catch(() => {})
+    }, 250)
+  }
+
+  function handleFolderToggle(path: string, isOpen: boolean) {
+    if (isOpen) expandedWatchDirs.add(path)
+    else expandedWatchDirs.delete(path)
+    scheduleWatchSync()
+  }
+
   $effect(() => {
-    if (!backgroundScan) return
+    void currentPath
+    void scopePath
+    void virtualDemoActive
+    scheduleWatchSync()
+  })
+
+  $effect(() => {
+    if (virtualDemoActive) return
     const timer = setInterval(() => {
-      if (treeComplete && !loading && !document.hidden) {
+      if (treeComplete && !loading && !document.hidden && !virtualDemoActive) {
         void refreshTree(false, true, treeVersion)
       }
-    }, 30_000)
+    }, 5_000)
     return () => clearInterval(timer)
   })
 
@@ -3184,6 +3219,7 @@ import { wordDiff } from './lib/diff'
               favorites={favorites}
               rescanningPath={rescanningFolder}
               ontogglefavorite={(path) => toggleFavorite(path)}
+              ontogglefolder={handleFolderToggle}
               onrescan={(path) => void rescanFolder(path)}
               oncontext={showContextMenu}
               onselect={(path) => void openFile(path)}
