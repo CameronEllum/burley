@@ -38,6 +38,7 @@
   const bugUrl = $derived(bugReportUrl(repo, version))
   const featureUrl = $derived(featureRequestUrl(repo))
   const releasesUrl = $derived(`${repo}/releases`)
+  const markdownFlavourUrl = $derived(`${repo}/blob/main/docs/markdown-flavour.md`)
 
   type Tab = 'behaviour' | 'appearance' | 'filetypes' | 'agents' | 'about'
 
@@ -668,6 +669,7 @@
             <a href={bugUrl} target="_blank" rel="noopener noreferrer">Report a bug</a>
             <a href={featureUrl} target="_blank" rel="noopener noreferrer">Request a feature</a>
             <a href={releasesUrl} target="_blank" rel="noopener noreferrer">Releases</a>
+            <a href={markdownFlavourUrl} target="_blank" rel="noopener noreferrer">Markdown flavour</a>
           </div>
 
           <h3>Credits</h3>
