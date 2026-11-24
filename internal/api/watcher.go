@@ -97,6 +97,19 @@ func (tw *treeWatcher) close() {
 	<-tw.doneCh
 }
 
+func (tw *treeWatcher) watchedDirs() []string {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.closed {
+		return nil
+	}
+	dirs := make([]string, 0, len(tw.watched))
+	for rel := range tw.watched {
+		dirs = append(dirs, rel)
+	}
+	return dirs
+}
+
 func (tw *treeWatcher) setDirs(dirs []string) (int, bool) {
 	desired := map[string]struct{}{"": {}}
 	for _, raw := range dirs {

@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultBgScanInterval = 60 * time.Second
-	defaultBgScanPace     = 15 * time.Millisecond
+	defaultBgScanInterval  = 3 * time.Minute
+	defaultHotScanInterval = 5 * time.Second
+	defaultBgScanPace      = 15 * time.Millisecond
 )
 
 type treeDelta struct {
@@ -58,7 +59,7 @@ type flatFile struct {
 // batch when a fresh scan starts, then returns immediately on follow-up polls.
 func (s *server) handleTree(w http.ResponseWriter, r *http.Request) {
 	refresh := r.URL.Query().Get("refresh") == "1"
-	s.startTreeScan(refresh)
+	startedNow := s.startTreeScan(refresh)
 
 	files, done, scanning, errMsg := s.treeSnapshot()
 	if !refresh && done && !scanning {
@@ -87,7 +88,7 @@ func (s *server) handleTree(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if len(files) == 0 && scanning && !done {
+	if (len(files) == 0 || startedNow) && scanning && !done {
 		deadline := time.Now().Add(300 * time.Millisecond)
 		for time.Now().Before(deadline) {
 			time.Sleep(20 * time.Millisecond)
@@ -270,27 +271,30 @@ func (s *server) handleRescanFolder(w http.ResponseWriter, r *http.Request) {
 	s.writeTreeSnapshot(w, files, done, scanning, errMsg)
 }
 
-func (s *server) startTreeScan(refresh bool) {
+func (s *server) startTreeScan(refresh bool) bool {
 	s.tree.mu.Lock()
 	if s.tree.scanning {
 		if !refresh {
 			s.tree.mu.Unlock()
-			return
+			return false
 		}
 		if s.tree.cancel != nil {
 			s.tree.cancel()
 		}
 	} else if s.tree.done && !refresh {
 		s.tree.mu.Unlock()
-		return
+		return false
 	}
 
 	if s.tree.bgScanStop != nil {
 		s.tree.bgScanStop()
 		s.tree.bgScanStop = nil
 	}
-	s.tree.files = nil
-	s.tree.deltas = nil
+	coldStart := len(s.tree.files) == 0
+	if coldStart {
+		s.tree.files = nil
+		s.tree.deltas = nil
+	}
 	s.tree.done = false
 	s.tree.scanning = true
 	s.tree.err = ""
@@ -305,24 +309,34 @@ func (s *server) startTreeScan(refresh bool) {
 		ScanTree(context.Context, func(vault.Entry) error) error
 	})
 	if !ok {
-		go s.scanFallback(ctx, gen)
-		return
+		go s.scanFallback(ctx, gen, coldStart)
+		return true
 	}
 	go func() {
+		var collected []vault.Entry
 		err := scanner.ScanTree(ctx, func(entry vault.Entry) error {
-			s.tree.mu.Lock()
-			if gen == s.tree.gen {
-				s.tree.files = append(s.tree.files, entry)
-				s.tree.version++
+			if coldStart {
+				s.tree.mu.Lock()
+				if gen == s.tree.gen {
+					s.tree.files = append(s.tree.files, entry)
+					s.tree.version++
+				}
+				s.tree.mu.Unlock()
+			} else {
+				collected = append(collected, entry)
 			}
-			s.tree.mu.Unlock()
 			return nil
 		})
-		s.finishTreeScan(gen, ctx, err)
+		if coldStart {
+			s.finishTreeScan(gen, ctx, err)
+			return
+		}
+		s.finishTreeScanDiff(gen, ctx, collected, err)
 	}()
+	return true
 }
 
-func (s *server) scanFallback(ctx context.Context, gen int) {
+func (s *server) scanFallback(ctx context.Context, gen int, coldStart bool) {
 	entries, err := s.vault.Tree(ctx)
 	files := []vault.Entry{}
 	var flatten func([]vault.Entry)
@@ -337,12 +351,42 @@ func (s *server) scanFallback(ctx context.Context, gen int) {
 	}
 	flatten(entries)
 
-	s.tree.mu.Lock()
-	if gen == s.tree.gen {
-		s.tree.files = files
+	if coldStart {
+		s.tree.mu.Lock()
+		if gen == s.tree.gen {
+			s.tree.files = files
+		}
+		s.tree.mu.Unlock()
+		s.finishTreeScan(gen, ctx, err)
+		return
 	}
-	s.tree.mu.Unlock()
-	s.finishTreeScan(gen, ctx, err)
+	s.finishTreeScanDiff(gen, ctx, files, err)
+}
+
+func (s *server) finishTreeScanDiff(gen int, ctx context.Context, collected []vault.Entry, err error) {
+	s.tree.mu.Lock()
+	defer s.tree.mu.Unlock()
+	if gen != s.tree.gen {
+		return // superseded by a newer scan
+	}
+	s.tree.scanning = false
+	ok := err == nil && ctx.Err() == nil
+	s.tree.done = ok
+	s.tree.cancel = nil
+	if ok {
+		if merged, delta, changed := mergeTreeDiff(s.tree.files, collected); changed {
+			s.tree.files = merged
+			s.tree.version++
+			s.recordTreeDeltaLocked(delta)
+		} else {
+			s.tree.version++
+		}
+	} else {
+		s.tree.version++
+		if err != nil && ctx.Err() == nil {
+			s.tree.err = err.Error()
+		}
+	}
 }
 
 func (s *server) finishTreeScan(gen int, ctx context.Context, err error) {
@@ -421,16 +465,42 @@ func (s *server) configureBackgroundScan(enabled bool) {
 }
 
 func (s *server) backgroundScanLoop(ctx context.Context, interval, pace time.Duration) {
+	hotInterval := defaultHotScanInterval
+	if interval < hotInterval {
+		hotInterval = interval
+	}
 	timer := time.NewTimer(interval)
+	hotTicker := time.NewTicker(hotInterval)
 	defer timer.Stop()
+	defer hotTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-hotTicker.C:
+			s.runHotFolderScan()
 		case <-timer.C:
 			s.runBackgroundScanOnce(ctx, pace)
 			timer.Reset(interval)
 		}
+	}
+}
+
+func (s *server) runHotFolderScan() {
+	s.tree.mu.Lock()
+	enabled := s.tree.bgEnabled && !s.tree.scanning && s.tree.done
+	s.tree.mu.Unlock()
+	if !enabled {
+		return
+	}
+	dirs := []string{""}
+	if s.watcher != nil {
+		if watched := s.watcher.watchedDirs(); len(watched) > 0 {
+			dirs = watched
+		}
+	}
+	for _, dir := range dirs {
+		s.refreshWatchedDir(dir)
 	}
 }
 

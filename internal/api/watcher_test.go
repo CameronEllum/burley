@@ -148,3 +148,46 @@ func TestHandleWatchTreeEndpoint(t *testing.T) {
 		t.Fatalf("POST /api/tree/watch = %d %s", resp.StatusCode, data)
 	}
 }
+
+func TestRefreshTreeDiffsInPlaceWithoutClearingFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "keep.md"), []byte("# Keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.NewLocalVault(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &server{vault: v}
+	s.startTreeScan(false)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, done, _, _ := s.treeSnapshot()
+		if done && len(files) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "added.md"), []byte("# Added\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.startTreeScan(true)
+
+	// Immediately after starting a refresh, keep.md must still be present in the snapshot.
+	files, _, _, _ := s.treeSnapshot()
+	if len(files) == 0 || files[0].Path != "keep.md" {
+		t.Fatalf("refresh cleared existing files mid-scan: %+v", files)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, done, scanning, _ := s.treeSnapshot()
+		if done && !scanning && len(files) == 2 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	files, _, _, _ = s.treeSnapshot()
+	t.Fatalf("refresh did not diff in added.md; files = %+v", files)
+}
