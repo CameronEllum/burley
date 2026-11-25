@@ -53,4 +53,12 @@ func TestTreeCacheRoundTripAndInvalidation(t *testing.T) {
 	if _, ok, err := v.ReadTreeCache(ctx); err != nil || ok {
 		t.Fatalf("expected clean miss on corrupt cache, got ok=%v err=%v", ok, err)
 	}
+
+	// Mismatched binary version (e.g. v999) must also miss cleanly.
+	if err := os.WriteFile(filepath.Join(root, ".burley", "tree-cache.bin"), []byte("BLTC\xe7\x03"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := v.ReadTreeCache(ctx); err != nil || ok {
+		t.Fatalf("expected clean miss on version mismatch, got ok=%v err=%v", ok, err)
+	}
 }

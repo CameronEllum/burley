@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	treeCacheName  = "tree-cache.bin"
-	treeCacheMagic = "BLT1"
+	treeCacheName           = "tree-cache.bin"
+	treeCacheMagic          = "BLTC"
+	treeCacheVersion uint16 = 1
 )
 
 func (v *LocalVault) treeCachePath() string {
@@ -35,8 +36,11 @@ func (v *LocalVault) ReadTreeCache(ctx context.Context) ([]Entry, bool, error) {
 	defer f.Close()
 
 	r := bufio.NewReaderSize(f, 32*1024)
-	var magic [4]byte
-	if _, err := io.ReadFull(r, magic[:]); err != nil || string(magic[:]) != treeCacheMagic {
+	var header [6]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil || string(header[:4]) != treeCacheMagic {
+		return nil, false, nil
+	}
+	if binary.LittleEndian.Uint16(header[4:6]) != treeCacheVersion {
 		return nil, false, nil
 	}
 
@@ -99,6 +103,9 @@ func (v *LocalVault) WriteTreeCache(ctx context.Context, entries []Entry) error 
 	var buf bytes.Buffer
 	buf.Grow(64 + len(entries)*48)
 	buf.WriteString(treeCacheMagic)
+	var verBuf [2]byte
+	binary.LittleEndian.PutUint16(verBuf[:], treeCacheVersion)
+	buf.Write(verBuf[:])
 
 	types := v.enabledFileTypes(ctx)
 	var ubuf [binary.MaxVarintLen64]byte
