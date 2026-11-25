@@ -22,6 +22,12 @@ func TestRawFileAndFileTypesSettings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.root, "page.html"), []byte(htmlBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(h.root, "htmlonly"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.root, "htmlonly", "index.html"), []byte("<h1>Only HTML</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	resp, err := http.Get(h.srv.URL + "/raw/page.html")
 	if err != nil {
@@ -49,8 +55,8 @@ func TestRawFileAndFileTypesSettings(t *testing.T) {
 	}
 	treeBytes, _ := io.ReadAll(treeResp.Body)
 	treeResp.Body.Close()
-	if !strings.Contains(string(treeBytes), "page.html") || !strings.Contains(string(treeBytes), "note.md") {
-		t.Fatalf("initial /api/tree = %s, want both note.md and page.html", string(treeBytes))
+	if !strings.Contains(string(treeBytes), "page.html") || !strings.Contains(string(treeBytes), "note.md") || !strings.Contains(string(treeBytes), "htmlonly/index.html") {
+		t.Fatalf("initial /api/tree = %s, want note.md, page.html, and htmlonly/index.html", string(treeBytes))
 	}
 
 	// Disable html via PUT /api/settings; server must invalidate tree cache.
@@ -85,7 +91,7 @@ func TestRawFileAndFileTypesSettings(t *testing.T) {
 	}
 	treeBytes2, _ := io.ReadAll(treeResp2.Body)
 	treeResp2.Body.Close()
-	if strings.Contains(string(treeBytes2), "page.html") || !strings.Contains(string(treeBytes2), "note.md") {
+	if strings.Contains(string(treeBytes2), "page.html") || strings.Contains(string(treeBytes2), "htmlonly") || !strings.Contains(string(treeBytes2), "note.md") {
 		t.Fatalf("filtered /api/tree = %s, want only note.md", string(treeBytes2))
 	}
 }
