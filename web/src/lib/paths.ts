@@ -27,13 +27,31 @@ export function isHtmlPath(filePath: string): boolean {
   return /\.(html|htm)$/i.test(filePath)
 }
 
-/** Normalize a user-typed vault path (`\` -> `/`, strip leading `./` or `/`). */
-export function normalizeExplicitPath(raw: string): string {
-  return raw
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/^(?:\.\/)+/, '')
-    .replace(/^\/+/, '')
+/** Normalize a user-typed vault path (strip quotes, `\` -> `/`, strip vault root & leading `./` or `/`). */
+export function normalizeExplicitPath(raw: string, vaultRoot = ''): string {
+  let s = raw.trim()
+  if (
+    s.length >= 2 &&
+    ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
+  ) {
+    s = s.slice(1, -1).trim()
+  }
+  s = s.replace(/\\/g, '/')
+  if (vaultRoot) {
+    const normRoot = vaultRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+    if (normRoot) {
+      const prefix = normRoot + '/'
+      const isWinAbs = /^[A-Za-z]:\//.test(normRoot)
+      if (isWinAbs) {
+        if (s.toLowerCase().startsWith(prefix.toLowerCase())) {
+          s = s.slice(prefix.length)
+        }
+      } else if (s.startsWith(prefix)) {
+        s = s.slice(prefix.length)
+      }
+    }
+  }
+  return s.replace(/^(?:\.\/)+/, '').replace(/^\/+/, '')
 }
 
 /** Build a Burley app URL for opening `target` (`path` or `path#slug`) in a tab. */

@@ -9,6 +9,7 @@
     filter,
     favorites,
     rescanningPath = '',
+    collapseSignal = 0,
     ontogglefavorite,
     ontogglefolder,
     onrescan,
@@ -20,6 +21,7 @@
     filter: string
     favorites: string[]
     rescanningPath?: string
+    collapseSignal?: number
     ontogglefavorite: (path: string) => void
     ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
@@ -77,6 +79,7 @@
         {visiblePaths}
         {favorites}
         {rescanningPath}
+        {collapseSignal}
         {ontogglefavorite}
         {ontogglefolder}
         {onrescan}

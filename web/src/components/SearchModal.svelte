@@ -12,6 +12,7 @@
     anchorTop = 0,
     anchorWidth = 0,
     files,
+    root = '',
     favorites = [],
     recent = [],
     headings = [],
@@ -25,6 +26,7 @@
     anchorTop?: number
     anchorWidth?: number
     files: FlatFile[]
+    root?: string
     favorites?: string[]
     recent?: string[]
     headings?: OutlineItem[]
@@ -96,7 +98,7 @@
     const results = fuzzysort.go(q, files, { key: 'path', limit: 200, threshold: -50000 })
     const pinned: PaletteItem[] = []
     const others: PaletteItem[] = []
-    const explicit = normalizeExplicitPath(q)
+    const explicit = normalizeExplicitPath(q, root)
     if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit)) && !fileMap.has(explicit)) {
       pinned.push({
         kind: 'file',

@@ -248,6 +248,7 @@ import { wordDiff } from './lib/diff'
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
   let treeFilter = $state('')
+  let treeCollapseSignal = $state(0)
   let treeScrollEl = $state<HTMLElement | null>(null)
   let rescanningFolder = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
@@ -3007,6 +3008,24 @@ import { wordDiff } from './lib/diff'
       >
         <span class="raw-glyph" aria-hidden="true">&lt;/&gt;</span>
       </button>
+      <button
+        class="icon-btn width-btn"
+        class:on={wideMode}
+        title={wideMode ? 'Use narrow reading width' : 'Use wide reading width'}
+        aria-label={wideMode ? 'Use narrow reading width' : 'Use wide reading width'}
+        aria-pressed={wideMode}
+        onclick={toggleWideMode}
+      >
+        {#if wideMode}
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+            <path d="M3 4v12M17 4v12M8.5 7l-2.5 3 2.5 3M11.5 7l2.5 3-2.5 3M6 10h8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+            <path d="M4.5 4v12M15.5 4v12M7.5 10h5M9.5 7.5L7 10l2.5 2.5M10.5 7.5L13 10l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        {/if}
+      </button>
       <button class="icon-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (Ctrl+?)" onclick={() => (shortcutsOpen = true)}>
         <span class="shortcut-glyph" aria-hidden="true">?</span>
       </button>
@@ -3116,7 +3135,7 @@ import { wordDiff } from './lib/diff'
               bind:value={treeFilter}
               onkeydown={(event) => {
                 if (event.key !== 'Enter') return
-                const explicit = normalizeExplicitPath(treeFilter)
+                const explicit = normalizeExplicitPath(treeFilter, root)
                 if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit))) {
                   event.preventDefault()
                   void openFile(explicit)
@@ -3127,6 +3146,16 @@ import { wordDiff } from './lib/diff'
               <button class="clear-filter" aria-label="Clear filter" onclick={() => (treeFilter = '')}>×</button>
             {/if}
           </div>
+          <button
+            class="icon-btn small"
+            title="Collapse all folders"
+            aria-label="Collapse all folders"
+            onclick={() => (treeCollapseSignal += 1)}
+          >
+            <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+              <path d="M6 5.5L10 9l4-3.5M6 14.5L10 11l4 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
           <button
             class="icon-btn small"
             title="Reload folder (Ctrl+Shift+R)"
@@ -3218,6 +3247,7 @@ import { wordDiff } from './lib/diff'
               filter={treeFilter}
               favorites={favorites}
               rescanningPath={rescanningFolder}
+              collapseSignal={treeCollapseSignal}
               ontogglefavorite={(path) => toggleFavorite(path)}
               ontogglefolder={handleFolderToggle}
               onrescan={(path) => void rescanFolder(path)}
@@ -3679,6 +3709,7 @@ import { wordDiff } from './lib/diff'
     anchorTop={paletteAnchor.top}
     anchorWidth={paletteAnchor.width}
     files={visiblePaletteFiles}
+    root={root}
     favorites={favorites}
     recent={recent}
     headings={outline}

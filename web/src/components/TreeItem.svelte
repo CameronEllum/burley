@@ -10,6 +10,7 @@
     visiblePaths,
     favorites,
     rescanningPath = '',
+    collapseSignal = 0,
     ontogglefavorite,
     ontogglefolder,
     onrescan,
@@ -22,6 +23,7 @@
     visiblePaths: Set<string> | null
     favorites: string[]
     rescanningPath?: string
+    collapseSignal?: number
     ontogglefavorite: (path: string) => void
     ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
@@ -34,8 +36,19 @@
   const containsSelected = $derived(!!selectedPath && selectedPath.startsWith(entry.path + '/'))
   const isFavorite = $derived(favorites.includes(entry.path))
   const visible = $derived(visiblePaths === null || visiblePaths.has(entry.path))
+  let lastSelectedPath = $state('')
+  let lastCollapseSignal = $state(0)
   $effect(() => {
-    if (containsSelected) open = true
+    if (collapseSignal !== lastCollapseSignal) {
+      lastCollapseSignal = collapseSignal
+      lastSelectedPath = selectedPath
+      open = false
+      return
+    }
+    if (selectedPath !== lastSelectedPath) {
+      lastSelectedPath = selectedPath
+      if (containsSelected) open = true
+    }
   })
   const expanded = $derived(open || filtering)
   $effect(() => {
@@ -96,7 +109,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {collapseSignal} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}
