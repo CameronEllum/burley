@@ -4178,10 +4178,9 @@ import { wordDiff } from './lib/diff'
   }
 
   .topbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 560px) minmax(0, 1fr);
+    display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     padding: 0 14px 0 18px;
     border-bottom: 1px solid var(--border-soft);
     background: var(--bg-chrome);
@@ -4190,6 +4189,7 @@ import { wordDiff } from './lib/diff'
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 0 0 auto;
     min-width: 0;
   }
   .brand {
@@ -4286,7 +4286,7 @@ import { wordDiff } from './lib/diff'
     display: flex;
     align-items: center;
     gap: 4px;
-    justify-self: end;
+    flex: 0 0 auto;
   }
   .export-wrap {
     position: relative;
@@ -4321,9 +4321,13 @@ import { wordDiff } from './lib/diff'
     background: var(--hover);
   }
   .search-trigger {
-    display: flex;    align-items: center;
+    display: flex;
+    align-items: center;
     gap: 8px;
-    width: 100%;
+    flex: 1 1 200px;
+    max-width: 560px;
+    min-width: 34px;
+    margin: 0 auto;
     height: 32px;
     padding: 0 11px;
     border-radius: 8px;
@@ -4335,7 +4339,6 @@ import { wordDiff } from './lib/diff'
     font-weight: 500;
     cursor: text;
     white-space: nowrap;
-    justify-self: center;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .search-trigger:hover {
@@ -4368,7 +4371,6 @@ import { wordDiff } from './lib/diff'
   }
   @media (max-width: 820px) {
     .topbar {
-      grid-template-columns: auto minmax(0, 1fr) auto;
       gap: 8px;
       padding: 0 8px;
     }
@@ -4529,6 +4531,8 @@ import { wordDiff } from './lib/diff'
     font: inherit;
     font-size: 12px;
     font-weight: 550;
+    white-space: nowrap;
+    flex-shrink: 0;
     cursor: pointer;
   }
   .toggle-btn:hover {
