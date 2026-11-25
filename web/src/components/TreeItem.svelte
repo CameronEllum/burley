@@ -8,6 +8,7 @@
     selectedPath,
     filter,
     visiblePaths,
+    autoExpandPaths = null,
     favorites,
     rescanningPath = '',
     collapseSignal = 0,
@@ -21,6 +22,7 @@
     selectedPath: string
     filter: string
     visiblePaths: Set<string> | null
+    autoExpandPaths?: Set<string> | null
     favorites: string[]
     rescanningPath?: string
     collapseSignal?: number
@@ -32,7 +34,7 @@
   } = $props()
 
   let open = $state(false)
-  const filtering = $derived(filter.trim().length > 0)
+  const filtering = $derived(autoExpandPaths ? autoExpandPaths.has(entry.path) : filter.trim().length > 0)
   const containsSelected = $derived(!!selectedPath && selectedPath.startsWith(entry.path + '/'))
   const isFavorite = $derived(favorites.includes(entry.path))
   const visible = $derived(visiblePaths === null || visiblePaths.has(entry.path))
@@ -109,7 +111,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {favorites} {rescanningPath} {collapseSignal} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {autoExpandPaths} {favorites} {rescanningPath} {collapseSignal} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}

@@ -249,8 +249,15 @@ import { wordDiff } from './lib/diff'
   let favorites = $state<string[]>([])
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
+  type TreeFilterMode = 'all' | 'dirs' | 'root-dirs'
   let treeFilter = $state('')
+  let treeFilterMode = $state<TreeFilterMode>('all')
   let treeCollapseSignal = $state(0)
+
+  function cycleTreeFilterMode() {
+    treeFilterMode =
+      treeFilterMode === 'all' ? 'dirs' : treeFilterMode === 'dirs' ? 'root-dirs' : 'all'
+  }
   let treeScrollEl = $state<HTMLElement | null>(null)
   let rescanningFolder = $state('')
   let themeMode = $state<ThemeMode>(storedThemeMode())
@@ -354,7 +361,10 @@ import { wordDiff } from './lib/diff'
       .go(query, favoriteItems, { key: 'path', limit: 40, threshold: -20000 })
       .map((result) => result.obj)
   })
-  const showFavorites = $derived(!treeFilter.trim() || filteredFavorites.length > 0)
+  const showFavorites = $derived(
+    (treeFilterMode === 'all' || !treeFilter.trim()) &&
+      (!treeFilter.trim() || filteredFavorites.length > 0),
+  )
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
   const scopedEntry = $derived(scopePath ? findFolder(tree, scopePath) : null)
   const treeEntries = $derived(scopePath ? (scopedEntry?.children ?? []) : tree)
@@ -3135,7 +3145,11 @@ import { wordDiff } from './lib/diff'
           <div class="filter-input-wrap">
             <input
               class="tree-filter"
-              placeholder="Filter notes…"
+              placeholder={treeFilterMode === 'root-dirs'
+                ? 'Filter root folders…'
+                : treeFilterMode === 'dirs'
+                  ? 'Filter folders…'
+                  : 'Filter notes…'}
               title="Filter favorites and notes (Enter opens an explicit path)"
               spellcheck="false"
               bind:value={treeFilter}
@@ -3152,6 +3166,23 @@ import { wordDiff } from './lib/diff'
               <button class="clear-filter" aria-label="Clear filter" onclick={() => (treeFilter = '')}>×</button>
             {/if}
           </div>
+          <button
+            class="filter-mode-btn"
+            class:on={treeFilterMode !== 'all'}
+            title={treeFilterMode === 'all'
+              ? 'Filter: Notes & files (click for Directories only)'
+              : treeFilterMode === 'dirs'
+                ? 'Filter: Directories only (click for Root directories only)'
+                : 'Filter: Root directories only (click for All notes)'}
+            aria-label={treeFilterMode === 'all'
+              ? 'Filter mode: all notes'
+              : treeFilterMode === 'dirs'
+                ? 'Filter mode: directories only'
+                : 'Filter mode: root directories only'}
+            onclick={cycleTreeFilterMode}
+          >
+            {treeFilterMode === 'all' ? 'All' : treeFilterMode === 'dirs' ? 'Dir' : 'Root'}
+          </button>
           <button
             class="icon-btn small"
             title="Collapse all folders"
@@ -3251,6 +3282,7 @@ import { wordDiff } from './lib/diff'
               entries={visibleTreeEntries}
               selectedPath={currentPath}
               filter={treeFilter}
+              filterMode={treeFilterMode}
               favorites={favorites}
               rescanningPath={rescanningFolder}
               collapseSignal={treeCollapseSignal}
@@ -5555,6 +5587,29 @@ import { wordDiff } from './lib/diff'
   .tree-filter:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--active);
+  }
+  .filter-mode-btn {
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 7px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .filter-mode-btn:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .filter-mode-btn.on {
+    border-color: var(--accent);
+    background: var(--active);
+    color: var(--accent);
   }
   .clear-filter {
     position: absolute;

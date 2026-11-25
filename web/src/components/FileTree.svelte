@@ -7,6 +7,7 @@
     entries,
     selectedPath,
     filter,
+    filterMode = 'all',
     favorites,
     rescanningPath = '',
     collapseSignal = 0,
@@ -19,6 +20,7 @@
     entries: Entry[]
     selectedPath: string
     filter: string
+    filterMode?: 'all' | 'dirs' | 'root-dirs'
     favorites: string[]
     rescanningPath?: string
     collapseSignal?: number
@@ -38,23 +40,70 @@
     return result
   }
 
-  // Match against the complete relative path, then keep every ancestor folder
-  // so nested notes remain visible in the tree.
-  const visiblePaths = $derived.by(() => {
+  function flattenDirs(entries: Entry[]): Entry[] {
+    const result: Entry[] = []
+    for (const entry of entries) {
+      if (!entry.isDir) continue
+      result.push(entry)
+      result.push(...flattenDirs(entry.children ?? []))
+    }
+    return result
+  }
+
+  function collectDescendants(entry: Entry, out: Set<string>) {
+    out.add(entry.path)
+    for (const child of entry.children ?? []) {
+      collectDescendants(child, out)
+    }
+  }
+
+  // Match against files or directories depending on filterMode, keeping ancestor
+  // folders (and descendants for matched folders) visible in the tree.
+  const filterState = $derived.by(() => {
     const query = filter.trim()
-    if (!query) return null
-    const matches = fuzzysort.go(query, flatten(entries), {
-      key: 'path',
+    if (!query) return { visiblePaths: null as Set<string> | null, autoExpandPaths: null as Set<string> | null }
+
+    if (filterMode === 'all') {
+      const matches = fuzzysort.go(query, flatten(entries), {
+        key: 'path',
+        limit: 1000,
+        threshold: -100000,
+      })
+      const paths = new Set<string>()
+      for (const match of matches) {
+        const parts = match.obj.path.split('/')
+        for (let i = 1; i <= parts.length; i++) paths.add(parts.slice(0, i).join('/'))
+      }
+      return { visiblePaths: paths, autoExpandPaths: null }
+    }
+
+    const candidates =
+      filterMode === 'root-dirs'
+        ? entries.filter((entry) => entry.isDir)
+        : flattenDirs(entries)
+    const key = filterMode === 'root-dirs' ? 'name' : 'path'
+    const matches = fuzzysort.go(query, candidates, {
+      key,
       limit: 1000,
       threshold: -100000,
     })
     const paths = new Set<string>()
+    const expand = new Set<string>()
     for (const match of matches) {
-      const parts = match.obj.path.split('/')
-      for (let i = 1; i <= parts.length; i++) paths.add(parts.slice(0, i).join('/'))
+      const dir = match.obj
+      collectDescendants(dir, paths)
+      const parts = dir.path.split('/')
+      for (let i = 1; i < parts.length; i++) {
+        const ancestor = parts.slice(0, i).join('/')
+        paths.add(ancestor)
+        expand.add(ancestor)
+      }
     }
-    return paths
+    return { visiblePaths: paths, autoExpandPaths: expand }
   })
+
+  const visiblePaths = $derived(filterState.visiblePaths)
+  const autoExpandPaths = $derived(filterState.autoExpandPaths)
 
   const visible = $derived(
     visiblePaths ? entries.filter((entry) => visiblePaths.has(entry.path)) : entries,
@@ -64,7 +113,11 @@
 {#if visible.length === 0}
   <p class="tree-empty">
     {#if filter.trim()}
-      No notes match “{filter.trim()}”.
+      {filterMode === 'root-dirs'
+        ? `No root folders match “${filter.trim()}”.`
+        : filterMode === 'dirs'
+          ? `No folders match “${filter.trim()}”.`
+          : `No notes match “${filter.trim()}”.`}
     {:else}
       No Markdown files in this folder.
     {/if}
@@ -77,6 +130,7 @@
         {selectedPath}
         {filter}
         {visiblePaths}
+        {autoExpandPaths}
         {favorites}
         {rescanningPath}
         {collapseSignal}
