@@ -126,9 +126,11 @@ func withCommonHeaders(next http.Handler) http.Handler {
 				"default-src 'self'; "+
 					"script-src 'self' 'unsafe-eval'; "+
 					"style-src 'self' 'unsafe-inline'; "+
-					"img-src 'self' data: blob:; "+
-					"font-src 'self' data:; "+
-					"connect-src 'self'; "+
+					"img-src 'self' data: blob: https:; "+
+					"font-src 'self' data: https:; "+
+					"connect-src 'self' https: blob:; "+
+					"worker-src 'self' blob:; "+
+					"child-src 'self' blob:; "+
 					"object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
 		}
 		next.ServeHTTP(w, r)
