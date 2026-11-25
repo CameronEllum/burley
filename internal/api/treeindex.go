@@ -41,17 +41,26 @@ type treeState struct {
 	deltas   []treeDelta
 	cancel   context.CancelFunc
 
-	bgEnabled   bool
-	bgLoopStop  context.CancelFunc
-	bgScanStop  context.CancelFunc
-	bgInterval  time.Duration
-	bgPace      time.Duration
-	cacheLoaded bool
+	bgEnabled       bool
+	bgLoopStop      context.CancelFunc
+	bgScanStop      context.CancelFunc
+	bgInterval      time.Duration
+	bgPace          time.Duration
+	cacheLoaded     bool
+	warmedFromCache bool
+	cacheEntries    int
 }
 
 type treeCacheVault interface {
 	ReadTreeCache(context.Context) ([]vault.Entry, bool, error)
 	WriteTreeCache(context.Context, []vault.Entry) error
+	TreeCacheStat() (int64, int64, bool)
+}
+
+type treeCacheStats struct {
+	Entries   int   `json:"entries"`
+	Bytes     int64 `json:"bytes"`
+	UpdatedAt int64 `json:"updatedAt"`
 }
 
 func (s *server) persistTreeCache(files []vault.Entry) {
@@ -61,11 +70,36 @@ func (s *server) persistTreeCache(files []vault.Entry) {
 	}
 	snapshot := make([]vault.Entry, len(files))
 	copy(snapshot, files)
+	s.tree.mu.Lock()
+	s.tree.cacheEntries = len(snapshot)
+	s.tree.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = cv.WriteTreeCache(ctx, snapshot)
 	}()
+}
+
+func (s *server) currentTreeCacheStats() *treeCacheStats {
+	cv, ok := s.vault.(treeCacheVault)
+	if !ok {
+		return nil
+	}
+	size, updatedAt, exists := cv.TreeCacheStat()
+	if !exists {
+		return nil
+	}
+	s.tree.mu.Lock()
+	entries := s.tree.cacheEntries
+	if entries == 0 && s.tree.done {
+		entries = len(s.tree.files)
+	}
+	s.tree.mu.Unlock()
+	return &treeCacheStats{
+		Entries:   entries,
+		Bytes:     size,
+		UpdatedAt: updatedAt,
+	}
 }
 
 type flatFile struct {
@@ -127,16 +161,25 @@ func (s *server) writeTreeSnapshot(w http.ResponseWriter, files []vault.Entry, d
 	for i, file := range files {
 		flat[i] = flatFile{Path: file.Path, Name: file.Name, ModTime: file.ModTime, Size: file.Size}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	s.tree.mu.Lock()
+	warmed := s.tree.warmedFromCache && !s.tree.done
+	ver := s.tree.version
+	s.tree.mu.Unlock()
+	payload := map[string]any{
 		"tree":     buildTree(files),
 		"files":    flat,
 		"root":     s.opts.Root,
 		"done":     done,
 		"scanning": scanning,
+		"warmed":   warmed,
 		"scanned":  len(files),
-		"version":  s.treeVersion(),
+		"version":  ver,
 		"error":    errMsg,
-	})
+	}
+	if stats := s.currentTreeCacheStats(); stats != nil {
+		payload["cache"] = stats
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func toFlatFiles(entries []vault.Entry) []flatFile {
@@ -312,6 +355,8 @@ func (s *server) startTreeScan(refresh bool) bool {
 	s.tree.mu.Lock()
 	if len(s.tree.files) == 0 && len(cachedFiles) > 0 {
 		s.tree.files = cachedFiles
+		s.tree.warmedFromCache = true
+		s.tree.cacheEntries = len(cachedFiles)
 	}
 	if s.tree.scanning {
 		if !refresh {
@@ -415,6 +460,7 @@ func (s *server) finishTreeScanDiff(gen int, ctx context.Context, collected []va
 	s.tree.done = ok
 	s.tree.cancel = nil
 	if ok {
+		s.tree.warmedFromCache = false
 		if merged, delta, changed := mergeTreeDiff(s.tree.files, collected); changed {
 			s.tree.files = merged
 			s.tree.version++
@@ -444,6 +490,9 @@ func (s *server) finishTreeScan(gen int, ctx context.Context, err error) {
 	}
 	s.tree.scanning = false
 	s.tree.done = err == nil && ctx.Err() == nil
+	if s.tree.done {
+		s.tree.warmedFromCache = false
+	}
 	s.tree.version++
 	s.tree.cancel = nil
 	if err != nil && ctx.Err() == nil {

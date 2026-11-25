@@ -18,6 +18,12 @@ export interface FlatFile {
   size: number
 }
 
+export interface TreeCacheStats {
+  entries: number
+  bytes: number
+  updatedAt: number
+}
+
 export interface TreeResponse {
   tree: Entry[]
   files: FlatFile[]
@@ -25,6 +31,8 @@ export interface TreeResponse {
   /** True once the background scan has visited the whole vault. */
   done: boolean
   scanning?: boolean
+  warmed?: boolean
+  cache?: TreeCacheStats
   scanned?: number
   version?: number
   unchanged?: boolean

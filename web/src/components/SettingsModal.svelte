@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { api, type AgentInfo, type AgentModelsResponse, type AgentTestResult, type AppSettings, type ReleaseInfo } from '../lib/api'
+  import { api, type AgentInfo, type AgentModelsResponse, type AgentTestResult, type AppSettings, type ReleaseInfo, type TreeCacheStats } from '../lib/api'
   import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
   import { bugReportUrl, featureRequestUrl } from '../lib/project'
+  import { formatBytes } from '../lib/paths'
 
   let {
     settings,
@@ -18,6 +19,9 @@
     checkingRelease = false,
     oncheck = () => {},
     onrundemo = () => {},
+    treeCache = null,
+    treeWarmed = false,
+    onrescantree = () => {},
   }: {
     settings: AppSettings
     onchange: (patch: Partial<AppSettings>) => void
@@ -33,6 +37,9 @@
     checkingRelease?: boolean
     oncheck?: () => void
     onrundemo?: () => void
+    treeCache?: TreeCacheStats | null
+    treeWarmed?: boolean
+    onrescantree?: () => void
   } = $props()
 
   const bugUrl = $derived(bugReportUrl(repo, version))
@@ -302,6 +309,21 @@
               onchange={(event) => onchange({ backgroundScan: event.currentTarget.checked })}
             />
           </label>
+          <div class="setting-row">
+            <span>
+              <strong>Tree cache</strong>
+              <small>
+                {#if treeWarmed}
+                  Warm startup from <code>.burley/tree-cache.bin</code> (reconciling in background…).
+                {:else if treeCache}
+                  {treeCache.entries.toLocaleString()} files cached ({formatBytes(treeCache.bytes)}) · updated {new Date(treeCache.updatedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })} in <code>.burley/tree-cache.bin</code>.
+                {:else}
+                  No cache yet (written to <code>.burley/tree-cache.bin</code> after scanning).
+                {/if}
+              </small>
+            </span>
+            <button type="button" class="about-button" onclick={onrescantree}>Rescan now</button>
+          </div>
           <h3>Demo</h3>
           <div class="setting-row">
             <span>

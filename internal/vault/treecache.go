@@ -22,6 +22,15 @@ func (v *LocalVault) treeCachePath() string {
 	return filepath.Join(v.root, favoritesDir, treeCacheName)
 }
 
+// TreeCacheStat returns the byte size and mtime (Unix ms) of `.burley/tree-cache.bin`.
+func (v *LocalVault) TreeCacheStat() (int64, int64, bool) {
+	info, err := os.Stat(v.treeCachePath())
+	if err != nil || info.IsDir() {
+		return 0, 0, false
+	}
+	return info.Size(), info.ModTime().UnixMilli(), true
+}
+
 // ReadTreeCache loads `.burley/tree-cache.bin` if it exists, is valid, and
 // matches the vault's currently enabled file types. Any missing, corrupt, or
 // mismatched cache returns (nil, false, nil) so the caller falls back cleanly.

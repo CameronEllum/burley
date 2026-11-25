@@ -73,6 +73,8 @@ import { wordDiff } from './lib/diff'
   let root = $state('')
   let loading = $state(true)
   let treeComplete = $state(true)
+  let treeWarmed = $state(false)
+  let treeCacheInfo = $state<{ entries: number; bytes: number; updatedAt: number } | null>(null)
   let loadError = $state('')
   let scopePath = $state<string | null>(null)
 
@@ -856,6 +858,7 @@ import { wordDiff } from './lib/diff'
       if (response.unchanged) {
         treeVersion = response.version ?? treeVersion
         treeComplete = response.done
+        if (response.done) treeWarmed = false
         loading = false
         return
       }
@@ -863,6 +866,7 @@ import { wordDiff } from './lib/diff'
         treeVersion = response.version ?? treeVersion
         applyTreeDelta(response)
         treeComplete = response.done
+        if (response.done) treeWarmed = false
         loading = false
         if (scopePath && !findFolder(tree, scopePath)) {
           scopePath = null
@@ -875,6 +879,8 @@ import { wordDiff } from './lib/diff'
       files = response.files
       root = response.root
       treeComplete = response.done
+      treeWarmed = !!response.warmed && !response.done
+      if (response.cache !== undefined) treeCacheInfo = response.cache
       loadError = response.error ?? ''
       loading = false
       if (scopePath && !findFolder(tree, scopePath)) {
@@ -3261,7 +3267,14 @@ import { wordDiff } from './lib/diff'
           <span>{files.length} note{files.length === 1 ? '' : 's'}</span>
           <span class="grow"></span>
           {#if !treeComplete}
-            <span class="tree-scanning" title="Scanning the folder for Markdown files…">scanning…</span>
+            <span
+              class="tree-scanning"
+              title={treeWarmed
+                ? 'Loaded from .burley/tree-cache.bin — reconciling changes in the background…'
+                : 'Scanning the folder for Markdown files…'}
+            >
+              {treeWarmed ? 'cached · syncing…' : 'scanning…'}
+            </span>
           {:else}
             <span title="Autosave after 1.5s of inactivity">autosave on</span>
           {/if}
@@ -4043,6 +4056,9 @@ import { wordDiff } from './lib/diff'
   <SettingsModal
     settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
     onrundemo={() => void openVirtualDemo()}
+    treeCache={treeCacheInfo}
+    treeWarmed={treeWarmed}
+    onrescantree={() => void refreshTree(true)}
     agents={sortedAllAgents}
     agentTests={agentTests}
     agentTesting={agentTesting}
