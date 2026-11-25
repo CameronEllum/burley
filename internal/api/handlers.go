@@ -243,6 +243,9 @@ func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := s.vault.Read(r.Context(), p)
 	if err != nil {
+		if errors.Is(err, vault.ErrNotFound) {
+			s.deleteTreeEntries(p)
+		}
 		vaultError(w, err)
 		return
 	}
@@ -299,6 +302,9 @@ func (s *server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	data, err := s.vault.Read(r.Context(), p)
 	if err != nil {
+		if errors.Is(err, vault.ErrNotFound) {
+			s.deleteTreeEntries(p)
+		}
 		vaultError(w, err)
 		return
 	}

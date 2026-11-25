@@ -41,11 +41,31 @@ type treeState struct {
 	deltas   []treeDelta
 	cancel   context.CancelFunc
 
-	bgEnabled  bool
-	bgLoopStop context.CancelFunc
-	bgScanStop context.CancelFunc
-	bgInterval time.Duration
-	bgPace     time.Duration
+	bgEnabled   bool
+	bgLoopStop  context.CancelFunc
+	bgScanStop  context.CancelFunc
+	bgInterval  time.Duration
+	bgPace      time.Duration
+	cacheLoaded bool
+}
+
+type treeCacheVault interface {
+	ReadTreeCache(context.Context) ([]vault.Entry, bool, error)
+	WriteTreeCache(context.Context, []vault.Entry) error
+}
+
+func (s *server) persistTreeCache(files []vault.Entry) {
+	cv, ok := s.vault.(treeCacheVault)
+	if !ok {
+		return
+	}
+	snapshot := make([]vault.Entry, len(files))
+	copy(snapshot, files)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = cv.WriteTreeCache(ctx, snapshot)
+	}()
 }
 
 type flatFile struct {
@@ -272,7 +292,27 @@ func (s *server) handleRescanFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) startTreeScan(refresh bool) bool {
+	var cachedFiles []vault.Entry
+	if !refresh {
+		if cv, ok := s.vault.(treeCacheVault); ok {
+			s.tree.mu.Lock()
+			tryCache := len(s.tree.files) == 0 && !s.tree.cacheLoaded && !s.tree.scanning && !s.tree.done
+			if tryCache {
+				s.tree.cacheLoaded = true
+			}
+			s.tree.mu.Unlock()
+			if tryCache {
+				if entries, hit, err := cv.ReadTreeCache(context.Background()); err == nil && hit && len(entries) > 0 {
+					cachedFiles = entries
+				}
+			}
+		}
+	}
+
 	s.tree.mu.Lock()
+	if len(s.tree.files) == 0 && len(cachedFiles) > 0 {
+		s.tree.files = cachedFiles
+	}
 	if s.tree.scanning {
 		if !refresh {
 			s.tree.mu.Unlock()
@@ -364,9 +404,10 @@ func (s *server) scanFallback(ctx context.Context, gen int, coldStart bool) {
 }
 
 func (s *server) finishTreeScanDiff(gen int, ctx context.Context, collected []vault.Entry, err error) {
+	var toPersist []vault.Entry
 	s.tree.mu.Lock()
-	defer s.tree.mu.Unlock()
 	if gen != s.tree.gen {
+		s.tree.mu.Unlock()
 		return // superseded by a newer scan
 	}
 	s.tree.scanning = false
@@ -378,6 +419,7 @@ func (s *server) finishTreeScanDiff(gen int, ctx context.Context, collected []va
 			s.tree.files = merged
 			s.tree.version++
 			s.recordTreeDeltaLocked(delta)
+			toPersist = s.tree.files
 		} else {
 			s.tree.version++
 		}
@@ -387,12 +429,17 @@ func (s *server) finishTreeScanDiff(gen int, ctx context.Context, collected []va
 			s.tree.err = err.Error()
 		}
 	}
+	s.tree.mu.Unlock()
+	if toPersist != nil {
+		s.persistTreeCache(toPersist)
+	}
 }
 
 func (s *server) finishTreeScan(gen int, ctx context.Context, err error) {
+	var toPersist []vault.Entry
 	s.tree.mu.Lock()
-	defer s.tree.mu.Unlock()
 	if gen != s.tree.gen {
+		s.tree.mu.Unlock()
 		return // superseded by a newer scan
 	}
 	s.tree.scanning = false
@@ -401,6 +448,12 @@ func (s *server) finishTreeScan(gen int, ctx context.Context, err error) {
 	s.tree.cancel = nil
 	if err != nil && ctx.Err() == nil {
 		s.tree.err = err.Error()
+	} else if s.tree.done {
+		toPersist = s.tree.files
+	}
+	s.tree.mu.Unlock()
+	if toPersist != nil {
+		s.persistTreeCache(toPersist)
 	}
 }
 
@@ -562,15 +615,20 @@ func (s *server) runBackgroundScanOnce(loopCtx context.Context, pace time.Durati
 		return
 	}
 
+	var toPersist []vault.Entry
 	s.tree.mu.Lock()
 	if s.tree.bgEnabled && s.tree.gen == gen && !s.tree.scanning && s.tree.done {
 		if merged, delta, changed := mergeTreeDiff(s.tree.files, collected); changed {
 			s.tree.files = merged
 			s.tree.version++
 			s.recordTreeDeltaLocked(delta)
+			toPersist = s.tree.files
 		}
 	}
 	s.tree.mu.Unlock()
+	if toPersist != nil {
+		s.persistTreeCache(toPersist)
+	}
 }
 
 // mergeTreeDiff reconciles an existing file list against a fresh scan, keeping

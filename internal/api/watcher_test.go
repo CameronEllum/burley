@@ -191,3 +191,69 @@ func TestRefreshTreeDiffsInPlaceWithoutClearingFiles(t *testing.T) {
 	files, _, _, _ = s.treeSnapshot()
 	t.Fatalf("refresh did not diff in added.md; files = %+v", files)
 }
+
+func TestServerWarmsTreeFromBinaryCacheAndReconciles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "keep.md"), []byte("# Keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "gone.md"), []byte("# Gone\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v1, err := vault.NewLocalVault(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s1 := &server{vault: v1}
+	s1.startTreeScan(false)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, done, _, _ := s1.treeSnapshot()
+		if done && len(files) == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cachePath := filepath.Join(root, ".burley", "tree-cache.bin")
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(cachePath); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("expected tree-cache.bin to be written: %v", err)
+	}
+
+	// Simulate changes while Burley is stopped.
+	if err := os.Remove(filepath.Join(root, "gone.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "new.md"), []byte("# New\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v2, err := vault.NewLocalVault(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2 := &server{vault: v2}
+	s2.startTreeScan(false)
+
+	// Reconciled snapshot should contain keep.md and new.md, and drop gone.md.
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		files, done, scanning, _ := s2.treeSnapshot()
+		if done && !scanning && len(files) == 2 {
+			if files[0].Path == "keep.md" && files[1].Path == "new.md" {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	files, _, _, _ := s2.treeSnapshot()
+	t.Fatalf("reconciled files = %+v, want [keep.md new.md]", files)
+}
