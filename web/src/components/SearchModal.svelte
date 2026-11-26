@@ -95,20 +95,35 @@
       ]
     }
 
-    const results = fuzzysort.go(q, files, { key: 'path', limit: 200, threshold: -50000 })
+    const explicit = normalizeExplicitPath(q, root)
+    const searchQ = explicit || q
+    const results = fuzzysort.go(searchQ, files, { key: 'path', limit: 200, threshold: -50000 })
     const pinned: PaletteItem[] = []
     const others: PaletteItem[] = []
-    const explicit = normalizeExplicitPath(q, root)
-    if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit)) && !fileMap.has(explicit)) {
-      pinned.push({
-        kind: 'file',
-        key: `explicit:${explicit}`,
-        file: { path: explicit, name: baseName(explicit), modTime: 0, size: 0 },
-        pinned: favoriteSet.has(explicit),
-        hint: 'Open path',
-      })
+    let explicitPathAdded = ''
+    if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit))) {
+      const existing = fileMap.get(explicit)
+      if (existing) {
+        explicitPathAdded = existing.path
+        pinned.push({
+          kind: 'file',
+          key: `file:${existing.path}`,
+          file: existing,
+          pinned: favoriteSet.has(existing.path),
+          hint: recentSet.has(existing.path) ? 'Recent' : 'Exact path',
+        })
+      } else {
+        pinned.push({
+          kind: 'file',
+          key: `explicit:${explicit}`,
+          file: { path: explicit, name: baseName(explicit), modTime: 0, size: 0 },
+          pinned: favoriteSet.has(explicit),
+          hint: 'Open path',
+        })
+      }
     }
     for (const result of results) {
+      if (explicitPathAdded && result.obj.path === explicitPathAdded) continue
       const item: PaletteItem = {
         kind: 'file',
         key: `file:${result.obj.path}`,
