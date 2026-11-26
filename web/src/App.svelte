@@ -432,8 +432,8 @@ import { wordDiff } from './lib/diff'
     },
     {
       id: 'toggle-favorite',
-      label: currentIsFavorite ? 'Remove current file from favorites' : 'Add current file to favorites',
-      keywords: 'star pin bookmark',
+      label: currentIsFavorite ? 'Remove current file from favourites' : 'Add current file to favourites',
+      keywords: 'star pin bookmark favorite',
       run: () => toggleFavorite(currentPath),
     },
     {
@@ -3040,8 +3040,8 @@ import { wordDiff } from './lib/diff'
         <button
           class="icon-btn favorite-star"
           class:on={currentIsFavorite}
-          title={currentIsFavorite ? 'Remove current note from favorites' : 'Add current note to favorites'}
-          aria-label="Toggle favorite"
+          title={currentIsFavorite ? 'Remove current note from favourites' : 'Add current note to favourites'}
+          aria-label="Toggle favourite"
           aria-pressed={currentIsFavorite}
           onclick={() => toggleFavorite(currentPath)}
         >
@@ -3289,7 +3289,7 @@ import { wordDiff } from './lib/diff'
                 : treeFilterMode === 'dirs'
                   ? 'Filter folders…'
                   : 'Filter notes…'}
-              title="Filter favorites and notes (Enter opens an explicit path)"
+              title="Filter favourites and notes (Enter opens an explicit path)"
               spellcheck="false"
               bind:value={treeFilter}
               onkeydown={(event) => {
@@ -3349,7 +3349,7 @@ import { wordDiff } from './lib/diff'
                 <svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </span>
               <svg class="favorites-star-icon" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill="currentColor" /></svg>
-              <span class="favorites-title">Favorites</span>
+              <span class="favorites-title">Favourites</span>
               <span class="tab-count">{totalFavoriteCount}</span>
               <span class="grow"></span>
             </button>
@@ -3358,7 +3358,7 @@ import { wordDiff } from './lib/diff'
               {#if activeFavorites.length === 0 && activeFavoriteGroups.length === 0}
                 <p class="favorites-empty">Star a note or right-click to add to a group.</p>
               {:else if totalFavoriteCount === 0}
-                <p class="favorites-empty">No favorites match “{treeFilter.trim()}”.</p>
+                <p class="favorites-empty">No favourites match “{treeFilter.trim()}”.</p>
               {:else}
                 {#if filteredFavorites.length > 0}
                   <ul class="favorites-list">
@@ -3398,8 +3398,8 @@ import { wordDiff } from './lib/diff'
                         </button>
                         <button
                           class="favorite-remove"
-                          title={favorite.exists ? 'Remove from favorites' : 'Remove missing favorite'}
-                          aria-label="Remove favorite"
+                          title={favorite.exists ? 'Remove from favourites' : 'Remove missing favourite'}
+                          aria-label="Remove favourite"
                           onclick={() => toggleFavorite(favorite.path)}
                         >×</button>
                       </li>
@@ -4144,7 +4144,7 @@ import { wordDiff } from './lib/diff'
         }}
       >
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        <span>New favorite group…</span>
+        <span>New favourite group…</span>
       </button>
       <div class="context-menu-sep" role="separator"></div>
     {/if}
@@ -4330,7 +4330,7 @@ import { wordDiff } from './lib/diff'
   {#if favGroupModal}
     <div class="delete-head">
       <div>
-        <h2 id="favgroup-title">{favGroupModal.renameFrom ? 'Rename favorite group' : 'New favorite group'}</h2>
+        <h2 id="favgroup-title">{favGroupModal.renameFrom ? 'Rename favourite group' : 'New favourite group'}</h2>
         <p>{favGroupModal.renameFrom ? `Rename “${favGroupModal.renameFrom}”.` : `Create a topic group${favGroupModal.path ? ` for ${baseName(favGroupModal.path)}` : ''}.`}</p>
       </div>
     </div>

@@ -150,8 +150,8 @@
     <button
       class="row-star"
       class:on={isFavorite}
-      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+      aria-label={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
       onclick={() => ontogglefavorite(entry.path)}
     >
       <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
