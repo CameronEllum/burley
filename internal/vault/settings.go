@@ -20,7 +20,9 @@ type Settings struct {
 	DarkTheme     string `json:"darkTheme"`     // ember | black | tron
 	WideMode      bool   `json:"wideMode"`      // legacy expanded reading measure
 	ReadingWidth  string `json:"readingWidth"`  // narrow | medium | wide
-	ViewZoom      int    `json:"viewZoom"`      // view panel zoom percentage (70..160)
+	ViewZoom      int    `json:"viewZoom,omitempty"` // legacy single zoom percentage (70..160)
+	MarkdownZoom  int    `json:"markdownZoom"`  // Markdown view zoom percentage (70..160)
+	HtmlZoom      int    `json:"htmlZoom"`      // HTML view zoom percentage (70..160)
 	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
 	AutoSave      bool   `json:"autoSave"`
 	CtrlClickLink string `json:"ctrlClickLink"` // toggle | open
@@ -48,7 +50,8 @@ func defaultSettings() Settings {
 		DarkTheme:      "ember",
 		WideMode:       false,
 		ReadingWidth:   "medium",
-		ViewZoom:       100,
+		MarkdownZoom:   100,
+		HtmlZoom:       100,
 		MarkdownStyle:  "default",
 		AutoSave:       true,
 		CtrlClickLink:  "toggle",
@@ -161,13 +164,23 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		return Settings{}, ErrInvalidPath
 	}
 
+	mdZoom := settings.MarkdownZoom
+	if mdZoom <= 0 && settings.ViewZoom > 0 {
+		mdZoom = settings.ViewZoom
+	}
+	htmlZoom := settings.HtmlZoom
+	if htmlZoom <= 0 && settings.ViewZoom > 0 {
+		htmlZoom = settings.ViewZoom
+	}
+
 	return Settings{
 		Theme:          theme,
 		LightTheme:     lightTheme,
 		DarkTheme:      darkTheme,
 		WideMode:       readingWidth == "wide",
 		ReadingWidth:   readingWidth,
-		ViewZoom:       normalizeViewZoom(settings.ViewZoom),
+		MarkdownZoom:   normalizeViewZoom(mdZoom),
+		HtmlZoom:       normalizeViewZoom(htmlZoom),
 		MarkdownStyle:  style,
 		AutoSave:       settings.AutoSave,
 		CtrlClickLink:  ctrlClick,
@@ -304,8 +317,10 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(boolYAML(settings.WideMode))
 	b.WriteString("\nreading_width: ")
 	b.WriteString(yamlQuote(settings.ReadingWidth))
-	b.WriteString("\nview_zoom: ")
-	b.WriteString(strconv.Itoa(settings.ViewZoom))
+	b.WriteString("\nmarkdown_zoom: ")
+	b.WriteString(strconv.Itoa(settings.MarkdownZoom))
+	b.WriteString("\nhtml_zoom: ")
+	b.WriteString(strconv.Itoa(settings.HtmlZoom))
 	b.WriteString("\nmarkdown_style: ")
 	b.WriteString(yamlQuote(settings.MarkdownStyle))
 	b.WriteString("\nauto_save: ")
@@ -368,6 +383,8 @@ func parseSettingsYAML(content string) Settings {
 	mdEnabled := true
 	htmlEnabled := true
 	hasReadingWidth := false
+	hasMdZoom := false
+	hasHtmlZoom := false
 	for _, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -419,7 +436,23 @@ func parseSettingsYAML(content string) Settings {
 			}
 		case "view_zoom", "zoom":
 			if n, err := strconv.Atoi(strings.TrimSpace(parsed)); err == nil {
-				settings.ViewZoom = normalizeViewZoom(n)
+				z := normalizeViewZoom(n)
+				if !hasMdZoom {
+					settings.MarkdownZoom = z
+				}
+				if !hasHtmlZoom {
+					settings.HtmlZoom = z
+				}
+			}
+		case "markdown_zoom":
+			if n, err := strconv.Atoi(strings.TrimSpace(parsed)); err == nil {
+				settings.MarkdownZoom = normalizeViewZoom(n)
+				hasMdZoom = true
+			}
+		case "html_zoom":
+			if n, err := strconv.Atoi(strings.TrimSpace(parsed)); err == nil {
+				settings.HtmlZoom = normalizeViewZoom(n)
+				hasHtmlZoom = true
 			}
 		case "light_theme", "light_palette":
 			switch strings.ToLower(parsed) {

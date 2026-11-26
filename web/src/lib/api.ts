@@ -72,7 +72,9 @@ export interface AppSettings {
   darkTheme: 'ember' | 'black' | 'tron'
   wideMode: boolean
   readingWidth: 'narrow' | 'medium' | 'wide'
-  viewZoom: number
+  viewZoom?: number
+  markdownZoom: number
+  htmlZoom: number
   markdownStyle: 'default' | 'github' | 'academic' | 'compact'
   autoSave: boolean
   ctrlClickLink: 'toggle' | 'open'
