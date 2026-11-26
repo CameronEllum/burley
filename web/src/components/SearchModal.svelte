@@ -13,6 +13,7 @@
     anchorWidth = 0,
     files,
     root = '',
+    home = '',
     favorites = [],
     recent = [],
     headings = [],
@@ -27,6 +28,7 @@
     anchorWidth?: number
     files: FlatFile[]
     root?: string
+    home?: string
     favorites?: string[]
     recent?: string[]
     headings?: OutlineItem[]
@@ -95,7 +97,7 @@
       ]
     }
 
-    const explicit = normalizeExplicitPath(q, root)
+    const explicit = normalizeExplicitPath(q, root, home)
     const searchQ = explicit || q
     const results = fuzzysort.go(searchQ, files, { key: 'path', limit: 200, threshold: -50000 })
     const pinned: PaletteItem[] = []

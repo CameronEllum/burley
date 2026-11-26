@@ -71,6 +71,7 @@ import { wordDiff } from './lib/diff'
   let tree = $state<Entry[]>([])
   let files = $state<FlatFile[]>([])
   let root = $state('')
+  let homeDir = $state('')
   let loading = $state(true)
   let treeComplete = $state(true)
   let treeWarmed = $state(false)
@@ -888,6 +889,7 @@ import { wordDiff } from './lib/diff'
       tree = response.tree
       files = response.files
       root = response.root
+      if (response.home !== undefined) homeDir = response.home
       treeComplete = response.done
       treeWarmed = !!response.warmed && !response.done
       if (response.cache !== undefined) treeCacheInfo = response.cache
@@ -972,6 +974,7 @@ import { wordDiff } from './lib/diff'
       tree = response.tree
       files = response.files
       root = response.root
+      if (response.home !== undefined) homeDir = response.home
       treeComplete = response.done
       loadError = response.error ?? ''
       flash(`Rescanned ${path}`)
@@ -3155,7 +3158,7 @@ import { wordDiff } from './lib/diff'
               bind:value={treeFilter}
               onkeydown={(event) => {
                 if (event.key !== 'Enter') return
-                const explicit = normalizeExplicitPath(treeFilter, root)
+                const explicit = normalizeExplicitPath(treeFilter, root, homeDir)
                 if (explicit && (isMarkdownPath(explicit) || isHtmlPath(explicit))) {
                   event.preventDefault()
                   void openFile(explicit)
@@ -3755,6 +3758,7 @@ import { wordDiff } from './lib/diff'
     anchorWidth={paletteAnchor.width}
     files={visiblePaletteFiles}
     root={root}
+    home={homeDir}
     favorites={favorites}
     recent={recent}
     headings={outline}

@@ -169,6 +169,7 @@ func (s *server) writeTreeSnapshot(w http.ResponseWriter, files []vault.Entry, d
 		"tree":     buildTree(files),
 		"files":    flat,
 		"root":     s.opts.Root,
+		"home":     currentHomeDir(),
 		"done":     done,
 		"scanning": scanning,
 		"warmed":   warmed,

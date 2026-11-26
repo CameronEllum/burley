@@ -27,8 +27,8 @@ export function isHtmlPath(filePath: string): boolean {
   return /\.(html|htm)$/i.test(filePath)
 }
 
-/** Normalize a user-typed vault path (strip quotes, `\` -> `/`, strip vault root & leading `./` or `/`). */
-export function normalizeExplicitPath(raw: string, vaultRoot = ''): string {
+/** Normalize a user-typed vault path (strip quotes, expand `~/`, `\` -> `/`, strip vault root & leading `./` or `/`). */
+export function normalizeExplicitPath(raw: string, vaultRoot = '', homeDir = ''): string {
   let s = raw.trim()
   if (
     s.length >= 2 &&
@@ -37,6 +37,12 @@ export function normalizeExplicitPath(raw: string, vaultRoot = ''): string {
     s = s.slice(1, -1).trim()
   }
   s = s.replace(/\\/g, '/')
+  if (homeDir && (s === '~' || s.startsWith('~/'))) {
+    const normHome = homeDir.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+    if (normHome) {
+      s = s === '~' ? normHome : `${normHome}${s.slice(1)}`
+    }
+  }
   if (vaultRoot) {
     const normRoot = vaultRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '')
     if (normRoot) {

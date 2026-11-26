@@ -28,6 +28,7 @@ export interface TreeResponse {
   tree: Entry[]
   files: FlatFile[]
   root: string
+  home?: string
   /** True once the background scan has visited the whole vault. */
   done: boolean
   scanning?: boolean

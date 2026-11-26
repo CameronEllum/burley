@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/user"
 	"path"
 	"strconv"
@@ -210,10 +211,19 @@ func currentUsername() string {
 	return strings.TrimSpace(name)
 }
 
+func currentHomeDir() string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"root":     s.opts.Root,
+		"home":     currentHomeDir(),
 		"ripgrep":  s.opts.RipgrepAvailable,
 		"version":  s.currentVersion(),
 		"repo":     s.repoURL(),
