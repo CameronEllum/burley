@@ -16,7 +16,7 @@ const settingsName = "settings.yaml"
 type Settings struct {
 	Theme         string `json:"theme"`         // system | light | dark
 	LightTheme    string `json:"lightTheme"`    // parchment | white
-	DarkTheme     string `json:"darkTheme"`     // ember | black
+	DarkTheme     string `json:"darkTheme"`     // ember | black | tron
 	WideMode      bool   `json:"wideMode"`      // expanded reading measure
 	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
 	AutoSave      bool   `json:"autoSave"`
@@ -136,7 +136,7 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		darkTheme = "ember"
 	}
 	switch darkTheme {
-	case "ember", "black":
+	case "ember", "black", "tron":
 	default:
 		return Settings{}, ErrInvalidPath
 	}
@@ -257,7 +257,7 @@ func settingsYAML(settings Settings) string {
 	var b strings.Builder
 	b.WriteString("# Burley settings — managed by the app, safe to edit by hand.\n")
 	b.WriteString("# theme: system | light | dark; markdown_style: default | github | academic | compact\n")
-	b.WriteString("# light_theme: parchment | white; dark_theme: ember | black\n")
+	b.WriteString("# light_theme: parchment | white; dark_theme: ember | black | tron\n")
 	b.WriteString("theme: ")
 	b.WriteString(yamlQuote(settings.Theme))
 	b.WriteString("\nlight_theme: ")
@@ -367,7 +367,7 @@ func parseSettingsYAML(content string) Settings {
 			}
 		case "dark_theme", "dark_palette":
 			switch strings.ToLower(parsed) {
-			case "ember", "black":
+			case "ember", "black", "tron":
 				settings.DarkTheme = strings.ToLower(parsed)
 			}
 		case "markdown_style", "style":

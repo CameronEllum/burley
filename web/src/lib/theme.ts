@@ -2,7 +2,7 @@
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type LightPalette = 'parchment' | 'white'
-export type DarkPalette = 'ember' | 'black'
+export type DarkPalette = 'ember' | 'black' | 'tron'
 
 export interface UiPalette<T extends string> {
   id: T
@@ -42,6 +42,12 @@ export const DARK_THEMES: readonly UiPalette<DarkPalette>[] = [
     description: 'Near-black surfaces with brighter rust accents',
     swatch: { app: '#050505', chrome: '#0b0b0b', accent: '#f97316', border: '#232323' },
   },
+  {
+    id: 'tron',
+    name: 'Tron',
+    description: 'Deep midnight grid with electric cyan accents',
+    swatch: { app: '#050a12', chrome: '#08111e', accent: '#22d3ee', border: '#113049' },
+  },
 ]
 
 const MODE_KEY = 'burley:theme'
@@ -71,7 +77,7 @@ export function isLightPalette(value: string | null | undefined): value is Light
 }
 
 export function isDarkPalette(value: string | null | undefined): value is DarkPalette {
-  return value === 'ember' || value === 'black'
+  return value === 'ember' || value === 'black' || value === 'tron'
 }
 
 export function storedLightPalette(): LightPalette {

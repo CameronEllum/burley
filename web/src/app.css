@@ -243,6 +243,60 @@
     --toast-fg: #0a0a0a;
 }
 
+/* Tron dark theme: deep midnight-black grid with electric cyan accents. */
+:root[data-theme='dark'][data-palette='tron'] {
+    --background: 215 56% 4%;
+    --foreground: 196 86% 93%;
+    --muted: 211 52% 9%;
+    --muted-foreground: 197 45% 62%;
+    --primary: 188 94% 53%;
+    --border: 205 62% 18%;
+    --md-heading: 188 100% 72%;
+    --md-link: 188 95% 60%;
+    --md-bold: 195 100% 96%;
+    --md-italic: 195 85% 90%;
+
+    --bg-app: #050a12;
+    --bg-chrome: #08111e;
+    --bg-sidebar: #060d18;
+    --panel: #0b1829;
+    --text-primary: #e0f4ff;
+    --text-muted: #6ea8c9;
+    --border-soft: #113049;
+    --border-strong: #1b4b70;
+    --border-color: #113049;
+    --hover: rgba(34, 211, 238, 0.08);
+    --active: rgba(34, 211, 238, 0.16);
+    --accent: #22d3ee;
+    --accent-strong: #67e8f9;
+    --selection: rgba(34, 211, 238, 0.22);
+    --selection-strong: rgba(34, 211, 238, 0.34);
+
+    --syntax-keyword: #38bdf8;
+    --syntax-string: #34d399;
+    --syntax-number: #fb923c;
+    --syntax-comment: #4e7694;
+    --syntax-function: #67e8f9;
+    --syntax-type: #a5b4fc;
+    --syntax-property: #f472b6;
+    --syntax-punctuation: #7dd3fc;
+
+    --ok-bg: hsl(165 45% 9%);
+    --ok-fg: hsl(165 75% 68%);
+    --ok-border: hsl(165 45% 22%);
+    --warn-bg: hsl(32 50% 10%);
+    --warn-fg: hsl(35 92% 68%);
+    --warn-border: hsl(32 45% 24%);
+    --info-bg: hsl(195 55% 10%);
+    --info-fg: hsl(190 95% 74%);
+    --info-border: hsl(195 50% 25%);
+    --danger-bg: hsl(350 45% 11%);
+    --danger-fg: hsl(350 85% 74%);
+    --danger-border: hsl(350 45% 26%);
+    --toast-bg: #22d3ee;
+    --toast-fg: #04101a;
+}
+
 *,
 *::before,
 *::after {

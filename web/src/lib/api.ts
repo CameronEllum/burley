@@ -69,7 +69,7 @@ export interface SearchMatch {
 export interface AppSettings {
   theme: 'system' | 'light' | 'dark'
   lightTheme: 'parchment' | 'white'
-  darkTheme: 'ember' | 'black'
+  darkTheme: 'ember' | 'black' | 'tron'
   wideMode: boolean
   markdownStyle: 'default' | 'github' | 'academic' | 'compact'
   autoSave: boolean
