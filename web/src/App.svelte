@@ -57,6 +57,7 @@ import { wordDiff } from './lib/diff'
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
   const TALK_WIDTH_KEY = 'burley:talk-width'
   const WIDE_MODE_KEY = 'burley:wide-mode'
+  const READING_WIDTH_KEY = 'burley:reading-width'
   const VIEW_ZOOM_KEY = 'burley:view-zoom'
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const RAW_MODE_KEY = 'burley:raw-mode'
@@ -94,7 +95,15 @@ import { wordDiff } from './lib/diff'
   let sidebarOpen = $state(true)
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
+  type ReadingWidth = 'narrow' | 'medium' | 'wide'
+  const READING_WIDTH_ORDER: ReadingWidth[] = ['narrow', 'medium', 'wide']
+  const READING_WIDTH_LABEL: Record<ReadingWidth, string> = {
+    narrow: 'Narrow',
+    medium: 'Medium',
+    wide: 'Wide',
+  }
   let wideMode = $state(false)
+  let readingWidth = $state<ReadingWidth>('medium')
   let viewZoom = $state(100)
   const clampViewZoom = (zoom: number): number =>
     !Number.isFinite(zoom) || zoom <= 0 ? 100 : Math.min(160, Math.max(70, Math.round(zoom)))
@@ -466,8 +475,8 @@ import { wordDiff } from './lib/diff'
     },
     {
       id: 'toggle-wide',
-      label: wideMode ? 'Use narrow reading width' : 'Use wide reading width',
-      keywords: 'layout margins measure',
+      label: `Cycle reading width (currently ${READING_WIDTH_LABEL[readingWidth]})`,
+      keywords: 'layout margins measure narrow medium wide',
       run: toggleWideMode,
     },
     {
@@ -613,7 +622,14 @@ import { wordDiff } from './lib/diff'
     if (Number.isFinite(storedTalkWidth) && storedTalkWidth >= TALK_MIN) {
       talkWidth = clampTalkWidth(storedTalkWidth)
     }
-    wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
+    const storedWidthMode = localStorage.getItem(READING_WIDTH_KEY)
+    if (storedWidthMode === 'narrow' || storedWidthMode === 'medium' || storedWidthMode === 'wide') {
+      readingWidth = storedWidthMode
+      wideMode = storedWidthMode === 'wide'
+    } else {
+      wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
+      readingWidth = wideMode ? 'wide' : 'medium'
+    }
     const storedZoom = Number(localStorage.getItem(VIEW_ZOOM_KEY))
     if (Number.isFinite(storedZoom) && storedZoom > 0) {
       viewZoom = clampViewZoom(storedZoom)
@@ -1584,7 +1600,10 @@ import { wordDiff } from './lib/diff'
   }
 
   function toggleWideMode() {
-    wideMode = !wideMode
+    const idx = READING_WIDTH_ORDER.indexOf(readingWidth)
+    readingWidth = READING_WIDTH_ORDER[(idx + 1) % READING_WIDTH_ORDER.length]
+    wideMode = readingWidth === 'wide'
+    localStorage.setItem(READING_WIDTH_KEY, readingWidth)
     localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
     void persistSettings()
   }
@@ -1603,6 +1622,7 @@ import { wordDiff } from './lib/diff'
         lightTheme,
         darkTheme,
         wideMode,
+        readingWidth,
         viewZoom,
         markdownStyle,
         autoSave,
@@ -1637,8 +1657,15 @@ import { wordDiff } from './lib/diff'
       storePalettes(lightTheme, darkTheme)
       applyTheme(themeMode, lightTheme, darkTheme)
     }
-    if (patch.wideMode !== undefined) {
+    if (patch.readingWidth) {
+      readingWidth = patch.readingWidth
+      wideMode = readingWidth === 'wide'
+      localStorage.setItem(READING_WIDTH_KEY, readingWidth)
+      localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+    } else if (patch.wideMode !== undefined) {
       wideMode = patch.wideMode
+      readingWidth = wideMode ? 'wide' : 'medium'
+      localStorage.setItem(READING_WIDTH_KEY, readingWidth)
       localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
     }
     if (patch.viewZoom !== undefined) {
@@ -1754,7 +1781,8 @@ import { wordDiff } from './lib/diff'
         themeMode = response.settings.theme
         lightTheme = isLightPalette(response.settings.lightTheme) ? response.settings.lightTheme : lightTheme
         darkTheme = isDarkPalette(response.settings.darkTheme) ? response.settings.darkTheme : darkTheme
-        wideMode = response.settings.wideMode
+        readingWidth = response.settings.readingWidth ?? (response.settings.wideMode ? 'wide' : 'medium')
+        wideMode = readingWidth === 'wide'
         viewZoom = clampViewZoom(response.settings.viewZoom ?? 100)
         markdownStyle = response.settings.markdownStyle
         autoSave = response.settings.autoSave
@@ -1771,6 +1799,7 @@ import { wordDiff } from './lib/diff'
         applyTheme(themeMode, lightTheme, darkTheme)
         storeThemeMode(themeMode)
         storePalettes(lightTheme, darkTheme)
+        localStorage.setItem(READING_WIDTH_KEY, readingWidth)
         localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
         localStorage.setItem(VIEW_ZOOM_KEY, String(viewZoom))
         setLinkClickBehavior(ctrlClickLink)
@@ -1782,6 +1811,7 @@ import { wordDiff } from './lib/diff'
           lightTheme,
           darkTheme,
           wideMode,
+          readingWidth,
           viewZoom,
           markdownStyle,
           autoSave,
@@ -3224,19 +3254,25 @@ import { wordDiff } from './lib/diff'
       </button>
       <button
         class="icon-btn width-btn"
-        class:on={wideMode}
-        title={wideMode ? 'Use narrow reading width' : 'Use wide reading width'}
-        aria-label={wideMode ? 'Use narrow reading width' : 'Use wide reading width'}
-        aria-pressed={wideMode}
+        class:on={readingWidth !== 'medium'}
+        title={`Reading width: ${READING_WIDTH_LABEL[readingWidth]} — click to cycle Narrow / Medium / Wide`}
+        aria-label={`Reading width: ${READING_WIDTH_LABEL[readingWidth]}`}
         onclick={toggleWideMode}
       >
-        {#if wideMode}
+        {#if readingWidth === 'narrow'}
           <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-            <path d="M3 4v12M17 4v12M8.5 7l-2.5 3 2.5 3M11.5 7l2.5 3-2.5 3M6 10h8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M5.5 3.8v12.4M14.5 3.8v12.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.55" />
+            <path d="M7.5 6.8h5M7.5 10h5M7.5 13.2h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        {:else if readingWidth === 'medium'}
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+            <path d="M3.5 3.8v12.4M16.5 3.8v12.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.55" />
+            <path d="M5.8 6.8h8.4M5.8 10h8.4M5.8 13.2h8.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
           </svg>
         {:else}
           <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-            <path d="M4.5 4v12M15.5 4v12M7.5 10h5M9.5 7.5L7 10l2.5 2.5M10.5 7.5L13 10l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M1.8 3.8v12.4M18.2 3.8v12.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.55" />
+            <path d="M3.8 6.8h12.4M3.8 10h12.4M3.8 13.2h12.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
           </svg>
         {/if}
       </button>
@@ -3653,7 +3689,7 @@ import { wordDiff } from './lib/diff'
         hidden={isCurrentHtml && !rawMode}
         data-md-style={markdownStyle}
         bind:this={editorHost}
-        style={`--editor-measure: ${zenMode ? '760px' : wideMode ? '1200px' : '820px'}; --editor-gutter: ${zenMode ? '32px' : wideMode ? '28px' : '48px'}; zoom: ${viewZoom / 100}`}
+        style={`--editor-measure: ${zenMode ? '760px' : readingWidth === 'wide' ? '1240px' : readingWidth === 'narrow' ? '680px' : '860px'}; --editor-gutter: ${zenMode ? '32px' : readingWidth === 'wide' ? '28px' : readingWidth === 'narrow' ? '48px' : '44px'}; zoom: ${viewZoom / 100}`}
       ></div>
       {#if isCurrentHtml && !rawMode}
         <iframe
@@ -4457,7 +4493,7 @@ import { wordDiff } from './lib/diff'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, viewZoom, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, readingWidth, viewZoom, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
     onrundemo={() => void openVirtualDemo()}
     treeCache={treeCacheInfo}
     treeWarmed={treeWarmed}

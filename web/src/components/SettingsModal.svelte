@@ -423,13 +423,18 @@
           <div class="segmented width-segments">
             <button
               class="segment"
-              class:active={!settings.wideMode}
-              onclick={() => onchange({ wideMode: false })}>Narrow</button
+              class:active={settings.readingWidth === 'narrow'}
+              onclick={() => onchange({ readingWidth: 'narrow', wideMode: false })}>Narrow</button
             >
             <button
               class="segment"
-              class:active={settings.wideMode}
-              onclick={() => onchange({ wideMode: true })}>Wide</button
+              class:active={settings.readingWidth === 'medium'}
+              onclick={() => onchange({ readingWidth: 'medium', wideMode: false })}>Medium</button
+            >
+            <button
+              class="segment"
+              class:active={settings.readingWidth === 'wide'}
+              onclick={() => onchange({ readingWidth: 'wide', wideMode: true })}>Wide</button
             >
           </div>
 
