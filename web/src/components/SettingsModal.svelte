@@ -433,6 +433,31 @@
             >
           </div>
 
+          <h3>View zoom</h3>
+          <div class="segmented zoom-segments" role="group" aria-label="View zoom">
+            <button
+              type="button"
+              class="segment"
+              disabled={settings.viewZoom <= 70}
+              aria-label="Zoom out"
+              onclick={() => onchange({ viewZoom: Math.max(70, settings.viewZoom - 10) })}>−</button
+            >
+            <button
+              type="button"
+              class="segment zoom-value"
+              class:active={settings.viewZoom !== 100}
+              title="Reset zoom to 100%"
+              onclick={() => onchange({ viewZoom: 100 })}>{settings.viewZoom}%</button
+            >
+            <button
+              type="button"
+              class="segment"
+              disabled={settings.viewZoom >= 160}
+              aria-label="Zoom in"
+              onclick={() => onchange({ viewZoom: Math.min(160, settings.viewZoom + 10) })}>+</button
+            >
+          </div>
+
           <h3>Markdown style</h3>
           <div class="style-grid">
             {#each styles as style}
@@ -900,6 +925,14 @@
     background: var(--bg-app);
     color: var(--accent);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  }
+  .segment:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .zoom-value {
+    min-width: 58px;
+    font-variant-numeric: tabular-nums;
   }
   .style-grid {
     display: grid;

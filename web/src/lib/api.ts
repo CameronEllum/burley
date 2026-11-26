@@ -71,6 +71,7 @@ export interface AppSettings {
   lightTheme: 'parchment' | 'white'
   darkTheme: 'ember' | 'black' | 'tron'
   wideMode: boolean
+  viewZoom: number
   markdownStyle: 'default' | 'github' | 'academic' | 'compact'
   autoSave: boolean
   ctrlClickLink: 'toggle' | 'open'

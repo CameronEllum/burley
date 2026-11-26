@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,7 @@ type Settings struct {
 	LightTheme    string `json:"lightTheme"`    // parchment | white
 	DarkTheme     string `json:"darkTheme"`     // ember | black | tron
 	WideMode      bool   `json:"wideMode"`      // expanded reading measure
+	ViewZoom      int    `json:"viewZoom"`      // view panel zoom percentage (70..160)
 	MarkdownStyle string `json:"markdownStyle"` // default | github | academic | compact
 	AutoSave      bool   `json:"autoSave"`
 	CtrlClickLink string `json:"ctrlClickLink"` // toggle | open
@@ -43,6 +45,7 @@ func defaultSettings() Settings {
 		LightTheme:     "parchment",
 		DarkTheme:      "ember",
 		WideMode:       false,
+		ViewZoom:       100,
 		MarkdownStyle:  "default",
 		AutoSave:       true,
 		CtrlClickLink:  "toggle",
@@ -146,6 +149,7 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		LightTheme:     lightTheme,
 		DarkTheme:      darkTheme,
 		WideMode:       settings.WideMode,
+		ViewZoom:       normalizeViewZoom(settings.ViewZoom),
 		MarkdownStyle:  style,
 		AutoSave:       settings.AutoSave,
 		CtrlClickLink:  ctrlClick,
@@ -158,6 +162,19 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		CommentAuthor:       normalizeCommentAuthor(settings.CommentAuthor),
 		DemoSeen:            settings.DemoSeen,
 	}, nil
+}
+
+func normalizeViewZoom(zoom int) int {
+	if zoom <= 0 {
+		return 100
+	}
+	if zoom < 70 {
+		return 70
+	}
+	if zoom > 160 {
+		return 160
+	}
+	return zoom
 }
 
 func normalizeCommentAuthor(author string) string {
@@ -266,6 +283,8 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(yamlQuote(settings.DarkTheme))
 	b.WriteString("\nwide_mode: ")
 	b.WriteString(boolYAML(settings.WideMode))
+	b.WriteString("\nview_zoom: ")
+	b.WriteString(strconv.Itoa(settings.ViewZoom))
 	b.WriteString("\nmarkdown_style: ")
 	b.WriteString(yamlQuote(settings.MarkdownStyle))
 	b.WriteString("\nauto_save: ")
@@ -359,6 +378,10 @@ func parseSettingsYAML(content string) Settings {
 		case "wide_mode", "wide":
 			if parsedBool, ok := parseYAMLBool(parsed); ok {
 				settings.WideMode = parsedBool
+			}
+		case "view_zoom", "zoom":
+			if n, err := strconv.Atoi(strings.TrimSpace(parsed)); err == nil {
+				settings.ViewZoom = normalizeViewZoom(n)
 			}
 		case "light_theme", "light_palette":
 			switch strings.ToLower(parsed) {

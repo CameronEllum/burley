@@ -57,6 +57,7 @@ import { wordDiff } from './lib/diff'
   const SIDEBAR_WIDTH_KEY = 'burley:sidebar-width'
   const TALK_WIDTH_KEY = 'burley:talk-width'
   const WIDE_MODE_KEY = 'burley:wide-mode'
+  const VIEW_ZOOM_KEY = 'burley:view-zoom'
   const FAVORITES_OPEN_KEY = 'burley:favorites-open'
   const RAW_MODE_KEY = 'burley:raw-mode'
   const SCOPE_KEY = 'burley:scope'
@@ -94,6 +95,9 @@ import { wordDiff } from './lib/diff'
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
   let wideMode = $state(false)
+  let viewZoom = $state(100)
+  const clampViewZoom = (zoom: number): number =>
+    !Number.isFinite(zoom) || zoom <= 0 ? 100 : Math.min(160, Math.max(70, Math.round(zoom)))
   let markdownStyle = $state<AppSettings['markdownStyle']>('default')
   let autoSave = $state(true)
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
@@ -592,6 +596,10 @@ import { wordDiff } from './lib/diff'
       talkWidth = clampTalkWidth(storedTalkWidth)
     }
     wideMode = localStorage.getItem(WIDE_MODE_KEY) === '1'
+    const storedZoom = Number(localStorage.getItem(VIEW_ZOOM_KEY))
+    if (Number.isFinite(storedZoom) && storedZoom > 0) {
+      viewZoom = clampViewZoom(storedZoom)
+    }
     rawMode = localStorage.getItem(RAW_MODE_KEY) === '1'
     zenMode = localStorage.getItem(ZEN_KEY) === '1'
     const storedAuthor = localStorage.getItem(COMMENT_AUTHOR_KEY)
@@ -1552,6 +1560,7 @@ import { wordDiff } from './lib/diff'
         lightTheme,
         darkTheme,
         wideMode,
+        viewZoom,
         markdownStyle,
         autoSave,
         ctrlClickLink,
@@ -1588,6 +1597,10 @@ import { wordDiff } from './lib/diff'
     if (patch.wideMode !== undefined) {
       wideMode = patch.wideMode
       localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+    }
+    if (patch.viewZoom !== undefined) {
+      viewZoom = clampViewZoom(patch.viewZoom)
+      localStorage.setItem(VIEW_ZOOM_KEY, String(viewZoom))
     }
     if (patch.markdownStyle) markdownStyle = patch.markdownStyle
     if (patch.ctrlClickLink) {
@@ -1699,6 +1712,7 @@ import { wordDiff } from './lib/diff'
         lightTheme = isLightPalette(response.settings.lightTheme) ? response.settings.lightTheme : lightTheme
         darkTheme = isDarkPalette(response.settings.darkTheme) ? response.settings.darkTheme : darkTheme
         wideMode = response.settings.wideMode
+        viewZoom = clampViewZoom(response.settings.viewZoom ?? 100)
         markdownStyle = response.settings.markdownStyle
         autoSave = response.settings.autoSave
         ctrlClickLink = response.settings.ctrlClickLink
@@ -1715,6 +1729,7 @@ import { wordDiff } from './lib/diff'
         storeThemeMode(themeMode)
         storePalettes(lightTheme, darkTheme)
         localStorage.setItem(WIDE_MODE_KEY, wideMode ? '1' : '0')
+        localStorage.setItem(VIEW_ZOOM_KEY, String(viewZoom))
         setLinkClickBehavior(ctrlClickLink)
         editor?.setSpellcheck(spellCheck)
       } else {
@@ -1724,6 +1739,7 @@ import { wordDiff } from './lib/diff'
           lightTheme,
           darkTheme,
           wideMode,
+          viewZoom,
           markdownStyle,
           autoSave,
           ctrlClickLink,
@@ -3572,13 +3588,14 @@ import { wordDiff } from './lib/diff'
         hidden={isCurrentHtml && !rawMode}
         data-md-style={markdownStyle}
         bind:this={editorHost}
-        style={`--editor-measure: ${zenMode ? '760px' : wideMode ? '1200px' : '820px'}; --editor-gutter: ${zenMode ? '32px' : wideMode ? '28px' : '48px'}`}
+        style={`--editor-measure: ${zenMode ? '760px' : wideMode ? '1200px' : '820px'}; --editor-gutter: ${zenMode ? '32px' : wideMode ? '28px' : '48px'}; zoom: ${viewZoom / 100}`}
       ></div>
       {#if isCurrentHtml && !rawMode}
         <iframe
           class="html-frame"
           title={currentPath}
           src={htmlFrameSrc}
+          style={`zoom: ${viewZoom / 100}`}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         ></iframe>
       {/if}
@@ -3645,7 +3662,7 @@ import { wordDiff } from './lib/diff'
               ×
             </button>
           </header>
-          <div class="split-body">
+          <div class="split-body" style={`zoom: ${viewZoom / 100}`}>
             {#if isSplitHtml}
               <iframe
                 class="html-frame"
@@ -4360,7 +4377,7 @@ import { wordDiff } from './lib/diff'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, viewZoom, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
     onrundemo={() => void openVirtualDemo()}
     treeCache={treeCacheInfo}
     treeWarmed={treeWarmed}

@@ -17,7 +17,7 @@ func TestSettingsDefaultsWhenMissing(t *testing.T) {
 	if exists {
 		t.Fatal("exists = true, want false for a fresh vault")
 	}
-	if settings.Theme != "system" || settings.WideMode {
+	if settings.Theme != "system" || settings.WideMode || settings.ViewZoom != 100 {
 		t.Fatalf("defaults = %+v", settings)
 	}
 }
@@ -26,7 +26,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	v, dir := newTestVault(t)
 	ctx := context.Background()
 
-	if err := v.WriteSettings(ctx, Settings{Theme: "dark", LightTheme: "white", DarkTheme: "black", WideMode: true}); err != nil {
+	if err := v.WriteSettings(ctx, Settings{Theme: "dark", LightTheme: "white", DarkTheme: "black", WideMode: true, ViewZoom: 120}); err != nil {
 		t.Fatalf("WriteSettings: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, ".burley", "settings.yaml"))
@@ -37,7 +37,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if !strings.Contains(text, `theme: "dark"`) ||
 		!strings.Contains(text, `light_theme: "white"`) ||
 		!strings.Contains(text, `dark_theme: "black"`) ||
-		!strings.Contains(text, "wide_mode: true") {
+		!strings.Contains(text, "wide_mode: true") ||
+		!strings.Contains(text, "view_zoom: 120") {
 		t.Fatalf("unexpected yaml:\n%s", text)
 	}
 
@@ -45,7 +46,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("ReadSettings = %+v %v %v", settings, exists, err)
 	}
-	if settings.Theme != "dark" || !settings.WideMode {
+	if settings.Theme != "dark" || !settings.WideMode || settings.ViewZoom != 120 {
 		t.Fatalf("settings = %+v", settings)
 	}
 	if settings.LightTheme != "white" || settings.DarkTheme != "black" {
