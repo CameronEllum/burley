@@ -47,8 +47,14 @@ func TestEmbeddedDemoMatchesDemoVault(t *testing.T) {
 	actual := map[string][]byte{}
 	rootFS := subFS()
 	err = fs.WalkDir(rootFS, ".", func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil || p == "." || d.IsDir() {
+		if walkErr != nil || p == "." {
 			return walkErr
+		}
+		if d.IsDir() && (d.Name() == ".burley" || strings.HasPrefix(p, ".burley/")) {
+			return fs.SkipDir
+		}
+		if d.IsDir() {
+			return nil
 		}
 		data, err := fs.ReadFile(rootFS, p)
 		if err != nil {

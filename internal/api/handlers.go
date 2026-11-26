@@ -235,10 +235,15 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleDemoTree(w http.ResponseWriter, r *http.Request) {
 	tree, files := demo.Tree()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"root":  "Built-in Demo",
-		"tree":  tree,
-		"files": files,
-		"done":  true,
+		"root":      "Built-in Demo",
+		"tree":      tree,
+		"files":     files,
+		"done":      true,
+		"favorites": []string{"_demo/welcome.md"},
+		"groups": []vault.FavoriteGroup{
+			{Name: "Visualizations", Items: []string{"_demo/notes/plotly-charts.md", "_demo/notes/mermaid.md", "_demo/notes/live-data-tables.md"}},
+			{Name: "Writing & Math", Items: []string{"_demo/notes/feature-tour.md", "_demo/notes/equations.md"}},
+		},
 	})
 }
 
@@ -569,6 +574,23 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {	q := r.U
 // -------------------------------------------------------------- favorites
 
 func (s *server) handleGetFavorites(w http.ResponseWriter, r *http.Request) {
+	if dv, ok := s.vault.(interface {
+		ReadFavoritesData(context.Context) (vault.FavoritesData, error)
+	}); ok {
+		data, err := dv.ReadFavoritesData(r.Context())
+		if err != nil {
+			vaultError(w, err)
+			return
+		}
+		if data.Favorites == nil {
+			data.Favorites = []string{}
+		}
+		if data.Groups == nil {
+			data.Groups = []vault.FavoriteGroup{}
+		}
+		writeJSON(w, http.StatusOK, data)
+		return
+	}
 	favorites, err := s.vault.ReadFavorites(r.Context())
 	if err != nil {
 		vaultError(w, err)
@@ -577,13 +599,14 @@ func (s *server) handleGetFavorites(w http.ResponseWriter, r *http.Request) {
 	if favorites == nil {
 		favorites = []string{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites})
+	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites, "groups": []vault.FavoriteGroup{}})
 }
 
 func (s *server) handlePutFavorites(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
-		Favorites []string `json:"favorites"`
+		Favorites []string              `json:"favorites"`
+		Groups    []vault.FavoriteGroup `json:"groups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
@@ -591,6 +614,34 @@ func (s *server) handlePutFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Favorites == nil {
 		req.Favorites = []string{}
+	}
+	if dv, ok := s.vault.(interface {
+		ReadFavoritesData(context.Context) (vault.FavoritesData, error)
+		WriteFavoritesData(context.Context, vault.FavoritesData) error
+	}); ok {
+		groups := req.Groups
+		if groups == nil {
+			if existing, err := dv.ReadFavoritesData(r.Context()); err == nil {
+				groups = existing.Groups
+			}
+		}
+		if groups == nil {
+			groups = []vault.FavoriteGroup{}
+		}
+		if err := dv.WriteFavoritesData(r.Context(), vault.FavoritesData{
+			Favorites: req.Favorites,
+			Groups:    groups,
+		}); err != nil {
+			vaultError(w, err)
+			return
+		}
+		data, err := dv.ReadFavoritesData(r.Context())
+		if err != nil {
+			vaultError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, data)
+		return
 	}
 	if err := s.vault.WriteFavorites(r.Context(), req.Favorites); err != nil {
 		vaultError(w, err)
@@ -602,7 +653,7 @@ func (s *server) handlePutFavorites(w http.ResponseWriter, r *http.Request) {
 		vaultError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites})
+	writeJSON(w, http.StatusOK, map[string]any{"favorites": favorites, "groups": []vault.FavoriteGroup{}})
 }
 
 // ---------------------------------------------------------------- settings

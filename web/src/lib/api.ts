@@ -18,6 +18,11 @@ export interface FlatFile {
   size: number
 }
 
+export interface FavoriteGroup {
+  name: string
+  items: string[]
+}
+
 export interface TreeCacheStats {
   entries: number
   bytes: number
@@ -42,6 +47,8 @@ export interface TreeResponse {
   updated?: FlatFile[]
   removed?: string[]
   error?: string
+  favorites?: string[]
+  groups?: FavoriteGroup[]
 }
 
 export interface FileData {
@@ -124,6 +131,8 @@ export interface AgentModelsResponse {
   pinned: string
   unsupported: boolean
   error?: string
+  favorites?: string[]
+  groups?: FavoriteGroup[]
 }
 
 export interface AgentTestResult {
@@ -254,14 +263,14 @@ export const api = {
     return request<SearchMatch[]>(`/api/search?q=${encodeURIComponent(query)}`, { signal })
   },
 
-  async favorites(signal?: AbortSignal): Promise<{ favorites: string[] }> {
-    return request<{ favorites: string[] }>('/api/favorites', { signal })
+  async favorites(signal?: AbortSignal): Promise<{ favorites: string[]; groups?: FavoriteGroup[] }> {
+    return request<{ favorites: string[]; groups?: FavoriteGroup[] }>('/api/favorites', { signal })
   },
 
-  async saveFavorites(favorites: string[]): Promise<{ favorites: string[] }> {
-    return request<{ favorites: string[] }>('/api/favorites', {
+  async saveFavorites(favorites: string[], groups?: FavoriteGroup[]): Promise<{ favorites: string[]; groups?: FavoriteGroup[] }> {
+    return request<{ favorites: string[]; groups?: FavoriteGroup[] }>('/api/favorites', {
       method: 'PUT',
-      body: JSON.stringify({ favorites }),
+      body: JSON.stringify(groups !== undefined ? { favorites, groups } : { favorites }),
     })
   },
 

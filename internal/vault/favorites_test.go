@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -143,5 +144,43 @@ func TestFavoritesNoTempFiles(t *testing.T) {
 		if strings.HasPrefix(entry.Name(), ".burley-tmp-") {
 			t.Fatalf("temp file left behind: %s", entry.Name())
 		}
+	}
+}
+
+func TestFavoriteGroupsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	v, err := NewLocalVault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := FavoritesData{
+		Favorites: []string{"welcome.md"},
+		Groups: []FavoriteGroup{
+			{Name: "Visualizations", Items: []string{"notes/plotly-charts.md", "notes/mermaid.md"}},
+			{Name: "Empty Group", Items: []string{}},
+		},
+	}
+	if err := v.WriteFavoritesData(ctx, want); err != nil {
+		t.Fatalf("WriteFavoritesData: %v", err)
+	}
+	got, err := v.ReadFavoritesData(ctx)
+	if err != nil {
+		t.Fatalf("ReadFavoritesData: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	// WriteFavorites must preserve existing groups.
+	if err := v.WriteFavorites(ctx, []string{"notes/todo.md"}); err != nil {
+		t.Fatalf("WriteFavorites: %v", err)
+	}
+	got2, err := v.ReadFavoritesData(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got2.Favorites) != 1 || got2.Favorites[0] != "notes/todo.md" || !reflect.DeepEqual(got2.Groups, want.Groups) {
+		t.Fatalf("WriteFavorites clobbered groups: %+v", got2)
 	}
 }

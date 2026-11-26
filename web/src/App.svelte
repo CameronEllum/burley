@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import fuzzysort from 'fuzzysort'
-  import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
+  import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FavoriteGroup, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
   import { baseName, dirOf, formatBytes, isHtmlPath, isMarkdownPath, normalizeExplicitPath, openNoteInNewTab, stripMdExt } from './lib/paths'
@@ -248,8 +248,15 @@ import { wordDiff } from './lib/diff'
   let exportMenuOpen = $state(false)
   let exporting = $state(false)
   let favorites = $state<string[]>([])
+  let favoriteGroups = $state<FavoriteGroup[]>([])
+  let demoFavorites = $state<string[]>([])
+  let demoFavoriteGroups = $state<FavoriteGroup[]>([])
+  let collapsedFavGroups = $state<Record<string, boolean>>({})
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
+  let favGroupDialogEl = $state<HTMLDialogElement | null>(null)
+  let favGroupInput = $state<HTMLInputElement | null>(null)
+  let favGroupModal = $state<{ path: string; renameFrom?: string; name: string; error: string } | null>(null)
   type TreeFilterMode = 'all' | 'dirs' | 'root-dirs'
   let treeFilter = $state('')
   let treeFilterMode = $state<TreeFilterMode>('all')
@@ -347,12 +354,17 @@ import { wordDiff } from './lib/diff'
   })
   const activeHeadingLine = $derived(activeHeading?.line ?? 0)
   const fileByPath = $derived(new Map(files.map((file) => [file.path, file])))
+  const activeFileByPath = $derived(
+    virtualDemoActive ? new Map(demoFiles.map((file) => [file.path, file])) : fileByPath,
+  )
+  const activeFavorites = $derived(virtualDemoActive ? demoFavorites : favorites)
+  const activeFavoriteGroups = $derived(virtualDemoActive ? demoFavoriteGroups : favoriteGroups)
   const favoriteItems = $derived.by(() =>
-    favorites.map((path) => ({
+    activeFavorites.map((path) => ({
       path,
       name: baseName(path),
       dir: dirOf(path),
-      exists: !treeComplete || fileByPath.has(path),
+      exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path),
     })),
   )
   const filteredFavorites = $derived.by(() => {
@@ -362,9 +374,36 @@ import { wordDiff } from './lib/diff'
       .go(query, favoriteItems, { key: 'path', limit: 40, threshold: -20000 })
       .map((result) => result.obj)
   })
+  const favoriteGroupItems = $derived.by(() =>
+    activeFavoriteGroups.map((group) => ({
+      name: group.name,
+      items: group.items.map((path) => ({
+        path,
+        name: baseName(path),
+        dir: dirOf(path),
+        exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path),
+      })),
+    })),
+  )
+  const filteredFavoriteGroups = $derived.by(() => {
+    const query = treeFilter.trim()
+    if (!query) return favoriteGroupItems
+    return favoriteGroupItems
+      .map((group) => {
+        if (group.name.toLowerCase().includes(query.toLowerCase())) return group
+        const matched = fuzzysort
+          .go(query, group.items, { key: 'path', limit: 40, threshold: -20000 })
+          .map((result) => result.obj)
+        return { name: group.name, items: matched }
+      })
+      .filter((group) => group.items.length > 0)
+  })
+  const totalFavoriteCount = $derived(
+    filteredFavorites.length + filteredFavoriteGroups.reduce((sum, g) => sum + g.items.length, 0),
+  )
   const showFavorites = $derived(
     (treeFilterMode === 'all' || !treeFilter.trim()) &&
-      (!treeFilter.trim() || filteredFavorites.length > 0),
+      (!treeFilter.trim() || totalFavoriteCount > 0),
   )
   const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
   const scopedEntry = $derived(scopePath ? findFolder(tree, scopePath) : null)
@@ -1747,6 +1786,8 @@ import { wordDiff } from './lib/diff'
       const res = await api.demoTree()
       demoTree = res.tree
       demoFiles = res.files
+      demoFavorites = res.favorites ?? []
+      demoFavoriteGroups = res.groups ?? []
       if (!virtualDemoActive) {
         savedRealPath = currentPath.startsWith('_demo/') ? savedRealPath : currentPath
         readOnlyBeforeDemo = readOnly
@@ -1790,6 +1831,7 @@ import { wordDiff } from './lib/diff'
     try {
       const response = await api.favorites()
       favorites = response.favorites
+      favoriteGroups = response.groups ?? []
     } catch (err) {
       flash(err instanceof Error ? err.message : String(err), true)
     }
@@ -2301,16 +2343,95 @@ import { wordDiff } from './lib/diff'
       })
     }, 250)
   }
-  async function persistFavorites(next: string[]) {
+  async function persistFavorites(next: string[], nextGroups: FavoriteGroup[] = favoriteGroups) {
+    if (virtualDemoActive) {
+      demoFavorites = next
+      demoFavoriteGroups = nextGroups
+      return
+    }
     const previous = favorites
+    const previousGroups = favoriteGroups
     favorites = next
+    favoriteGroups = nextGroups
     try {
-      const response = await api.saveFavorites(next)
+      const response = await api.saveFavorites(next, nextGroups)
       favorites = response.favorites
+      if (response.groups !== undefined) favoriteGroups = response.groups
     } catch (err) {
       favorites = previous
+      favoriteGroups = previousGroups
       flash(err instanceof Error ? err.message : String(err), true)
     }
+  }
+
+  function toggleFavoriteGroupOpen(name: string) {
+    collapsedFavGroups = { ...collapsedFavGroups, [name]: !collapsedFavGroups[name] }
+  }
+
+  function toggleItemInGroup(groupName: string, path: string) {
+    if (!path) return
+    const targetGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const nextGroups = targetGroups.map((g) => {
+      if (g.name !== groupName) return g
+      const exists = g.items.includes(path)
+      return {
+        ...g,
+        items: exists ? g.items.filter((p) => p !== path) : [...g.items, path],
+      }
+    })
+    void persistFavorites(virtualDemoActive ? demoFavorites : favorites, nextGroups)
+  }
+
+  function openFavGroupModal(opts: { path: string; renameFrom?: string; initialName?: string }) {
+    favGroupModal = {
+      path: opts.path,
+      renameFrom: opts.renameFrom,
+      name: opts.initialName ?? '',
+      error: '',
+    }
+    if (favGroupDialogEl && !favGroupDialogEl.open) {
+      favGroupDialogEl.showModal()
+    }
+    requestAnimationFrame(() => favGroupInput?.focus())
+  }
+
+  function closeFavGroupModal() {
+    favGroupModal = null
+    if (favGroupDialogEl?.open) favGroupDialogEl.close()
+  }
+
+  function submitFavGroupModal() {
+    if (!favGroupModal) return
+    const name = favGroupModal.name.trim()
+    if (!name) {
+      favGroupModal = { ...favGroupModal, error: 'Enter a group name.' }
+      return
+    }
+    const targetGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const dup = targetGroups.some(
+      (g) => g.name.toLowerCase() === name.toLowerCase() && g.name !== favGroupModal?.renameFrom,
+    )
+    if (dup) {
+      favGroupModal = { ...favGroupModal, error: 'A group with that name already exists.' }
+      return
+    }
+    let nextGroups: FavoriteGroup[]
+    if (favGroupModal.renameFrom) {
+      nextGroups = targetGroups.map((g) =>
+        g.name === favGroupModal?.renameFrom ? { ...g, name } : g,
+      )
+    } else {
+      const path = favGroupModal.path
+      nextGroups = [...targetGroups, { name, items: path ? [path] : [] }]
+    }
+    closeFavGroupModal()
+    void persistFavorites(virtualDemoActive ? demoFavorites : favorites, nextGroups)
+  }
+
+  function deleteFavoriteGroup(name: string) {
+    const targetGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const nextGroups = targetGroups.filter((g) => g.name !== name)
+    void persistFavorites(virtualDemoActive ? demoFavorites : favorites, nextGroups)
   }
 
   function toggleFavorite(path: string) {
@@ -2518,8 +2639,16 @@ import { wordDiff } from './lib/diff'
       await api.rename(fromPath, toPath)
       closeRenameDialog()
       const updatedFavs = favorites.map((entry) => remapPathPrefix(entry, fromPath, toPath, isDir))
-      if (updatedFavs.some((entry, idx) => entry !== favorites[idx])) {
-        await persistFavorites(updatedFavs)
+      const updatedGroups = favoriteGroups.map((g) => ({
+        ...g,
+        items: g.items.map((entry) => remapPathPrefix(entry, fromPath, toPath, isDir)),
+      }))
+      const favsChanged = updatedFavs.some((entry, idx) => entry !== favorites[idx])
+      const groupsChanged = updatedGroups.some((g, gi) =>
+        g.items.some((entry, ii) => entry !== favoriteGroups[gi]?.items[ii]),
+      )
+      if (favsChanged || groupsChanged) {
+        await persistFavorites(updatedFavs, updatedGroups)
       }
       if (scopePath) {
         const nextScope = remapPathPrefix(scopePath, fromPath, toPath, isDir)
@@ -2612,8 +2741,15 @@ import { wordDiff } from './lib/diff'
       await api.deleteFile(path)
       closeDeleteDialog()
       const matchesDeleted = (entry: string) => entry === path || (isDir && entry.startsWith(path + '/'))
-      if (favorites.some(matchesDeleted)) {
-        await persistFavorites(favorites.filter((entry) => !matchesDeleted(entry)))
+      const favsChanged = favorites.some(matchesDeleted)
+      const groupsChanged = favoriteGroups.some((g) => g.items.some(matchesDeleted))
+      if (favsChanged || groupsChanged) {
+        const nextFavs = favorites.filter((entry) => !matchesDeleted(entry))
+        const nextGroups = favoriteGroups.map((g) => ({
+          ...g,
+          items: g.items.filter((entry) => !matchesDeleted(entry)),
+        }))
+        await persistFavorites(nextFavs, nextGroups)
       }
       if (scopePath && matchesDeleted(scopePath)) {
         scopePath = null
@@ -3214,60 +3350,129 @@ import { wordDiff } from './lib/diff'
               </span>
               <svg class="favorites-star-icon" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill="currentColor" /></svg>
               <span class="favorites-title">Favorites</span>
-              <span class="tab-count">{filteredFavorites.length}</span>
+              <span class="tab-count">{totalFavoriteCount}</span>
               <span class="grow"></span>
             </button>
 
             {#if favoritesOpen}
-              {#if favorites.length === 0}
-                <p class="favorites-empty">Star a note to pin it here.</p>
-              {:else if filteredFavorites.length === 0}
+              {#if activeFavorites.length === 0 && activeFavoriteGroups.length === 0}
+                <p class="favorites-empty">Star a note or right-click to add to a group.</p>
+              {:else if totalFavoriteCount === 0}
                 <p class="favorites-empty">No favorites match “{treeFilter.trim()}”.</p>
               {:else}
-                <ul class="favorites-list">
-                  {#each filteredFavorites as favorite (favorite.path)}
-                    <li
-                      class="favorite-item"
-                      class:missing={!favorite.exists}
-                      class:dragging={dragFavoritePath === favorite.path}
-                      draggable="true"
-                      ondragstart={(event) => favoriteDragStart(event, favorite.path)}
-                      ondragover={(event) => event.preventDefault()}
-                      ondrop={(event) => favoriteDrop(event, favorite.path)}
-                      ondragend={() => (dragFavoritePath = null)}
-                    >
-                      <button
-                        class="favorite-row"
-                        title={favorite.exists ? favorite.path : `Missing: ${favorite.path}`}
-                        onclick={() => {
-                          if (!favorite.exists) return
-                          void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
-                        }}
-                        onmousedown={(event) => {
-                          if (event.button === 1 && favorite.exists) event.preventDefault()
-                        }}
-                        onauxclick={(event) => {
-                          if (event.button === 1 && favorite.exists) {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            openNoteInNewTab(favorite.path)
-                          }
-                        }}
+                {#if filteredFavorites.length > 0}
+                  <ul class="favorites-list">
+                    {#each filteredFavorites as favorite (favorite.path)}
+                      <li
+                        class="favorite-item"
+                        class:missing={!favorite.exists}
+                        class:dragging={dragFavoritePath === favorite.path}
+                        draggable="true"
+                        ondragstart={(event) => favoriteDragStart(event, favorite.path)}
+                        ondragover={(event) => event.preventDefault()}
+                        ondrop={(event) => favoriteDrop(event, favorite.path)}
+                        ondragend={() => (dragFavoritePath = null)}
                       >
-                        <span class="favorite-pin" aria-hidden="true">★</span>
-                        <span class="favorite-name">{stripMdExt(favorite.name)}</span>
-                        <span class="favorite-dir">{favorite.dir}</span>
-                        {#if !favorite.exists}<span class="favorite-missing">missing</span>{/if}
+                        <button
+                          class="favorite-row"
+                          title={favorite.exists ? favorite.path : `Missing: ${favorite.path}`}
+                          onclick={() => {
+                            if (!favorite.exists) return
+                            void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
+                          }}
+                          onmousedown={(event) => {
+                            if (event.button === 1 && favorite.exists) event.preventDefault()
+                          }}
+                          onauxclick={(event) => {
+                            if (event.button === 1 && favorite.exists) {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              openNoteInNewTab(favorite.path)
+                            }
+                          }}
+                        >
+                          <span class="favorite-pin" aria-hidden="true">★</span>
+                          <span class="favorite-name">{stripMdExt(favorite.name)}</span>
+                          <span class="favorite-dir">{favorite.dir}</span>
+                          {#if !favorite.exists}<span class="favorite-missing">missing</span>{/if}
+                        </button>
+                        <button
+                          class="favorite-remove"
+                          title={favorite.exists ? 'Remove from favorites' : 'Remove missing favorite'}
+                          aria-label="Remove favorite"
+                          onclick={() => toggleFavorite(favorite.path)}
+                        >×</button>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+                {#each filteredFavoriteGroups as group (group.name)}
+                  {@const groupOpen = !collapsedFavGroups[group.name] || !!treeFilter.trim()}
+                  <div class="fav-group">
+                    <div class="fav-group-head-row">
+                      <button
+                        class="fav-group-head"
+                        aria-expanded={groupOpen}
+                        onclick={() => toggleFavoriteGroupOpen(group.name)}
+                      >
+                        <span class="chevron" class:open={groupOpen} aria-hidden="true">
+                          <svg viewBox="0 0 16 16" width="10" height="10"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        </span>
+                        <span class="fav-group-name">{group.name}</span>
+                        <span class="fav-group-count">{group.items.length}</span>
                       </button>
                       <button
-                        class="favorite-remove"
-                        title={favorite.exists ? 'Remove from favorites' : 'Remove missing favorite'}
-                        aria-label="Remove favorite"
-                        onclick={() => toggleFavorite(favorite.path)}
+                        class="fav-group-action"
+                        title="Rename group"
+                        aria-label={`Rename ${group.name}`}
+                        onclick={() => openFavGroupModal({ path: '', renameFrom: group.name, initialName: group.name })}
+                      >✎</button>
+                      <button
+                        class="fav-group-action danger"
+                        title="Delete group"
+                        aria-label={`Delete ${group.name}`}
+                        onclick={() => deleteFavoriteGroup(group.name)}
                       >×</button>
-                    </li>
-                  {/each}
-                </ul>
+                    </div>
+                    {#if groupOpen && group.items.length > 0}
+                      <ul class="favorites-list fav-group-list">
+                        {#each group.items as item (group.name + ':' + item.path)}
+                          <li class="favorite-item" class:missing={!item.exists}>
+                            <button
+                              class="favorite-row"
+                              title={item.exists ? item.path : `Missing: ${item.path}`}
+                              onclick={() => {
+                                if (!item.exists) return
+                                void openFile(item.path).then(() => scrollTreeToPath(item.path))
+                              }}
+                              onmousedown={(event) => {
+                                if (event.button === 1 && item.exists) event.preventDefault()
+                              }}
+                              onauxclick={(event) => {
+                                if (event.button === 1 && item.exists) {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  openNoteInNewTab(item.path)
+                                }
+                              }}
+                            >
+                              <span class="favorite-pin" aria-hidden="true">•</span>
+                              <span class="favorite-name">{stripMdExt(item.name)}</span>
+                              <span class="favorite-dir">{item.dir}</span>
+                              {#if !item.exists}<span class="favorite-missing">missing</span>{/if}
+                            </button>
+                            <button
+                              class="favorite-remove"
+                              title={`Remove from ${group.name}`}
+                              aria-label="Remove from group"
+                              onclick={() => toggleItemInGroup(group.name, item.path)}
+                            >×</button>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </div>
+                {/each}
               {/if}
             {/if}
           </div>
@@ -3913,6 +4118,35 @@ import { wordDiff } from './lib/diff'
           <span>Download with Assets</span>
         </button>
       {/if}
+      <div class="context-menu-sep" role="separator"></div>
+      {#each activeFavoriteGroups as group (group.name)}
+        {@const inGroup = group.items.includes(contextMenu!.path)}
+        <button
+          class="context-menu-item"
+          role="menuitem"
+          onclick={() => {
+            const p = contextMenu?.path
+            contextMenu = null
+            if (p) toggleItemInGroup(group.name, p)
+          }}
+        >
+          <span class="context-check" aria-hidden="true">{inGroup ? '✓' : '+'}</span>
+          <span>{group.name}</span>
+        </button>
+      {/each}
+      <button
+        class="context-menu-item"
+        role="menuitem"
+        onclick={() => {
+          const p = contextMenu?.path
+          contextMenu = null
+          if (p) openFavGroupModal({ path: p })
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+        <span>New favorite group…</span>
+      </button>
+      <div class="context-menu-sep" role="separator"></div>
     {/if}
     <button class="context-menu-item" role="menuitem" onclick={() => void requestRename()}>
       <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M13.8 3.8l2.4 2.4-8.8 8.8H5v-2.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
@@ -4082,6 +4316,42 @@ import { wordDiff } from './lib/diff'
       {newDocBusy ? 'Creating…' : 'Create'}
     </button>
   </div>
+</dialog>
+
+<dialog
+  class="delete-dialog newdoc-dialog"
+  bind:this={favGroupDialogEl}
+  aria-labelledby="favgroup-title"
+  oncancel={(event) => {
+    event.preventDefault()
+    closeFavGroupModal()
+  }}
+>
+  {#if favGroupModal}
+    <div class="delete-head">
+      <div>
+        <h2 id="favgroup-title">{favGroupModal.renameFrom ? 'Rename favorite group' : 'New favorite group'}</h2>
+        <p>{favGroupModal.renameFrom ? `Rename “${favGroupModal.renameFrom}”.` : `Create a topic group${favGroupModal.path ? ` for ${baseName(favGroupModal.path)}` : ''}.`}</p>
+      </div>
+    </div>
+    <div class="newdoc-body">
+      <input
+        bind:this={favGroupInput}
+        bind:value={favGroupModal.name}
+        placeholder="Topic name (e.g. Q4 Latency)"
+        spellcheck="false"
+        autocomplete="off"
+        onkeydown={(event) => {
+          if (event.key === 'Enter') submitFavGroupModal()
+        }}
+      />
+    </div>
+    {#if favGroupModal.error}<p class="newdoc-error">{favGroupModal.error}</p>{/if}
+    <div class="delete-actions">
+      <button class="secondary" onclick={closeFavGroupModal}>Cancel</button>
+      <button class="primary" onclick={submitFavGroupModal}>{favGroupModal.renameFrom ? 'Save' : 'Create'}</button>
+    </div>
+  {/if}
 </dialog>
 
 {#if shortcutsOpen}
@@ -5527,6 +5797,93 @@ import { wordDiff } from './lib/diff'
   .favorite-remove:hover {
     color: var(--danger-fg);
     background: var(--danger-bg);
+  }
+  .fav-group {
+    margin-top: 2px;
+  }
+  .fav-group-head-row {
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    gap: 2px;
+  }
+  .fav-group-head {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .fav-group-head:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .fav-group-head .chevron {
+    display: inline-flex;
+    transition: transform 0.12s ease;
+  }
+  .fav-group-head .chevron.open {
+    transform: rotate(90deg);
+  }
+  .fav-group-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fav-group-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .fav-group-action {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .fav-group-head-row:hover .fav-group-action {
+    opacity: 1;
+  }
+  .fav-group-action:hover {
+    background: var(--hover);
+    color: var(--text-primary);
+  }
+  .fav-group-action.danger:hover {
+    color: var(--danger-fg);
+    background: var(--danger-bg);
+  }
+  .fav-group-list {
+    padding-left: 16px;
+  }
+  .context-menu-sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border-soft);
+  }
+  .context-check {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
   }
   .filter-wrap {
     display: flex;

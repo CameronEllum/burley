@@ -11,10 +11,23 @@ import (
 )
 
 const (
-	favoritesDir  = ".burley"
-	favoritesName = "favorites.yaml"
-	maxFavorites  = 500
+	favoritesDir       = ".burley"
+	favoritesName      = "favorites.yaml"
+	maxFavorites       = 500
+	maxFavoriteGroups  = 100
 )
+
+// FavoriteGroup is a named topic grouping of vault-relative paths in `.burley/favorites.yaml`.
+type FavoriteGroup struct {
+	Name  string   `json:"name"`
+	Items []string `json:"items"`
+}
+
+// FavoritesData holds ungrouped favorites and named topic groups.
+type FavoritesData struct {
+	Favorites []string        `json:"favorites"`
+	Groups    []FavoriteGroup `json:"groups"`
+}
 
 func (v *LocalVault) favoritesPath() string {
 	return filepath.Join(v.root, favoritesDir, favoritesName)
@@ -23,36 +36,67 @@ func (v *LocalVault) favoritesPath() string {
 // ReadFavorites loads `.burley/favorites.yaml`. A missing file is an empty
 // list, not an error.
 func (v *LocalVault) ReadFavorites(ctx context.Context) ([]string, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(v.favoritesPath())
-	if errors.Is(err, fs.ErrNotExist) {
-		return []string{}, nil
-	}
+	data, err := v.ReadFavoritesData(ctx)
 	if err != nil {
 		return nil, err
 	}
-	favorites := parseFavoritesYAML(string(data))
+	return data.Favorites, nil
+}
+
+// ReadFavoritesData loads both ungrouped favorites and named groups from `.burley/favorites.yaml`.
+func (v *LocalVault) ReadFavoritesData(ctx context.Context) (FavoritesData, error) {
+	if err := ctx.Err(); err != nil {
+		return FavoritesData{}, err
+	}
+	raw, err := os.ReadFile(v.favoritesPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return FavoritesData{Favorites: []string{}, Groups: []FavoriteGroup{}}, nil
+	}
+	if err != nil {
+		return FavoritesData{}, err
+	}
+	content := string(raw)
+	favorites := parseFavoritesYAML(content)
 	if favorites == nil {
 		favorites = []string{}
 	}
-	return favorites, nil
+	groups := parseFavoriteGroupsYAML(content)
+	if groups == nil {
+		groups = []FavoriteGroup{}
+	}
+	return FavoritesData{Favorites: favorites, Groups: groups}, nil
 }
 
-// WriteFavorites validates and atomically replaces the favorites file.
+// WriteFavorites validates and atomically replaces the ungrouped favorites list
+// while preserving any existing groups.
 func (v *LocalVault) WriteFavorites(ctx context.Context, paths []string) error {
+	existing, err := v.ReadFavoritesData(ctx)
+	if err != nil {
+		return err
+	}
+	return v.WriteFavoritesData(ctx, FavoritesData{
+		Favorites: paths,
+		Groups:    existing.Groups,
+	})
+}
+
+// WriteFavoritesData validates and atomically replaces `.burley/favorites.yaml`.
+func (v *LocalVault) WriteFavoritesData(ctx context.Context, data FavoritesData) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	cleaned, err := cleanFavorites(paths)
+	cleaned, err := cleanFavorites(data.Favorites)
+	if err != nil {
+		return err
+	}
+	cleanedGroups, err := cleanFavoriteGroups(data.Groups)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(v.root, favoritesDir), 0o755); err != nil {
 		return err
 	}
-	return writeFileAtomic(v.favoritesPath(), []byte(favoritesYAML(cleaned)), 0o644)
+	return writeFileAtomic(v.favoritesPath(), []byte(favoritesDataYAML(cleaned, cleanedGroups)), 0o644)
 }
 
 func cleanFavorites(paths []string) ([]string, error) {
@@ -80,17 +124,56 @@ func cleanFavorites(paths []string) ([]string, error) {
 	return out, nil
 }
 
-func favoritesYAML(paths []string) string {
+func cleanFavoriteGroups(groups []FavoriteGroup) ([]FavoriteGroup, error) {
+	if len(groups) > maxFavoriteGroups {
+		return nil, ErrTooLarge
+	}
+	out := make([]FavoriteGroup, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, g := range groups {
+		name := strings.TrimSpace(g.Name)
+		if name == "" {
+			return nil, ErrInvalidPath
+		}
+		key := strings.ToLower(name)
+		if _, dup := seen[key]; dup {
+			return nil, ErrInvalidPath
+		}
+		seen[key] = struct{}{}
+		items, err := cleanFavorites(g.Items)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, FavoriteGroup{Name: name, Items: items})
+	}
+	return out, nil
+}
+
+func favoritesDataYAML(paths []string, groups []FavoriteGroup) string {
 	var b strings.Builder
 	b.WriteString("# Burley favorites — vault-relative paths, in display order.\n")
 	b.WriteString("# Managed by the app; matching paths may be edited by hand.\n")
 	if len(paths) == 0 {
 		b.WriteString("favorites: []\n")
-		return b.String()
+	} else {
+		b.WriteString("favorites:\n")
+		for _, p := range paths {
+			fmt.Fprintf(&b, "  - %s\n", yamlQuote(p))
+		}
 	}
-	b.WriteString("favorites:\n")
-	for _, p := range paths {
-		fmt.Fprintf(&b, "  - %s\n", yamlQuote(p))
+	if len(groups) > 0 {
+		b.WriteString("groups:\n")
+		for _, g := range groups {
+			fmt.Fprintf(&b, "  - name: %s\n", yamlQuote(g.Name))
+			if len(g.Items) == 0 {
+				b.WriteString("    items: []\n")
+			} else {
+				b.WriteString("    items:\n")
+				for _, item := range g.Items {
+					fmt.Fprintf(&b, "      - %s\n", yamlQuote(item))
+				}
+			}
+		}
 	}
 	return b.String()
 }
@@ -202,6 +285,78 @@ func parsePathListYAML(content, listKey string) []string {
 		addPath(&out, seen, parseYAMLScalar(strings.TrimSpace(strings.TrimPrefix(line, "-"))))
 	}
 
+	return out
+}
+
+func parseFavoriteGroupsYAML(content string) []FavoriteGroup {
+	out := []FavoriteGroup{}
+	inGroups := false
+	inItems := false
+	curIdx := -1
+	seenNames := map[string]struct{}{}
+	var curItemsSeen map[string]struct{}
+
+	for _, raw := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !inGroups {
+			field, value, ok := strings.Cut(trimmed, ":")
+			if !ok || strings.TrimSpace(field) != "groups" {
+				continue
+			}
+			if strings.TrimSpace(value) == "[]" {
+				return out
+			}
+			inGroups = true
+			continue
+		}
+		// Top-level key ends the groups block.
+		if !strings.HasPrefix(raw, " ") && !strings.HasPrefix(raw, "\t") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "- name:") {
+			name := parseYAMLScalar(strings.TrimSpace(strings.TrimPrefix(trimmed, "- name:")))
+			if name == "" {
+				curIdx = -1
+				inItems = false
+				continue
+			}
+			key := strings.ToLower(name)
+			if _, dup := seenNames[key]; dup {
+				curIdx = -1
+				inItems = false
+				continue
+			}
+			seenNames[key] = struct{}{}
+			out = append(out, FavoriteGroup{Name: name, Items: []string{}})
+			curIdx = len(out) - 1
+			curItemsSeen = map[string]struct{}{}
+			inItems = false
+			continue
+		}
+		if curIdx < 0 {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "items:") {
+			rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "items:"))
+			if rest == "[]" {
+				inItems = false
+			} else if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
+				for _, part := range strings.Split(strings.Trim(rest, "[]"), ",") {
+					addPath(&out[curIdx].Items, curItemsSeen, parseYAMLScalar(part))
+				}
+				inItems = false
+			} else {
+				inItems = true
+			}
+			continue
+		}
+		if inItems && strings.HasPrefix(trimmed, "-") {
+			addPath(&out[curIdx].Items, curItemsSeen, parseYAMLScalar(strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))))
+		}
+	}
 	return out
 }
 

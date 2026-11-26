@@ -1,0 +1,14 @@
+# Burley favorites — vault-relative paths, in display order.
+# Managed by the app; matching paths may be edited by hand.
+favorites:
+  - "welcome.md"
+groups:
+  - name: "Visualizations"
+    items:
+      - "notes/plotly-charts.md"
+      - "notes/mermaid.md"
+      - "notes/live-data-tables.md"
+  - name: "Writing & Math"
+    items:
+      - "notes/feature-tour.md"
+      - "notes/equations.md"
