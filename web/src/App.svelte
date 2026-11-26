@@ -3718,7 +3718,7 @@ import { wordDiff } from './lib/diff'
         hidden={isCurrentHtml && !rawMode}
         data-md-style={markdownStyle}
         bind:this={editorHost}
-        style={`--editor-measure: ${zenMode ? '760px' : readingWidth === 'wide' ? '1240px' : readingWidth === 'narrow' ? '680px' : '860px'}; --editor-gutter: ${zenMode ? '32px' : readingWidth === 'wide' ? '28px' : readingWidth === 'narrow' ? '48px' : '44px'}; zoom: ${markdownZoom / 100}`}
+        style={`--md-zoom: ${markdownZoom / 100}; --editor-measure: calc(${zenMode ? '760px' : readingWidth === 'wide' ? '1240px' : readingWidth === 'narrow' ? '680px' : '860px'} * var(--md-zoom, 1)); --editor-gutter: ${zenMode ? '32px' : readingWidth === 'wide' ? '28px' : readingWidth === 'narrow' ? '48px' : '44px'}`}
       ></div>
       {#if isCurrentHtml && !rawMode}
         <iframe

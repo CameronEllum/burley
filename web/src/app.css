@@ -1692,10 +1692,15 @@ table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-
   display: none;
 }
 
+/* Markdown zoom (font-size based so CodeMirror & table overlay coords stay exact) */
+.editor-host .cm-editor {
+  font-size: calc(16px * var(--md-zoom, 1));
+}
+
 /* Raw source mode */
 .editor-host.raw .cm-content {
   font-family: var(--font-mono) !important;
-  font-size: 14px;
+  font-size: calc(14px * var(--md-zoom, 1));
   line-height: 1.6;
 }
 
@@ -1711,7 +1716,7 @@ table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-
 
 .editor-host[data-md-style='academic'] .cm-content {
   font-family: Georgia, 'Times New Roman', 'Cambria', serif;
-  font-size: 17px;
+  font-size: calc(17px * var(--md-zoom, 1));
   line-height: 1.85;
 }
 .editor-host[data-md-style='academic'] .cm-header-1,
@@ -1725,7 +1730,7 @@ table th.burley-cell-tint-gray, table td.burley-cell-tint-gray, table th.burley-
 }
 
 .editor-host[data-md-style='compact'] .cm-content {
-  font-size: 14px;
+  font-size: calc(14px * var(--md-zoom, 1));
   line-height: 1.5;
   padding-top: 24px;
 }
