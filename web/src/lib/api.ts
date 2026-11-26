@@ -83,6 +83,7 @@ export interface AppSettings {
   disabledAgents: string[]
   /** Enabled viewable/searchable file type IDs ("markdown", "html"). */
   fileTypes: string[]
+  showFileExtensions: boolean
   backgroundScan: boolean
   commentHoverPreview: boolean
   commentAuthor: string

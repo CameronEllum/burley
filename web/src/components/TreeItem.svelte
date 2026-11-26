@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Entry } from '../lib/api'
-  import { isHtmlPath, isMarkdownPath, openNoteInNewTab, stripMdExt } from '../lib/paths'
+  import { formatFileName, isHtmlPath, isMarkdownPath, openNoteInNewTab } from '../lib/paths'
   import TreeItem from './TreeItem.svelte'
 
   let {
@@ -12,6 +12,7 @@
     favorites,
     rescanningPath = '',
     collapseSignal = 0,
+    showFileExtensions = false,
     ontogglefavorite,
     ontogglefolder,
     onrescan,
@@ -26,6 +27,7 @@
     favorites: string[]
     rescanningPath?: string
     collapseSignal?: number
+    showFileExtensions?: boolean
     ontogglefavorite: (path: string) => void
     ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
@@ -131,7 +133,7 @@
     {#if expanded}
       <ul class="children">
         {#each children as child (child.path)}
-          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {autoExpandPaths} {favorites} {rescanningPath} {collapseSignal} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
+          <TreeItem entry={child} {selectedPath} {filter} {visiblePaths} {autoExpandPaths} {favorites} {rescanningPath} {collapseSignal} {showFileExtensions} {ontogglefavorite} {ontogglefolder} {onrescan} {oncontext} {onselect} />
         {/each}
       </ul>
     {/if}
@@ -160,11 +162,13 @@
       }}
     >
       <span class="file-dot" aria-hidden="true"></span>
-      <span class="label">{stripMdExt(entry.name)}</span>
-      {#if isHtmlPath(entry.path)}
-        <span class="file-type-tag">HTML</span>
-      {:else if isMarkdownPath(entry.path)}
-        <span class="file-type-tag">MD</span>
+      <span class="label">{formatFileName(entry.name, showFileExtensions)}</span>
+      {#if !showFileExtensions}
+        {#if isHtmlPath(entry.path)}
+          <span class="file-type-tag">HTML</span>
+        {:else if isMarkdownPath(entry.path)}
+          <span class="file-type-tag">MD</span>
+        {/if}
       {/if}
     </button>
     <button

@@ -4,7 +4,7 @@
   import { api, ConflictError, streamAgentChat, type AgentInfo, type AgentTestResult, type AppSettings, type Entry, type FavoriteGroup, type FileData, type FlatFile, type ReleaseInfo, type TreeResponse } from './lib/api'
   import { createEditor, type EditorController, type SelectionInfo } from './lib/editor'
   import { countWords, decodeForEditor, defaultFormat, encodeForSave, type TextFormat } from './lib/text'
-  import { baseName, dirOf, formatBytes, isHtmlPath, isMarkdownPath, normalizeExplicitPath, openNoteInNewTab, stripMdExt } from './lib/paths'
+  import { baseName, dirOf, formatBytes, formatFileName, isHtmlPath, isMarkdownPath, normalizeExplicitPath, openNoteInNewTab, stripMdExt } from './lib/paths'
   import type { PaletteCommand } from './lib/palette'
   import { setLinkClickBehavior } from './lib/links'
 import { restartLuaVM, setLuaDocument, setLuaNotifyHandler } from './lib/lua/runner'
@@ -112,6 +112,7 @@ import { wordDiff } from './lib/diff'
   let ctrlClickLink = $state<'toggle' | 'open'>('toggle')
   let spellCheck = $state(false)
   let fileTypes = $state<string[]>(['markdown', 'html'])
+  let showFileExtensions = $state(false)
   let backgroundScan = $state(false)
   let agentPins = $state<Record<string, string>>({})
   let disabledAgents = $state<string[]>([])
@@ -1629,6 +1630,7 @@ import { wordDiff } from './lib/diff'
         ctrlClickLink,
         spellCheck,
         fileTypes,
+        showFileExtensions,
         backgroundScan,
         commentHoverPreview,
         commentAuthor: commentAuthorSetting,
@@ -1692,6 +1694,9 @@ import { wordDiff } from './lib/diff'
     }
     if (patch.fileTypes !== undefined) {
       fileTypes = patch.fileTypes
+    }
+    if (patch.showFileExtensions !== undefined) {
+      showFileExtensions = patch.showFileExtensions
     }
     if (patch.backgroundScan !== undefined) {
       backgroundScan = patch.backgroundScan
@@ -1789,6 +1794,7 @@ import { wordDiff } from './lib/diff'
         ctrlClickLink = response.settings.ctrlClickLink
         spellCheck = response.settings.spellCheck
         fileTypes = response.settings.fileTypes ?? ['markdown', 'html']
+        showFileExtensions = response.settings.showFileExtensions ?? false
         backgroundScan = response.settings.backgroundScan ?? false
         commentHoverPreview = response.settings.commentHoverPreview ?? true
         commentAuthorSetting = response.settings.commentAuthor ?? ''
@@ -1818,6 +1824,7 @@ import { wordDiff } from './lib/diff'
           ctrlClickLink,
           spellCheck,
           fileTypes,
+          showFileExtensions,
           backgroundScan,
           commentHoverPreview,
           commentAuthor: commentAuthorSetting,
@@ -3497,7 +3504,7 @@ import { wordDiff } from './lib/diff'
                             <span class="favorite-name">{favorite.name}</span>
                           {:else}
                             <span class="favorite-pin" aria-hidden="true">★</span>
-                            <span class="favorite-name">{stripMdExt(favorite.name)}</span>
+                            <span class="favorite-name">{formatFileName(favorite.name, showFileExtensions)}</span>
                           {/if}
                           <span class="favorite-dir">{favorite.dir}</span>
                           {#if !favorite.exists}<span class="favorite-missing">missing</span>{/if}
@@ -3573,7 +3580,7 @@ import { wordDiff } from './lib/diff'
                                 <span class="favorite-name">{item.name}</span>
                               {:else}
                                 <span class="favorite-pin" aria-hidden="true">•</span>
-                                <span class="favorite-name">{stripMdExt(item.name)}</span>
+                                <span class="favorite-name">{formatFileName(item.name, showFileExtensions)}</span>
                               {/if}
                               <span class="favorite-dir">{item.dir}</span>
                               {#if !item.exists}<span class="favorite-missing">missing</span>{/if}
@@ -3611,6 +3618,7 @@ import { wordDiff } from './lib/diff'
               favorites={favorites}
               rescanningPath={rescanningFolder}
               collapseSignal={treeCollapseSignal}
+              {showFileExtensions}
               ontogglefavorite={(path) => toggleFavorite(path)}
               ontogglefolder={handleFolderToggle}
               onrescan={(path) => void rescanFolder(path)}
@@ -4493,7 +4501,7 @@ import { wordDiff } from './lib/diff'
 
 {#if settingsOpen}
   <SettingsModal
-    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, readingWidth, viewZoom, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
+    settings={{ theme: themeMode, lightTheme, darkTheme, wideMode, readingWidth, viewZoom, markdownStyle, autoSave, ctrlClickLink, spellCheck, fileTypes, showFileExtensions, backgroundScan, commentHoverPreview, commentAuthor: commentAuthorSetting, demoSeen, agentModels: agentPins, disabledAgents }}
     onrundemo={() => void openVirtualDemo()}
     treeCache={treeCacheInfo}
     treeWarmed={treeWarmed}

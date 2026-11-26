@@ -11,6 +11,7 @@
     favorites,
     rescanningPath = '',
     collapseSignal = 0,
+    showFileExtensions = false,
     ontogglefavorite,
     ontogglefolder,
     onrescan,
@@ -24,6 +25,7 @@
     favorites: string[]
     rescanningPath?: string
     collapseSignal?: number
+    showFileExtensions?: boolean
     ontogglefavorite: (path: string) => void
     ontogglefolder?: (path: string, open: boolean) => void
     onrescan?: (path: string) => void
@@ -134,6 +136,7 @@
         {favorites}
         {rescanningPath}
         {collapseSignal}
+        {showFileExtensions}
         {ontogglefavorite}
         {ontogglefolder}
         {onrescan}

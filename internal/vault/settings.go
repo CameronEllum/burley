@@ -30,6 +30,7 @@ type Settings struct {
 	AgentModels         map[string]string `json:"agentModels"`
 	DisabledAgents      []string          `json:"disabledAgents"`
 	FileTypes           []string          `json:"fileTypes"`
+	ShowFileExtensions  bool              `json:"showFileExtensions"`
 	BackgroundScan      bool              `json:"backgroundScan"`
 	CommentHoverPreview bool              `json:"commentHoverPreview"`
 	CommentAuthor       string            `json:"commentAuthor"`
@@ -174,6 +175,7 @@ func normalizeSettings(settings Settings) (Settings, error) {
 		AgentModels:         normalizeAgentModels(settings.AgentModels),
 		DisabledAgents:      normalizeDisabledAgents(settings.DisabledAgents),
 		FileTypes:           normalizeFileTypes(settings.FileTypes),
+		ShowFileExtensions:  settings.ShowFileExtensions,
 		BackgroundScan:      settings.BackgroundScan,
 		CommentHoverPreview: settings.CommentHoverPreview,
 		CommentAuthor:       normalizeCommentAuthor(settings.CommentAuthor),
@@ -325,6 +327,8 @@ func settingsYAML(settings Settings) string {
 	b.WriteString(boolYAML(hasMD))
 	b.WriteString("\nfile_type_html: ")
 	b.WriteString(boolYAML(hasHTML))
+	b.WriteString("\nshow_file_extensions: ")
+	b.WriteString(boolYAML(settings.ShowFileExtensions))
 	b.WriteString("\nbackground_scan: ")
 	b.WriteString(boolYAML(settings.BackgroundScan))
 	b.WriteString("\ncomment_hover_preview: ")
@@ -453,6 +457,10 @@ func parseSettingsYAML(content string) Settings {
 		case "file_type_html":
 			if parsedBool, ok := parseYAMLBool(parsed); ok {
 				htmlEnabled = parsedBool
+			}
+		case "show_file_extensions", "show_extensions":
+			if parsedBool, ok := parseYAMLBool(parsed); ok {
+				settings.ShowFileExtensions = parsedBool
 			}
 		case "background_scan", "backgroundscan":
 			if parsedBool, ok := parseYAMLBool(parsed); ok {

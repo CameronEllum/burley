@@ -17,6 +17,16 @@ export function stripMdExt(name: string): string {
   return name.replace(/\.(md|markdown|mdown|mkd)$/i, '')
 }
 
+/** Strip any supported note/document extension (.md, .html, etc.), for display. */
+export function stripFileExt(name: string): string {
+  return name.replace(/\.(md|markdown|mdown|mkd|html|htm)$/i, '')
+}
+
+/** Format a file name with or without its extension based on user preference. */
+export function formatFileName(name: string, showExtensions: boolean): string {
+  return showExtensions ? name : stripFileExt(name)
+}
+
 /** True for Markdown files (.md / .markdown / .mdown / .mkd). */
 export function isMarkdownPath(filePath: string): boolean {
   return /\.(md|markdown|mdown|mkd)$/i.test(filePath)

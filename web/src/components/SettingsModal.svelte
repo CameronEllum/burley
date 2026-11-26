@@ -494,6 +494,19 @@
               />
             </label>
           {/each}
+
+          <h3>File browser display</h3>
+          <label class="setting-row">
+            <span>
+              <strong>Show file extensions</strong>
+              <small>Display extensions (e.g. <code>.md</code>, <code>.html</code>) for all files in the file browser, or hide them for all files.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={settings.showFileExtensions}
+              onchange={(event) => onchange({ showFileExtensions: event.currentTarget.checked })}
+            />
+          </label>
         </section>
       {:else if tab === 'agents'}
         <section class="settings-section">
