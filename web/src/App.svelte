@@ -363,13 +363,27 @@ import { wordDiff } from './lib/diff'
   )
   const activeFavorites = $derived(virtualDemoActive ? demoFavorites : favorites)
   const activeFavoriteGroups = $derived(virtualDemoActive ? demoFavoriteGroups : favoriteGroups)
+  function collectDirPaths(entries: Entry[], out = new Set<string>()): Set<string> {
+    for (const entry of entries) {
+      if (entry.isDir) {
+        out.add(entry.path)
+        if (entry.children?.length) collectDirPaths(entry.children, out)
+      }
+    }
+    return out
+  }
+  const activeDirSet = $derived(collectDirPaths(virtualDemoActive ? demoTree : tree))
   const favoriteItems = $derived.by(() =>
-    activeFavorites.map((path) => ({
-      path,
-      name: baseName(path),
-      dir: dirOf(path),
-      exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path),
-    })),
+    activeFavorites.map((path) => {
+      const isDir = activeDirSet.has(path)
+      return {
+        path,
+        name: baseName(path),
+        dir: dirOf(path),
+        isDir,
+        exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path) || isDir,
+      }
+    }),
   )
   const filteredFavorites = $derived.by(() => {
     const query = treeFilter.trim()
@@ -381,12 +395,16 @@ import { wordDiff } from './lib/diff'
   const favoriteGroupItems = $derived.by(() =>
     activeFavoriteGroups.map((group) => ({
       name: group.name,
-      items: group.items.map((path) => ({
-        path,
-        name: baseName(path),
-        dir: dirOf(path),
-        exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path),
-      })),
+      items: group.items.map((path) => {
+        const isDir = activeDirSet.has(path)
+        return {
+          path,
+          name: baseName(path),
+          dir: dirOf(path),
+          isDir,
+          exists: virtualDemoActive || !treeComplete || activeFileByPath.has(path) || isDir,
+        }
+      }),
     })),
   )
   const filteredFavoriteGroups = $derived.by(() => {
@@ -1037,13 +1055,38 @@ import { wordDiff } from './lib/diff'
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     const container = treeScrollEl
     if (!container) return
-    const rows = container.querySelectorAll<HTMLElement>('.file-row[data-path]')
+    const rows = container.querySelectorAll<HTMLElement>('.row[data-path]')
     for (const row of rows) {
       if (row.dataset.path === targetPath) {
         row.scrollIntoView({ block: 'center', behavior: 'smooth' })
         break
       }
     }
+  }
+
+  async function revealFolderInTree(folderPath: string) {
+    if (sidebarTab !== 'files') sidebarTab = 'files'
+    if (scopePath && folderPath !== scopePath && !folderPath.startsWith(scopePath + '/')) {
+      scopePath = null
+      localStorage.removeItem(SCOPE_KEY)
+    }
+    await tick()
+    const container = treeScrollEl
+    if (!container) return
+    const parts = folderPath.split('/').filter(Boolean)
+    let prefix = ''
+    for (const part of parts) {
+      prefix = prefix ? `${prefix}/${part}` : part
+      const rows = container.querySelectorAll<HTMLButtonElement>('.dir-row[data-path]')
+      for (const row of rows) {
+        if (row.dataset.path === prefix && row.getAttribute('aria-expanded') !== 'true') {
+          row.click()
+          await tick()
+          break
+        }
+      }
+    }
+    await scrollTreeToPath(folderPath)
   }
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
@@ -3372,7 +3415,7 @@ import { wordDiff } from './lib/diff'
 
             {#if favoritesOpen}
               {#if activeFavorites.length === 0 && activeFavoriteGroups.length === 0}
-                <p class="favorites-empty">Star a note or right-click to add to a group.</p>
+                <p class="favorites-empty">Star a note or folder, or right-click to add to a group.</p>
               {:else if totalFavoriteCount === 0}
                 <p class="favorites-empty">No favourites match “{treeFilter.trim()}”.</p>
               {:else}
@@ -3394,21 +3437,32 @@ import { wordDiff } from './lib/diff'
                           title={favorite.exists ? favorite.path : `Missing: ${favorite.path}`}
                           onclick={() => {
                             if (!favorite.exists) return
-                            void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
+                            if (favorite.isDir) {
+                              void revealFolderInTree(favorite.path)
+                            } else {
+                              void openFile(favorite.path).then(() => scrollTreeToPath(favorite.path))
+                            }
                           }}
                           onmousedown={(event) => {
-                            if (event.button === 1 && favorite.exists) event.preventDefault()
+                            if (event.button === 1 && favorite.exists && !favorite.isDir) event.preventDefault()
                           }}
                           onauxclick={(event) => {
-                            if (event.button === 1 && favorite.exists) {
+                            if (event.button === 1 && favorite.exists && !favorite.isDir) {
                               event.preventDefault()
                               event.stopPropagation()
                               openNoteInNewTab(favorite.path)
                             }
                           }}
                         >
-                          <span class="favorite-pin" aria-hidden="true">★</span>
-                          <span class="favorite-name">{stripMdExt(favorite.name)}</span>
+                          {#if favorite.isDir}
+                            <span class="favorite-pin favorite-folder-icon" aria-hidden="true">
+                              <svg viewBox="0 0 16 16" width="12" height="12"><path d="M1.5 4.2c0-.5.4-.9.9-.9h3.2l1.3 1.4h6.7c.5 0 .9.4.9.9v6.2c0 .5-.4.9-.9.9H2.4a.9.9 0 0 1-.9-.9z" fill="none" stroke="currentColor" stroke-width="1.3" /></svg>
+                            </span>
+                            <span class="favorite-name">{favorite.name}</span>
+                          {:else}
+                            <span class="favorite-pin" aria-hidden="true">★</span>
+                            <span class="favorite-name">{stripMdExt(favorite.name)}</span>
+                          {/if}
                           <span class="favorite-dir">{favorite.dir}</span>
                           {#if !favorite.exists}<span class="favorite-missing">missing</span>{/if}
                         </button>
@@ -3459,21 +3513,32 @@ import { wordDiff } from './lib/diff'
                               title={item.exists ? item.path : `Missing: ${item.path}`}
                               onclick={() => {
                                 if (!item.exists) return
-                                void openFile(item.path).then(() => scrollTreeToPath(item.path))
+                                if (item.isDir) {
+                                  void revealFolderInTree(item.path)
+                                } else {
+                                  void openFile(item.path).then(() => scrollTreeToPath(item.path))
+                                }
                               }}
                               onmousedown={(event) => {
-                                if (event.button === 1 && item.exists) event.preventDefault()
+                                if (event.button === 1 && item.exists && !item.isDir) event.preventDefault()
                               }}
                               onauxclick={(event) => {
-                                if (event.button === 1 && item.exists) {
+                                if (event.button === 1 && item.exists && !item.isDir) {
                                   event.preventDefault()
                                   event.stopPropagation()
                                   openNoteInNewTab(item.path)
                                 }
                               }}
                             >
-                              <span class="favorite-pin" aria-hidden="true">•</span>
-                              <span class="favorite-name">{stripMdExt(item.name)}</span>
+                              {#if item.isDir}
+                                <span class="favorite-pin favorite-folder-icon" aria-hidden="true">
+                                  <svg viewBox="0 0 16 16" width="12" height="12"><path d="M1.5 4.2c0-.5.4-.9.9-.9h3.2l1.3 1.4h6.7c.5 0 .9.4.9.9v6.2c0 .5-.4.9-.9.9H2.4a.9.9 0 0 1-.9-.9z" fill="none" stroke="currentColor" stroke-width="1.3" /></svg>
+                                </span>
+                                <span class="favorite-name">{item.name}</span>
+                              {:else}
+                                <span class="favorite-pin" aria-hidden="true">•</span>
+                                <span class="favorite-name">{stripMdExt(item.name)}</span>
+                              {/if}
                               <span class="favorite-dir">{item.dir}</span>
                               {#if !item.exists}<span class="favorite-missing">missing</span>{/if}
                             </button>
@@ -4112,6 +4177,21 @@ import { wordDiff } from './lib/diff'
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         <span>Add document</span>
       </button>
+      {@const dirIsFav = activeFavorites.includes(contextMenu.path)}
+      <button
+        class="context-menu-item"
+        role="menuitem"
+        onclick={() => {
+          const p = contextMenu?.path
+          contextMenu = null
+          if (p) toggleFavorite(p)
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
+          <path d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z" fill={dirIsFav ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+        </svg>
+        <span>{dirIsFav ? 'Remove from favourites' : 'Add to favourites'}</span>
+      </button>
     {:else}
       <button
         class="context-menu-item"
@@ -4135,36 +4215,36 @@ import { wordDiff } from './lib/diff'
           <span>Download with Assets</span>
         </button>
       {/if}
-      <div class="context-menu-sep" role="separator"></div>
-      {#each activeFavoriteGroups as group (group.name)}
-        {@const inGroup = group.items.includes(contextMenu!.path)}
-        <button
-          class="context-menu-item"
-          role="menuitem"
-          onclick={() => {
-            const p = contextMenu?.path
-            contextMenu = null
-            if (p) toggleItemInGroup(group.name, p)
-          }}
-        >
-          <span class="context-check" aria-hidden="true">{inGroup ? '✓' : '+'}</span>
-          <span>{group.name}</span>
-        </button>
-      {/each}
+    {/if}
+    <div class="context-menu-sep" role="separator"></div>
+    {#each activeFavoriteGroups as group (group.name)}
+      {@const inGroup = group.items.includes(contextMenu!.path)}
       <button
         class="context-menu-item"
         role="menuitem"
         onclick={() => {
           const p = contextMenu?.path
           contextMenu = null
-          if (p) openFavGroupModal({ path: p })
+          if (p) toggleItemInGroup(group.name, p)
         }}
       >
-        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        <span>New favourite group…</span>
+        <span class="context-check" aria-hidden="true">{inGroup ? '✓' : '+'}</span>
+        <span>{group.name}</span>
       </button>
-      <div class="context-menu-sep" role="separator"></div>
-    {/if}
+    {/each}
+    <button
+      class="context-menu-item"
+      role="menuitem"
+      onclick={() => {
+        const p = contextMenu?.path
+        contextMenu = null
+        if (p) openFavGroupModal({ path: p })
+      }}
+    >
+      <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <span>New favourite group…</span>
+    </button>
+    <div class="context-menu-sep" role="separator"></div>
     <button class="context-menu-item" role="menuitem" onclick={() => void requestRename()}>
       <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M13.8 3.8l2.4 2.4-8.8 8.8H5v-2.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
       <span>Rename</span>
@@ -5766,6 +5846,11 @@ import { wordDiff } from './lib/diff'
     flex: 0 0 auto;
     color: var(--accent);
     font-size: 10px;
+  }
+  .favorite-folder-icon {
+    display: inline-flex;
+    align-items: center;
+    transform: translateY(1px);
   }
   .favorite-name {
     color: var(--text-primary);

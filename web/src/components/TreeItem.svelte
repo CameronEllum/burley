@@ -107,6 +107,26 @@
           </svg>
         </button>
       {/if}
+      <button
+        class="row-star"
+        class:on={isFavorite}
+        title={isFavorite ? 'Remove folder from favourites' : 'Add folder to favourites'}
+        aria-label={isFavorite ? 'Remove folder from favourites' : 'Add folder to favourites'}
+        onclick={(event) => {
+          event.stopPropagation()
+          ontogglefavorite(entry.path)
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
+          <path
+            d="M10 2.9l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 13.7l-4.2 2.2.8-4.7L3.2 7.9l4.7-.7z"
+            fill={isFavorite ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
     </div>
     {#if expanded}
       <ul class="children">
@@ -258,11 +278,11 @@
     position: relative;
   }
   .dir-item .dir-row {
-    padding-right: 30px;
+    padding-right: 52px;
   }
   .dir-rescan {
     position: absolute;
-    right: 5px;
+    right: 27px;
     top: 50%;
     transform: translateY(-50%);
     display: grid;
@@ -319,6 +339,7 @@
     opacity: 0;
     transition: opacity 0.12s ease, color 0.12s ease;
   }
+  .dir-item:hover .row-star,
   .file-item:hover .row-star,
   .row-star:focus-visible,
   .row-star.on {
