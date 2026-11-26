@@ -90,7 +90,18 @@ export function buildOutline(markdown: string): OutlineItem[] {
     items.push({ level, text, line: lineIndex + 1, id: `${lineIndex + 1}-${text}`, slug })
   }
 
-  for (let i = 0; i < lines.length; i++) {
+  let startIndex = 0
+  if (lines.length >= 3 && lines[0].replace(/\r$/, '') === '---') {
+    for (let j = 1; j < lines.length; j++) {
+      const trimmed = lines[j].replace(/\r$/, '').trim()
+      if (trimmed === '---' || trimmed === '...') {
+        startIndex = j + 1
+        break
+      }
+    }
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
     const rawLine = lines[i]
 
     if (!inComment) {
