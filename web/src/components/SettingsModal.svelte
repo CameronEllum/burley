@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type AgentInfo, type AgentModelsResponse, type AgentTestResult, type AppSettings, type ReleaseInfo, type TreeCacheStats } from '../lib/api'
-  import { DARK_THEMES, LIGHT_THEMES } from '../lib/theme'
+  import { DARK_THEMES, LIGHT_THEMES, type DarkPalette, type LightPalette } from '../lib/theme'
   import { bugReportUrl, featureRequestUrl } from '../lib/project'
   import { formatBytes } from '../lib/paths'
 
@@ -374,55 +374,50 @@
             {/each}
           </div>
 
-          <h3>Light theme</h3>
-          <div class="palette-grid">
-            {#each LIGHT_THEMES as palette (palette.id)}
-              <button
-                class="palette-card"
-                class:active={settings.lightTheme === palette.id}
-                onclick={() => onchange({ lightTheme: palette.id })}
-                title={palette.description}
+          <h3>Palettes</h3>
+          {#each [
+            {
+              label: 'Light theme',
+              value: settings.lightTheme,
+              options: LIGHT_THEMES,
+              onSelect: (id: string) => onchange({ lightTheme: id as LightPalette }),
+            },
+            {
+              label: 'Dark theme',
+              value: settings.darkTheme,
+              options: DARK_THEMES,
+              onSelect: (id: string) => onchange({ darkTheme: id as DarkPalette }),
+            },
+          ] as group (group.label)}
+            {@const current = group.options.find((p) => p.id === group.value) ?? group.options[0]}
+            <div class="palette-row">
+              <span
+                class="palette-swatch compact"
+                style={`--swatch-app:${current.swatch.app};--swatch-chrome:${current.swatch.chrome};--swatch-accent:${current.swatch.accent};--swatch-border:${current.swatch.border}`}
+                aria-hidden="true"
               >
-                <span
-                  class="palette-swatch"
-                  style={`--swatch-app:${palette.swatch.app};--swatch-chrome:${palette.swatch.chrome};--swatch-accent:${palette.swatch.accent};--swatch-border:${palette.swatch.border}`}
-                >
-                  <span class="swatch-side"></span>
-                  <span class="swatch-body">
-                    <span class="swatch-bar"></span>
-                    <span class="swatch-line"></span>
-                  </span>
+                <span class="swatch-side"></span>
+                <span class="swatch-body">
+                  <span class="swatch-bar"></span>
+                  <span class="swatch-line"></span>
                 </span>
-                <span class="palette-name">{palette.name}</span>
-                <span class="palette-description">{palette.description}</span>
-              </button>
-            {/each}
-          </div>
-
-          <h3>Dark theme</h3>
-          <div class="palette-grid">
-            {#each DARK_THEMES as palette (palette.id)}
-              <button
-                class="palette-card"
-                class:active={settings.darkTheme === palette.id}
-                onclick={() => onchange({ darkTheme: palette.id })}
-                title={palette.description}
+              </span>
+              <span class="palette-meta">
+                <strong>{group.label}</strong>
+                <small>{current.description}</small>
+              </span>
+              <select
+                class="palette-select"
+                aria-label={group.label}
+                value={current.id}
+                onchange={(event) => group.onSelect(event.currentTarget.value)}
               >
-                <span
-                  class="palette-swatch"
-                  style={`--swatch-app:${palette.swatch.app};--swatch-chrome:${palette.swatch.chrome};--swatch-accent:${palette.swatch.accent};--swatch-border:${palette.swatch.border}`}
-                >
-                  <span class="swatch-side"></span>
-                  <span class="swatch-body">
-                    <span class="swatch-bar"></span>
-                    <span class="swatch-line"></span>
-                  </span>
-                </span>
-                <span class="palette-name">{palette.name}</span>
-                <span class="palette-description">{palette.description}</span>
-              </button>
-            {/each}
-          </div>
+                {#each group.options as palette (palette.id)}
+                  <option value={palette.id}>{palette.name}</option>
+                {/each}
+              </select>
+            </div>
+          {/each}
 
           <h3>Reading width</h3>
           <div class="segmented width-segments">
@@ -911,29 +906,53 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
-  .palette-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .palette-card {
+  .palette-row {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    text-align: left;
-    padding: 8px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
     border: 1px solid var(--border-soft);
     border-radius: 9px;
     background: var(--bg-app);
-    cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .palette-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .palette-meta strong {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .palette-meta small {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .palette-select {
+    flex: 0 0 auto;
+    min-width: 124px;
+    padding: 5px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--panel);
+    color: var(--text-primary);
     font: inherit;
+    font-size: 12px;
+    font-weight: 550;
+    cursor: pointer;
   }
-  .palette-card:hover {
-    border-color: var(--border-strong);
-  }
-  .palette-card.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+  .palette-swatch.compact {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 30px;
+    margin-bottom: 0;
   }
   .palette-swatch {
     display: flex;
@@ -968,19 +987,6 @@
     height: 4px;
     border-radius: 2px;
     background: var(--swatch-border);
-  }
-  .palette-name {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .palette-card.active .palette-name {
-    color: var(--accent);
-  }
-  .palette-description {
-    color: var(--text-muted);
-    font-size: 10.5px;
-    line-height: 1.35;
   }
   .style-card {
     display: flex;
