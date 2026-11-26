@@ -93,11 +93,11 @@
               paper_bgcolor: 'transparent',
               plot_bgcolor: 'transparent',
               font: { color: fg },
-              height: 340,
-              margin: { t: 36, r: 20, b: 40, l: 48 },
+              height: 460,
+              margin: { t: 36, r: 20, b: 44, l: 52 },
               ...(spec.layout ?? {}),
             }
-            await Plotly.newPlot(host, spec.data ?? [], layout, { responsive: true, displayModeBar: false })
+            await Plotly.newPlot(host, spec.data ?? [], layout, { responsive: true, displayModeBar: 'hover' })
           } catch {
             /* keep code fallback */
           }
@@ -127,7 +127,7 @@
         gridOpen = !gridOpen
         return
       }
-      if (gridOpen) return
+      if (gridOpen || event.repeat) return
       if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === ' ') {
         event.preventDefault()
         next()
@@ -178,9 +178,11 @@
     </div>
   {:else}
     <main class="present-stage">
-      <article class="present-slide" bind:this={stageEl}>
-        {@html renderedHtml}
-      </article>
+      {#key index}
+        <article class="present-slide" bind:this={stageEl}>
+          {@html renderedHtml}
+        </article>
+      {/key}
     </main>
 
     <footer class="present-foot">
@@ -261,16 +263,16 @@
     overflow: auto;
     display: grid;
     place-items: center;
-    padding: 28px 36px;
+    padding: 20px 28px;
   }
   .present-slide {
-    width: min(920px, 100%);
-    padding: 36px 44px;
+    width: min(1320px, 94vw);
+    padding: 40px 52px;
     border: 1px solid var(--border-soft);
     border-radius: 16px;
     background: var(--bg-app);
     box-shadow: 0 20px 60px -24px rgb(0 0 0 / 0.2);
-    font-size: 1.15rem;
+    font-size: clamp(1.1rem, 1.3vw, 1.4rem);
     line-height: 1.68;
   }
   .present-slide :global(h1) {
