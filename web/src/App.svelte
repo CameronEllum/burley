@@ -444,7 +444,10 @@ import { wordDiff } from './lib/diff'
     (treeFilterMode === 'all' || !treeFilter.trim()) &&
       (!treeFilter.trim() || totalFavoriteCount > 0),
   )
-  const currentIsFavorite = $derived(!!currentPath && favorites.includes(currentPath))
+  const allFavoritePaths = $derived(
+    Array.from(new Set([...activeFavorites, ...activeFavoriteGroups.flatMap((g) => g.items)])),
+  )
+  const currentIsFavorite = $derived(!!currentPath && allFavoritePaths.includes(currentPath))
   const scopedEntry = $derived(scopePath ? findFolder(tree, scopePath) : null)
   const treeEntries = $derived(scopePath ? (scopedEntry?.children ?? []) : tree)
   const visibleTreeEntries = $derived(virtualDemoActive ? demoTree : treeEntries)
@@ -2590,10 +2593,19 @@ import { wordDiff } from './lib/diff'
 
   function toggleFavorite(path: string) {
     if (!path) return
-    const next = favorites.includes(path)
-      ? favorites.filter((favorite) => favorite !== path)
-      : [...favorites, path]
-    void persistFavorites(next)
+    const curFavs = virtualDemoActive ? demoFavorites : favorites
+    const curGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const inUngrouped = curFavs.includes(path)
+    const inGroups = curGroups.some((g) => g.items.includes(path))
+    if (inUngrouped || inGroups) {
+      const nextFavs = curFavs.filter((favorite) => favorite !== path)
+      const nextGroups = inGroups
+        ? curGroups.map((g) => ({ ...g, items: g.items.filter((p) => p !== path) }))
+        : curGroups
+      void persistFavorites(nextFavs, nextGroups)
+    } else {
+      void persistFavorites([...curFavs, path], curGroups)
+    }
   }
 
   function toggleFavoritesOpen() {
@@ -3772,7 +3784,7 @@ import { wordDiff } from './lib/diff'
               selectedPath={currentPath}
               filter={treeFilter}
               filterMode={treeFilterMode}
-              favorites={favorites}
+              favorites={allFavoritePaths}
               rescanningPath={rescanningFolder}
               collapseSignal={treeCollapseSignal}
               {showFileExtensions}
@@ -4248,7 +4260,7 @@ import { wordDiff } from './lib/diff'
     files={visiblePaletteFiles}
     root={root}
     home={homeDir}
-    favorites={favorites}
+    favorites={allFavoritePaths}
     recent={recent}
     headings={outline}
     commands={paletteCommands}
@@ -6074,6 +6086,8 @@ import { wordDiff } from './lib/diff'
     transform: translateY(1px);
   }
   .favorite-name {
+    flex: 0 0 auto;
+    max-width: calc(100% - 18px);
     color: var(--text-primary);
     font-weight: 550;
     white-space: nowrap;
@@ -6081,6 +6095,8 @@ import { wordDiff } from './lib/diff'
     text-overflow: ellipsis;
   }
   .favorite-dir {
+    flex: 1 1 0;
+    min-width: 0;
     color: var(--text-muted);
     font-size: 10.5px;
     white-space: nowrap;
