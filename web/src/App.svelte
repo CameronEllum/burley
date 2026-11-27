@@ -94,6 +94,8 @@ import { wordDiff } from './lib/diff'
   let loadingFile = $state(false)
 
   let readOnly = $state(false)
+  let frozen = $state(false)
+  let pendingExternalChange = $state(false)
   let sidebarOpen = $state(true)
   let sidebarTab = $state<'files' | 'outline'>('files')
   let sidebarWidth = $state(302)
@@ -500,6 +502,12 @@ import { wordDiff } from './lib/diff'
       label: 'Reload & re-render file',
       keywords: 'refresh assets images charts',
       run: () => void reloadCurrentFile(),
+    },
+    {
+      id: 'toggle-freeze',
+      label: frozen ? 'Unfreeze auto-reload' : 'Freeze auto-reload',
+      keywords: 'pause lock watch refresh disk',
+      run: toggleFrozen,
     },
     {
       id: 'present-slides',
@@ -1119,6 +1127,7 @@ import { wordDiff } from './lib/diff'
   }
 
   function applyFile(data: FileData, line?: number, headingSlug?: string) {
+    pendingExternalChange = false
     if (currentPath !== data.path) {
       activeCommentId = null
     }
@@ -1246,6 +1255,14 @@ import { wordDiff } from './lib/diff'
   let currentAssetsStamp = ''
   let reloadingFile = $state(false)
 
+  function toggleFrozen() {
+    frozen = !frozen
+    if (!frozen && pendingExternalChange) {
+      pendingExternalChange = false
+      void checkExternalFileChange()
+    }
+  }
+
   async function checkExternalFileChange() {
     const path = currentPath
     if (!path || fileCheckInFlight || talkEditStreaming || loadingFile || reloadingFile || saveState === 'saving' || conflictOpen) return
@@ -1255,6 +1272,12 @@ import { wordDiff } from './lib/diff'
       if (currentPath !== path || talkEditStreaming) return
       if (remote.hash !== hash) {
         const decoded = decodeForEditor(remote.content)
+        if (frozen) {
+          if (!dirty || decoded.text !== content) {
+            pendingExternalChange = true
+          }
+          return
+        }
         if (!dirty) {
           format = decoded.format
           content = decoded.text
@@ -1294,6 +1317,10 @@ import { wordDiff } from './lib/diff'
         currentHasAssets = assetRes.hasAssets
         const nextStamp = assetRes.stamp ?? ''
         if (nextStamp && currentAssetsStamp && nextStamp !== currentAssetsStamp) {
+          if (frozen) {
+            pendingExternalChange = true
+            return
+          }
           currentAssetsStamp = nextStamp
           editor?.rerender()
           flash(`Reloaded assets for ${baseName(path)}`)
@@ -1337,6 +1364,10 @@ import { wordDiff } from './lib/diff'
       }
       htmlFrameNonce += 1
       await refreshCurrentAssets(path)
+      pendingExternalChange = false
+      if (splitPath && frozen) {
+        await openInSplit(splitPath)
+      }
       flash(`Reloaded ${baseName(path)}`)
     } catch (err) {
       flash(err instanceof Error ? err.message : String(err), true)
@@ -1386,6 +1417,10 @@ import { wordDiff } from './lib/diff'
     try {
       const remote = await api.file(target)
       if (splitPath !== target || remote.hash === splitHash) return
+      if (frozen) {
+        pendingExternalChange = true
+        return
+      }
       const decoded = decodeForEditor(remote.content)
       splitContent = decoded.text
       splitHash = remote.hash
@@ -3260,8 +3295,28 @@ import { wordDiff } from './lib/diff'
         </svg>
       </button>
       <button
+        class="icon-btn freeze-btn"
+        class:on={frozen}
+        title={frozen
+          ? pendingExternalChange
+            ? 'Frozen — file changed on disk (click to unfreeze & auto-reload, or click Reload)'
+            : 'Auto-reload frozen — click to resume auto-reload'
+          : 'Freeze auto-reload'}
+        aria-label={frozen ? 'Unfreeze auto-reload' : 'Freeze auto-reload'}
+        aria-pressed={frozen}
+        onclick={toggleFrozen}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <path d="M10 2.5v15M3.5 6.25l13 7.5M16.5 6.25l-13 7.5M8 4.2l2 1.8 2-1.8M8 15.8l2-1.8 2 1.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {#if frozen && pendingExternalChange}
+          <span class="freeze-dot" aria-hidden="true"></span>
+        {/if}
+      </button>
+      <button
         class="icon-btn reload-btn"
-        title="Reload file & re-render"
+        class:has-pending={frozen && pendingExternalChange}
+        title={frozen && pendingExternalChange ? 'File changed on disk — click to force reload' : 'Reload file & re-render'}
         aria-label="Reload file and re-render"
         disabled={!currentPath || reloadingFile}
         onclick={() => void reloadCurrentFile()}
@@ -4889,8 +4944,20 @@ import { wordDiff } from './lib/diff'
     color: var(--accent);
     background: var(--active);
   }
-  .comments-btn {
+  .comments-btn,
+  .freeze-btn {
     position: relative;
+  }
+  .freeze-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 1.5px var(--bg-app);
+    pointer-events: none;
   }
   .comments-badge {
     position: absolute;
