@@ -273,6 +273,8 @@ import { wordDiff } from './lib/diff'
   let collapsedFavGroups = $state<Record<string, boolean>>({})
   let favoritesOpen = $state(true)
   let dragFavoritePath = $state<string | null>(null)
+  let dragFavoriteGroup = $state<string | null>(null)
+  let dragOverFavGroup = $state<string | null>(null)
   let favGroupDialogEl = $state<HTMLDialogElement | null>(null)
   let favGroupInput = $state<HTMLInputElement | null>(null)
   let favGroupModal = $state<{ path: string; renameFrom?: string; name: string; error: string } | null>(null)
@@ -2599,23 +2601,65 @@ import { wordDiff } from './lib/diff'
     localStorage.setItem(FAVORITES_OPEN_KEY, favoritesOpen ? '1' : '0')
   }
 
-  function favoriteDragStart(event: DragEvent, path: string) {
+  function favoriteDragStart(event: DragEvent, path: string, groupName: string | null = null) {
     dragFavoritePath = path
+    dragFavoriteGroup = groupName
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move'
       event.dataTransfer.setData('text/plain', path)
     }
   }
 
+  function clearFavoriteDrag() {
+    dragFavoritePath = null
+    dragFavoriteGroup = null
+    dragOverFavGroup = null
+  }
+
   function favoriteDrop(event: DragEvent, targetPath: string) {
     event.preventDefault()
+    event.stopPropagation()
     const fromPath = dragFavoritePath
-    dragFavoritePath = null
-    if (!fromPath || fromPath === targetPath) return
-    const next = favorites.filter((path) => path !== fromPath)
+    const fromGroup = dragFavoriteGroup
+    clearFavoriteDrag()
+    if (!fromPath || (fromGroup === null && fromPath === targetPath)) return
+    const curFavs = virtualDemoActive ? demoFavorites : favorites
+    const curGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const next = curFavs.filter((path) => path !== fromPath)
     const targetIndex = next.indexOf(targetPath)
     next.splice(targetIndex < 0 ? next.length : targetIndex, 0, fromPath)
-    void persistFavorites(next)
+    const nextGroups = fromGroup
+      ? curGroups.map((g) => (g.name === fromGroup ? { ...g, items: g.items.filter((p) => p !== fromPath) } : g))
+      : curGroups
+    void persistFavorites(next, nextGroups)
+  }
+
+  function favoriteDropIntoGroup(event: DragEvent, targetGroup: string, beforePath?: string) {
+    event.preventDefault()
+    event.stopPropagation()
+    const fromPath = dragFavoritePath
+    const fromGroup = dragFavoriteGroup
+    clearFavoriteDrag()
+    if (!fromPath || (fromGroup === targetGroup && fromPath === beforePath)) return
+    const curFavs = virtualDemoActive ? demoFavorites : favorites
+    const curGroups = virtualDemoActive ? demoFavoriteGroups : favoriteGroups
+    const nextFavs = fromGroup === null ? curFavs.filter((p) => p !== fromPath) : curFavs
+    const nextGroups = curGroups.map((g) => {
+      if (g.name === fromGroup && g.name !== targetGroup) {
+        return { ...g, items: g.items.filter((p) => p !== fromPath) }
+      }
+      if (g.name === targetGroup) {
+        const items = g.items.filter((p) => p !== fromPath)
+        const idx = beforePath ? items.indexOf(beforePath) : -1
+        items.splice(idx < 0 ? items.length : idx, 0, fromPath)
+        return { ...g, items }
+      }
+      return g
+    })
+    if (collapsedFavGroups[targetGroup]) {
+      collapsedFavGroups = { ...collapsedFavGroups, [targetGroup]: false }
+    }
+    void persistFavorites(nextFavs, nextGroups)
   }
 
   function jumpToOutline(item: OutlineItem) {
@@ -3549,13 +3593,14 @@ import { wordDiff } from './lib/diff'
                     {#each filteredFavorites as favorite (favorite.path)}
                       <li
                         class="favorite-item"
+                        class:active={favorite.path === currentPath}
                         class:missing={!favorite.exists}
-                        class:dragging={dragFavoritePath === favorite.path}
+                        class:dragging={dragFavoritePath === favorite.path && dragFavoriteGroup === null}
                         draggable="true"
-                        ondragstart={(event) => favoriteDragStart(event, favorite.path)}
+                        ondragstart={(event) => favoriteDragStart(event, favorite.path, null)}
                         ondragover={(event) => event.preventDefault()}
                         ondrop={(event) => favoriteDrop(event, favorite.path)}
-                        ondragend={() => (dragFavoritePath = null)}
+                        ondragend={clearFavoriteDrag}
                       >
                         <button
                           class="favorite-row"
@@ -3603,7 +3648,23 @@ import { wordDiff } from './lib/diff'
                 {/if}
                 {#each filteredFavoriteGroups as group (group.name)}
                   {@const groupOpen = !collapsedFavGroups[group.name] || !!treeFilter.trim()}
-                  <div class="fav-group">
+                  <div
+                    class="fav-group"
+                    class:drop-target={dragOverFavGroup === group.name}
+                    role="region"
+                    aria-label={group.name}
+                    ondragover={(event) => {
+                      if (!dragFavoritePath) return
+                      event.preventDefault()
+                      dragOverFavGroup = group.name
+                    }}
+                    ondragleave={(event) => {
+                      if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        if (dragOverFavGroup === group.name) dragOverFavGroup = null
+                      }
+                    }}
+                    ondrop={(event) => favoriteDropIntoGroup(event, group.name)}
+                  >
                     <div class="fav-group-head-row">
                       <button
                         class="fav-group-head"
@@ -3632,7 +3693,21 @@ import { wordDiff } from './lib/diff'
                     {#if groupOpen && group.items.length > 0}
                       <ul class="favorites-list fav-group-list">
                         {#each group.items as item (group.name + ':' + item.path)}
-                          <li class="favorite-item" class:missing={!item.exists}>
+                          <li
+                            class="favorite-item"
+                            class:active={item.path === currentPath}
+                            class:missing={!item.exists}
+                            class:dragging={dragFavoritePath === item.path && dragFavoriteGroup === group.name}
+                            draggable="true"
+                            ondragstart={(event) => favoriteDragStart(event, item.path, group.name)}
+                            ondragover={(event) => {
+                              if (!dragFavoritePath) return
+                              event.preventDefault()
+                              dragOverFavGroup = group.name
+                            }}
+                            ondrop={(event) => favoriteDropIntoGroup(event, group.name, item.path)}
+                            ondragend={clearFavoriteDrag}
+                          >
                             <button
                               class="favorite-row"
                               title={item.exists ? item.path : `Missing: ${item.path}`}
@@ -5961,6 +6036,13 @@ import { wordDiff } from './lib/diff'
   .favorite-item:hover {
     background: var(--hover);
   }
+  .favorite-item.active .favorite-row {
+    background: var(--active);
+  }
+  .favorite-item.active .favorite-name {
+    color: var(--accent);
+    font-weight: 600;
+  }
   .favorite-item.dragging {
     opacity: 0.45;
   }
@@ -6041,6 +6123,11 @@ import { wordDiff } from './lib/diff'
   }
   .fav-group {
     margin-top: 2px;
+  }
+  .fav-group.drop-target > .fav-group-head-row {
+    background: var(--active);
+    border-radius: 6px;
+    outline: 1px dashed var(--accent);
   }
   .fav-group-head-row {
     display: flex;
