@@ -3343,13 +3343,19 @@ import { wordDiff } from './lib/diff'
           <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5" />
         </svg>
       </button>
-      <button class="toggle-btn" class:on={readOnly} title="Toggle read-only mode" onclick={toggleReadOnly}>
+      <button
+        class="icon-btn"
+        class:on={readOnly}
+        title={readOnly ? 'Read-only mode (locked) — click to allow editing' : 'Read-only mode (unlocked) — click to lock'}
+        aria-label={readOnly ? 'Turn off read-only mode' : 'Turn on read-only mode'}
+        aria-pressed={readOnly}
+        onclick={toggleReadOnly}
+      >
         {#if readOnly}
-          <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="5" y="9" width="10" height="7.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 9V6.9a2.6 2.6 0 0 1 5.2 0V9" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="5" y="9" width="10" height="7.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 9V6.9a2.6 2.6 0 0 1 5.2 0V9" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
         {:else}
-          <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="5" y="9" width="10" height="7.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 9V6.9a2.6 2.6 0 0 1 5 1.1" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="5" y="9" width="10" height="7.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M7.4 9V6.9a2.6 2.6 0 0 1 5 1.1" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
         {/if}
-        <span>Read-only</span>
       </button>
       <button class="icon-btn" class:on={sidebarOpen} title="Toggle sidebar (Ctrl+B)" aria-label="Toggle sidebar" onclick={toggleSidebar}>
         <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M12.5 4v12" stroke="currentColor" stroke-width="1.5" /></svg>
